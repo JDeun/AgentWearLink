@@ -15,6 +15,19 @@ public enum InteractionEvent: Sendable, Equatable {
     case interrupted(InteractionID)
     case sessionEnded(InteractionID)
     case failed(InteractionID?, AWLError)
+
+    public var interactionID: InteractionID? {
+        switch self {
+        case let .sessionStarted(id),
+             let .text(id, _),
+             let .invocation(id, _),
+             let .interrupted(id),
+             let .sessionEnded(id):
+            return id
+        case let .failed(id, _):
+            return id
+        }
+    }
 }
 
 public enum AWLError: Error, Sendable, Equatable {
