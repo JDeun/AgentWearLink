@@ -36,4 +36,26 @@ final class OpenClawRPCRegistryTests: XCTestCase {
         XCTAssertEqual(drained.count, 2)
         XCTAssertEqual(count, 0)
     }
+
+    func testPendingRequestLimitAppliesBackpressureWithoutGrowingRegistry() async throws {
+        let registry = OpenClawRPCRegistry(maximumPendingRequests: 2)
+        try await registry.register(id: "1", method: "agent")
+        try await registry.register(id: "2", method: "agent.wait")
+
+        do {
+            try await registry.register(id: "3", method: "health")
+            XCTFail("Expected pending RPC limit")
+        } catch let error as OpenClawRPCRegistryError {
+            XCTAssertEqual(error, .tooManyPendingRequests(maximum: 2))
+        }
+
+        let count = await registry.count
+        XCTAssertEqual(count, 2)
+
+        _ = try await registry.resolve(id: "1")
+        try await registry.register(id: "3", method: "health")
+        let admittedCount = await registry.count
+        XCTAssertEqual(admittedCount, 2)
+    }
+
 }

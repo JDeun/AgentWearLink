@@ -16,12 +16,21 @@ public actor OpenClawRPCRegistry {
     }
 
     private var pending: [String: Pending] = [:]
+    public let maximumPendingRequests: Int
 
-    public init() {}
+    public init(maximumPendingRequests: Int = 64) {
+        precondition(maximumPendingRequests > 0)
+        self.maximumPendingRequests = maximumPendingRequests
+    }
 
     public func register(id: String, method: String) throws {
         guard pending[id] == nil else {
             throw OpenClawRPCRegistryError.duplicateRequestID(id)
+        }
+        guard pending.count < maximumPendingRequests else {
+            throw OpenClawRPCRegistryError.tooManyPendingRequests(
+                maximum: maximumPendingRequests
+            )
         }
         pending[id] = Pending(id: id, method: method)
     }
@@ -50,4 +59,5 @@ public actor OpenClawRPCRegistry {
 public enum OpenClawRPCRegistryError: Error, Sendable, Equatable {
     case duplicateRequestID(String)
     case unknownResponseID(String)
+    case tooManyPendingRequests(maximum: Int)
 }
