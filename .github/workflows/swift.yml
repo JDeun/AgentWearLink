@@ -24,13 +24,19 @@ jobs:
         run: swift test
 
   meta-dat-integration:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Show Xcode and Swift versions
+      - name: Show Xcode, Swift, and simulator versions
         run: |
           xcodebuild -version
           swift --version
+          xcrun simctl list runtimes
+      - name: Select available iPhone simulator
+        run: |
+          SIMULATOR_UDID="$(xcrun simctl list devices available -j | /usr/bin/python3 -c 'import json,sys; payload=json.load(sys.stdin); print(next(device["udid"] for devices in payload.get("devices", {}).values() for device in devices if device.get("isAvailable", True) and device.get("name", "").startswith("iPhone")))')"
+          echo "Using iPhone simulator: ${SIMULATOR_UDID}"
+          echo "AWL_IOS_SIMULATOR_UDID=${SIMULATOR_UDID}" >> "$GITHUB_ENV"
       - name: Resolve pinned Meta DAT SDK
         working-directory: Adapters/MetaDAT
         run: swift package resolve
@@ -61,7 +67,17 @@ jobs:
       - name: Compile minimal Meta DAT iOS app host
         working-directory: Adapters/MetaDAT/TestApp
         run: |
-          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATTestHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
+      - name: Boot selected iPhone Simulator
+        timeout-minutes: 3
+        run: |
+          xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
+          xcrun simctl bootstatus "${AWL_IOS_SIMULATOR_UDID}" -b
+      - name: Run MockDeviceKit server rendezvous UI test
+        timeout-minutes: 5
+        working-directory: Adapters/MetaDAT/TestApp
+        run: |
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation test
       - name: Explain behavioral test boundary
         run: |
           echo "Meta DAT package target and behavioral host are compile-gated here."
