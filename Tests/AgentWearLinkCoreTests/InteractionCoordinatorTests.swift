@@ -64,6 +64,22 @@ final class InteractionCoordinatorTests: XCTestCase {
         XCTAssertEqual(await agent.cancellations(), [id])
     }
 
+    func testCompletedInteractionCanBeSubmittedAgain() async throws {
+        let agent = StubAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+
+        let id = InteractionID()
+        await coordinator.handle(.text(id, "first"))
+        try await Task.sleep(for: .milliseconds(20))
+        await coordinator.handle(.text(id, "second"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        XCTAssertEqual(await agent.requests(), 2)
+    }
+
     func testAgentResponseIsNormalizedBackToInteractionEvent() async throws {
         let agent = StubAgent()
         let recorded = RecordedEvents()
