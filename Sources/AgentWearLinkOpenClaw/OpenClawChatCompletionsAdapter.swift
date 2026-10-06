@@ -24,7 +24,7 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
 
     public func responses(
         for request: AgentRequest
-    ) -> AsyncThrowingStream<AgentResponse, Error> {
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
         let configuration = self.configuration
         let session = self.session
 
