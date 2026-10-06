@@ -35,24 +35,26 @@ public actor AgentWearLinkRuntime {
         do {
             try await agent.connect()
             guard lifecycleState == .starting, lifecycleGeneration == generation else {
+                await device.disconnect()
                 await agent.disconnect()
                 return
             }
-            do {
-                try await device.connect()
-                guard lifecycleState == .starting, lifecycleGeneration == generation else {
-                    await device.disconnect()
-                    await agent.disconnect()
-                    return
-                }
-            } catch {
+
+            try await device.connect()
+            guard lifecycleState == .starting, lifecycleGeneration == generation else {
                 await device.disconnect()
                 await agent.disconnect()
-                if lifecycleGeneration == generation { lifecycleState = .stopped }
-                throw error
+                return
             }
         } catch {
-            if lifecycleGeneration == generation { lifecycleState = .stopped }
+            // `events()` has already installed the device-side subscription and
+            // either adapter may have acquired resources before throwing. Treat
+            // startup as one transaction and roll both sides back.
+            await device.disconnect()
+            await agent.disconnect()
+            if lifecycleGeneration == generation {
+                lifecycleState = .stopped
+            }
             throw error
         }
 
