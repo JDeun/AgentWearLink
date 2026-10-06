@@ -77,7 +77,7 @@ public struct OpenClawConnectParams: Encodable, Sendable {
         }
     }
 
-    public struct Auth: Encodable, Sendable {
+    public struct Auth: Encodable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
         public let token: String?
         public let password: String?
         public let bootstrapToken: String?
@@ -91,6 +91,14 @@ public struct OpenClawConnectParams: Encodable, Sendable {
             self.password = password
             self.bootstrapToken = bootstrapToken
         }
+
+        public var description: String {
+            "Auth(token: \(token == nil ? "nil" : "<redacted>"), " +
+            "password: \(password == nil ? "nil" : "<redacted>"), " +
+            "bootstrapToken: \(bootstrapToken == nil ? "nil" : "<redacted>"))"
+        }
+
+        public var debugDescription: String { description }
     }
 
     public let minProtocol: Int
