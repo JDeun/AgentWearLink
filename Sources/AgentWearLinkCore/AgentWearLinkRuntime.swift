@@ -12,6 +12,7 @@ public actor AgentWearLinkRuntime {
     private enum LifecycleState { case stopped, starting, running, stopping }
     private var lifecycleState: LifecycleState = .stopped
     private var lifecycleGeneration: UInt64 = 0
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
         device: any DeviceAdapter,
@@ -25,6 +26,11 @@ public actor AgentWearLinkRuntime {
     }
 
     public func start() async throws {
+        if lifecycleState == .stopping {
+            await withCheckedContinuation { continuation in
+                stopWaiters.append(continuation)
+            }
+        }
         guard lifecycleState == .stopped else { return }
         lifecycleState = .starting
         lifecycleGeneration &+= 1
@@ -95,7 +101,7 @@ public actor AgentWearLinkRuntime {
         await device.disconnect()
         await agent.disconnect()
 
-        lifecycleState = .stopped
+        finishStopping()
         await output(
             .failed(
                 nil,
@@ -113,6 +119,13 @@ public actor AgentWearLinkRuntime {
         await coordinator.cancelAll()
         await device.disconnect()
         await agent.disconnect()
+        finishStopping()
+    }
+
+    private func finishStopping() {
         lifecycleState = .stopped
+        let waiters = stopWaiters
+        stopWaiters.removeAll(keepingCapacity: false)
+        for waiter in waiters { waiter.resume() }
     }
 }

@@ -439,6 +439,26 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(deviceDisconnects, 1)
     }
 
+    func testStartDuringStopWaitsForTeardownThenRestarts() async throws {
+        let device = MockDeviceAdapter()
+        let agent = BlockingLifecycleAgent()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
+
+        await agent.release()
+        try await runtime.start()
+
+        let stopping = Task { await runtime.stop() }
+        let restarting = Task { try await runtime.start() }
+
+        await stopping.value
+        try await restarting.value
+        await runtime.stop()
+
+        let counts = await agent.counts()
+        XCTAssertEqual(counts.0, 2)
+        XCTAssertGreaterThanOrEqual(counts.1, 2)
+    }
+
     func testStartIsIdempotent() async throws {
         let device = MockDeviceAdapter()
         let agent = MockAgentAdapter()
