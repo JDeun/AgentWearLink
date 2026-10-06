@@ -34,7 +34,7 @@ public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertibl
         self.maximumEventBytes = maximumEventBytes
     }
     public var description: String {
-        "OpenClawConfiguration(baseURL: \\(baseURL), bearerToken: <redacted>, model: \\(model), conversationID: \\(conversationID), sessionKey: \\(sessionKey ?? "nil"), messageChannel: \\(messageChannel ?? "nil"), timeout: \\(timeout), maximumEventBytes: \\(maximumEventBytes))"
+        "OpenClawConfiguration(baseURL: \(baseURL), bearerToken: <redacted>, model: \(model), conversationID: \(conversationID), sessionKey: \(sessionKey ?? "nil"), messageChannel: \(messageChannel ?? "nil"), timeout: \(timeout), maximumEventBytes: \(maximumEventBytes))"
     }
 
     public var debugDescription: String { description }
