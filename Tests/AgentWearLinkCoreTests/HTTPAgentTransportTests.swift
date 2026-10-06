@@ -96,4 +96,51 @@ final class HTTPAgentTransportTests: XCTestCase {
             )
         }
     }
+
+    func testCancellingUnknownInteractionDoesNotCreateState() async {
+        let transport = HTTPAgentTransport(
+            configuration: .init(
+                endpoint: URL(string: "https://example.invalid")!
+            ),
+            session: makeSession()
+        )
+
+        await transport.cancel(interactionID: InteractionID())
+
+        let count = await transport.operationCount()
+        XCTAssertEqual(count, 0)
+    }
+
+    func testDuplicateInteractionIDIsRejectedWhileReserved() async throws {
+        URLProtocolStub.handler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200,
+                httpVersion: nil, headerFields: nil
+            )!
+            return (response, Data("ok".utf8))
+        }
+
+        let transport = HTTPAgentTransport(
+            configuration: .init(
+                endpoint: URL(string: "https://example.invalid")!
+            ),
+            session: makeSession()
+        )
+        let id = InteractionID()
+        let request = AgentRequest(interactionID: id, text: "hello")
+
+        _ = await transport.send(request)
+
+        do {
+            for try await _ in await transport.send(request) {}
+            XCTFail("Expected duplicate interaction failure")
+        } catch let error as AWLError {
+            XCTAssertEqual(
+                error,
+                .transport("duplicate interaction ID")
+            )
+        }
+
+        await transport.cancel(interactionID: id)
+    }
 }
