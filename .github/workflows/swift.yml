@@ -13,7 +13,7 @@ jobs:
   test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Show Swift version
         run: swift --version
       - name: Test core package
@@ -22,7 +22,7 @@ jobs:
   meta-dat-integration:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Show Xcode and Swift versions
         run: |
           xcodebuild -version
