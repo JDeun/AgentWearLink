@@ -5,8 +5,14 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     private let supervisor: OpenClawGatewaySupervisor
     private let dispatcher: OpenClawRPCDispatcher
     private let runClient: OpenClawAgentRunClient
+    private struct RunContext: Sendable {
+        let runID: String
+        let sessionKey: String?
+        let agentID: String?
+    }
+
     private let sessionKey: String?
-    private var runIDs: [InteractionID: String] = [:]
+    private var runs: [InteractionID: RunContext] = [:]
 
     public init(
         supervisor: OpenClawGatewaySupervisor,
@@ -26,7 +32,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
 
     public func disconnect() async {
         await supervisor.stop()
-        runIDs.removeAll(keepingCapacity: false)
+        runs.removeAll(keepingCapacity: false)
     }
 
     public func responses(
@@ -45,7 +51,11 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                         idempotencyKey: request.interactionID.rawValue.uuidString
                     )
                     await self.remember(
-                        accepted.runId,
+                        RunContext(
+                            runID: accepted.runId,
+                            sessionKey: accepted.sessionKey ?? sessionKey,
+                            agentID: accepted.agentId
+                        ),
                         for: request.interactionID
                     )
 
@@ -107,21 +117,26 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     }
 
     public func cancel(interactionID: InteractionID) async {
-        guard let runID = runIDs.removeValue(forKey: interactionID) else {
+        guard let context = runs.removeValue(forKey: interactionID),
+              let sessionKey = context.sessionKey else {
             return
         }
-        try? await runClient.cancel(runID: runID)
+        try? await runClient.cancel(
+            runID: context.runID,
+            sessionKey: sessionKey,
+            agentID: context.agentID
+        )
     }
 
     private func remember(
-        _ runID: String,
+        _ context: RunContext,
         for interactionID: InteractionID
     ) {
-        runIDs[interactionID] = runID
+        runs[interactionID] = context
     }
 
     private func forget(_ interactionID: InteractionID) {
-        runIDs[interactionID] = nil
+        runs[interactionID] = nil
     }
 
     private func waitUntilTerminal(
