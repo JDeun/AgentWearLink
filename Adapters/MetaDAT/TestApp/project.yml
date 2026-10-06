@@ -35,6 +35,9 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: AgentWearLinkMetaDATTestHost
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
 schemes:
   AgentWearLinkMetaDATTestHost:
     build:
