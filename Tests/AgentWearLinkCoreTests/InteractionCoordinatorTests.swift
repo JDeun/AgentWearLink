@@ -18,7 +18,7 @@ private actor StubAgent: AgentAdapter {
 
     func responses(
         for request: AgentRequest
-    ) -> AsyncThrowingStream<AgentResponse, Error> {
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
         requestCount += 1
         return AsyncThrowingStream { continuation in
             continuation.yield(.textDelta(request.interactionID, "response"))

@@ -48,7 +48,7 @@ public actor HTTPAgentTransport: AgentTransport {
 
     public func send(
         _ request: AgentRequest
-    ) -> AsyncThrowingStream<AgentResponse, Error> {
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
         let configuration = self.configuration
         let session = self.session
 

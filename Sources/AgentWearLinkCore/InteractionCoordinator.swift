@@ -45,7 +45,8 @@ public actor InteractionCoordinator {
 
         let task = Task { [agent, output] in
             do {
-                for try await response in agent.responses(for: request) {
+                let responses = await agent.responses(for: request)
+                for try await response in responses {
                     guard !Task.isCancelled else { break }
                     switch response {
                     case let .textDelta(responseID, text):

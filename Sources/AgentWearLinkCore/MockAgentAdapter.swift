@@ -20,7 +20,7 @@ public actor MockAgentAdapter: AgentAdapter {
 
     public func responses(
         for request: AgentRequest
-    ) -> AsyncThrowingStream<AgentResponse, Error> {
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
         let handler = self.handler
 
         return AsyncThrowingStream { continuation in
