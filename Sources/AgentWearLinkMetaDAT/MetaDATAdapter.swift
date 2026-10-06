@@ -13,6 +13,23 @@ public protocol MetaDATSession: Sendable {
     func events() -> AsyncStream<MetaDATEvent>
 }
 
+/// Optional SDK-neutral still-camera surface implemented by a concrete DAT host.
+/// The host owns MWDATCamera types and returns copied bytes only after an
+/// explicit, user-authorized one-shot capture.
+public protocol MetaDATSnapshotSession: MetaDATSession {
+    func captureSnapshotData() async throws -> MetaDATSnapshot
+}
+
+public struct MetaDATSnapshot: Sendable, Equatable {
+    public let data: Data
+    public let format: ImageAttachment.Format
+
+    public init(data: Data, format: ImageAttachment.Format) {
+        self.data = data
+        self.format = format
+    }
+}
+
 public struct MetaDATCapabilities: OptionSet, Sendable, Equatable {
     public let rawValue: UInt16
     public init(rawValue: UInt16) { self.rawValue = rawValue }
@@ -65,7 +82,7 @@ private final class MetaDATInteractionEventSource: @unchecked Sendable {
     }
 }
 
-public actor MetaDATAdapter: DeviceAdapter {
+public actor MetaDATAdapter: SnapshotCapturingDevice {
     private let session: any MetaDATSession
     private let mappedCapabilities: CapabilitySet
     private nonisolated let eventSource = MetaDATInteractionEventSource()
@@ -93,6 +110,20 @@ public actor MetaDATAdapter: DeviceAdapter {
                 await self?.forward(event)
             }
         }
+    }
+
+    public func captureSnapshot(
+        interactionID: InteractionID
+    ) async throws -> ImageAttachment {
+        guard mappedCapabilities.contains(.cameraSnapshot) else {
+            throw AWLError.capabilityUnavailable("Meta DAT camera snapshot is not advertised")
+        }
+        guard let snapshotSession = session as? any MetaDATSnapshotSession else {
+            throw AWLError.capabilityUnavailable("Meta DAT camera snapshot bridge is unavailable")
+        }
+
+        let snapshot = try await snapshotSession.captureSnapshotData()
+        return try ImageAttachment(data: snapshot.data, format: snapshot.format)
     }
 
     public func disconnect() async {
