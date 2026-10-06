@@ -80,7 +80,7 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         await Task.yield()
         let id = try await socket.lastRequestID()
         await socket.push(
-            #"{"type":"res","id":"#(id)","ok":true,"payload":{"status":"ok"}}"#
+            #"{"type":"res","id":"\#(id)","ok":true,"payload":{"status":"ok"}}"#
         )
 
         let response = try await requestTask.value
