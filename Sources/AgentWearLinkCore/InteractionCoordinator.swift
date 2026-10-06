@@ -1,9 +1,5 @@
 import Foundation
 
-/// Coordinates one normalized device event with one agent response stream.
-///
-/// The coordinator deliberately contains no device-vendor or agent-runtime
-/// knowledge. It enforces only cross-adapter interaction invariants.
 public actor InteractionCoordinator {
     private let agent: any AgentAdapter
     private var tasks: [InteractionID: Task<Void, Never>] = [:]
@@ -27,35 +23,47 @@ public actor InteractionCoordinator {
         case .interrupted, .sessionEnded:
             await cancel(id)
             await output(event)
-
         case .failed:
             await cancel(id)
             await output(event)
-
         case .sessionStarted:
             await output(event)
-
-        case .text, .invocation:
-            // A duplicate request for the same interaction must never create
-            // two concurrent agent streams.
-            guard tasks[id] == nil else { return }
-
-            let task = Task { [agent, output] in
-                do {
-                    for try await response in agent.responses(for: event) {
-                        guard !Task.isCancelled else { break }
-                        await output(response)
-                    }
-                } catch is CancellationError {
-                    // Cancellation is represented by the lifecycle event that
-                    // initiated it; do not emit a duplicate failure.
-                } catch {
-                    await output(.failed(id, .agent(String(describing: error))))
-                }
+        case let .text(_, text):
+            await submit(.init(interactionID: id, text: text))
+        case let .invocation(_, phrase):
+            guard let phrase, !phrase.isEmpty else {
+                await output(event)
+                return
             }
-
-            tasks[id] = task
+            await submit(.init(interactionID: id, text: phrase))
         }
+    }
+
+    private func submit(_ request: AgentRequest) async {
+        let id = request.interactionID
+        guard tasks[id] == nil else { return }
+
+        let task = Task { [agent, output] in
+            do {
+                for try await response in agent.responses(for: request) {
+                    guard !Task.isCancelled else { break }
+                    switch response {
+                    case let .textDelta(responseID, text):
+                        await output(.text(responseID, text))
+                    case let .completed(responseID):
+                        await output(.sessionEnded(responseID))
+                    case let .failed(responseID, error):
+                        await output(.failed(responseID, error))
+                    }
+                }
+            } catch is CancellationError {
+                // Lifecycle cancellation already carries the semantic event.
+            } catch {
+                await output(.failed(id, .agent(String(describing: error))))
+            }
+        }
+
+        tasks[id] = task
     }
 
     public func cancel(_ id: InteractionID) async {
