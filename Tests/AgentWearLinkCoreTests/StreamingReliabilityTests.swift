@@ -8,7 +8,7 @@ final class StreamingReliabilityTests: XCTestCase {
         let cancelled = Task { await channel.next() }
         await Task.yield()
         cancelled.cancel()
-        XCTAssertNil(await cancelled.value)
+        let cancelledValue = await cancelled.value\n        XCTAssertNil(cancelledValue)
 
         await channel.send(42)
         let value = await channel.next()
