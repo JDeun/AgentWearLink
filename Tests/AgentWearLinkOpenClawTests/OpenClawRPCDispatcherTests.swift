@@ -89,6 +89,63 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         await dispatcher.stop()
     }
 
+    func testLivenessUsesTwoIntervalThresholdWithoutHotLooping() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(),
+            nowMilliseconds: { 1_000 }
+        )
+
+        await dispatcher.start()
+
+        let atBoundary = await dispatcher.isStale(
+            timeoutMilliseconds: 2_000,
+            now: 3_000
+        )
+        let pastBoundary = await dispatcher.isStale(
+            timeoutMilliseconds: 2_000,
+            now: 3_001
+        )
+
+        XCTAssertFalse(atBoundary)
+        XCTAssertTrue(pastBoundary)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testBroadcastsEventsToConcurrentSubscribers() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+        let first = await dispatcher.events()
+        let second = await dispatcher.events()
+        await dispatcher.start()
+
+        let firstTask = Task {
+            for try await event in first { return event }
+            throw AWLOpenClawError.disconnected
+        }
+        let secondTask = Task {
+            for try await event in second { return event }
+            throw AWLOpenClawError.disconnected
+        }
+
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"r"},"seq":1}"#
+        )
+
+        let firstEvent = try await firstTask.value
+        let secondEvent = try await secondTask.value
+        XCTAssertEqual(firstEvent.seq, 1)
+        XCTAssertEqual(secondEvent.seq, 1)
+
+        await dispatcher.stop()
+        await socket.close()
+    }
+
     func testRoutesEventsIndependentlyOfRPCs() async throws {
         let socket = DispatcherSocket()
         let dispatcher = OpenClawRPCDispatcher(
