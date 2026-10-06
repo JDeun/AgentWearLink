@@ -2,41 +2,30 @@ import AgentWearLinkCore
 import Foundation
 
 public actor OpenClawNativeAgentAdapter: AgentAdapter {
-    private let connection: OpenClawGatewayConnection
+    private let supervisor: OpenClawGatewaySupervisor
     private let dispatcher: OpenClawRPCDispatcher
     private let runClient: OpenClawAgentRunClient
-    private let appVersion: String
-    private let credentials: OpenClawConnectCredentials
     private let sessionKey: String?
     private var runIDs: [InteractionID: String] = [:]
 
     public init(
-        connection: OpenClawGatewayConnection,
+        supervisor: OpenClawGatewaySupervisor,
         dispatcher: OpenClawRPCDispatcher,
         runClient: OpenClawAgentRunClient,
-        appVersion: String,
-        credentials: OpenClawConnectCredentials = .init(),
         sessionKey: String? = nil
     ) {
-        self.connection = connection
+        self.supervisor = supervisor
         self.dispatcher = dispatcher
         self.runClient = runClient
-        self.appVersion = appVersion
-        self.credentials = credentials
         self.sessionKey = sessionKey
     }
 
     public func connect() async throws {
-        _ = try await connection.connect(
-            appVersion: appVersion,
-            credentials: credentials
-        )
-        await dispatcher.start()
+        try await supervisor.start()
     }
 
     public func disconnect() async {
-        await dispatcher.stop()
-        await connection.disconnect()
+        await supervisor.stop()
         runIDs.removeAll(keepingCapacity: false)
     }
 
