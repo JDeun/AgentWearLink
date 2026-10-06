@@ -73,7 +73,7 @@ Initial events:
 - interruption
 - error
 
-Binary audio/image events will be introduced only with explicit ownership, size limits, cancellation, and backpressure rules.
+Private media crosses AWL boundaries only through explicit bounded contracts. Image snapshots already use bounded `ImageAttachment` ownership; raw audio remains capability-gated until an integration proves explicit ownership, cancellation, retention, and backpressure semantics.
 
 ## Session invariants
 
@@ -100,9 +100,9 @@ Meta Wearables DAT
 
 Meta DAT and OpenClaw types must not leak into AWL Core.
 
-## Telegram
+## Deployment surfaces
 
-Telegram may remain the user's canonical visible conversation log through OpenClaw. AWL does not directly depend on Telegram. Logging/channel synchronization belongs to the agent-side integration.
+Tailscale and Telegram are deployment choices, not Core dependencies. Tailscale may provide private reachability to an agent runtime; it does not replace runtime authentication. Telegram may remain a visible conversation surface through OpenClaw, but AWL does not call or synchronize Telegram directly.
 
 ## Security
 
