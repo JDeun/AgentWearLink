@@ -8,6 +8,7 @@ public actor OpenClawGatewaySupervisor {
     private let appVersion: String
     private let scopes: [String]
     private let credentials: OpenClawConnectCredentials
+    private let clientIdentity: OpenClawGatewayClientIdentity
     private let locale: String
     private let reconnectPolicy: GatewayReconnectPolicy
 
@@ -24,6 +25,7 @@ public actor OpenClawGatewaySupervisor {
         appVersion: String,
         scopes: [String] = ["operator.read", "operator.write"],
         credentials: OpenClawConnectCredentials = .init(),
+        clientIdentity: OpenClawGatewayClientIdentity = .backend,
         locale: String = "en-US",
         reconnectPolicy: GatewayReconnectPolicy = .init()
     ) {
@@ -34,6 +36,7 @@ public actor OpenClawGatewaySupervisor {
         self.appVersion = appVersion
         self.scopes = scopes
         self.credentials = credentials
+        self.clientIdentity = clientIdentity
         self.locale = locale
         self.reconnectPolicy = reconnectPolicy
     }
@@ -48,6 +51,7 @@ public actor OpenClawGatewaySupervisor {
                 appVersion: appVersion,
                 scopes: scopes,
                 credentials: credentials,
+                clientIdentity: clientIdentity,
                 locale: locale
             )
             tickIntervalMilliseconds = max(1_000, hello.policy.tickIntervalMs)
@@ -140,6 +144,7 @@ public actor OpenClawGatewaySupervisor {
                     appVersion: appVersion,
                     scopes: scopes,
                     credentials: credentials,
+                    clientIdentity: clientIdentity,
                     locale: locale
                 )
                 tickIntervalMilliseconds = max(1_000, hello.policy.tickIntervalMs)
