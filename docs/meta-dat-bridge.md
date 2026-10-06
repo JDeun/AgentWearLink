@@ -20,7 +20,7 @@ The current CameraAccess sample uses:
 
 The official sample explicitly subscribes **before** `start()` so initial transitions are not missed. AWL must preserve that ordering.
 
-## Proposed host ownership
+## Host ownership
 
 The iOS reference host—not Core—should own:
 
@@ -36,7 +36,7 @@ The bridge exposes only the existing SDK-neutral `MetaDATSession` surface to `Me
 
 ## Lifecycle mapping
 
-Suggested mapping after compile validation:
+Current mapping rule:
 
 | DAT observation | AWL bridge action |
 | --- | --- |
@@ -52,20 +52,19 @@ Do not invent an interaction ID from a device identifier. The host must define t
 
 ## Camera snapshot boundary
 
-The current `MetaDATAdapter` is a DeviceAdapter but does not yet implement `SnapshotCapturingDevice`. The concrete camera work should therefore either:
+The concrete integration now contains bounded one-shot camera capture machinery: camera configuration/ignition, first-frame readiness, shutter/photo-result handling, photo normalization, capture generations, cancellation/late-result rejection, and deterministic mock fixtures.
 
-- extend the Meta adapter with a validated snapshot capability, or
-- introduce a small camera session collaborator inside `AgentWearLinkMetaDAT` while keeping MWDAT types in the host-specific implementation.
+The invariant remains:
 
-The final path must satisfy:
+- explicit request only;
+- bounded capture lifetime;
+- permission/readiness before capture;
+- JPEG/PNG copied into bounded `ImageAttachment`;
+- no continuous raw-frame retention by AWL;
+- obsolete/late capture results are rejected;
+- disconnect/background invalidation fails pending work rather than replaying it.
 
-- explicit request only
-- one capture per request
-- camera permission checked before capture
-- JPEG/PNG copied into bounded `ImageAttachment`
-- no continuous frame retention
-- no capture when the selected agent/model does not support vision
-- pending capture fails promptly on disconnect
+Physical sensor wake, shutter timing, transfer reliability, and memory behavior remain hardware validation gates.
 
 ## MockDeviceKit test seam
 

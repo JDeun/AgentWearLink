@@ -1,48 +1,22 @@
 # Meta DAT adapter
 
-This directory is reserved for the first vendor device adapter.
+This directory contains AgentWearLink's concrete reference integration for Meta Wearables DAT **1.0.0**.
 
-## Dependency rule
+## Boundary rule
 
-The root `AgentWearLinkCore` Swift package intentionally does **not** depend on Meta DAT.
+The root `AgentWearLinkCore` package remains vendor-neutral. Meta SDK imports live in this integration package and its iOS host surfaces so:
 
-The iOS reference application will own the Meta Swift Package dependency and compile the adapter in an iOS-specific target. This prevents:
+- vendor SDK availability cannot break platform-neutral Core contracts,
+- Meta types do not leak into public Core APIs,
+- future wearable adapters do not inherit Meta dependencies.
 
-- vendor SDK availability from breaking platform-neutral core CI,
-- Meta types leaking into core APIs,
-- future non-Meta devices inheriting unnecessary dependencies.
+## Implemented integration
 
-## Current DAT modules relevant to AWL
+The pinned integration includes registration/device lifecycle handling, live capability derivation, bounded camera snapshot plumbing, Speech final-transcript handling, Voice Invocation lifecycle, foreground/background readiness policies, and DEBUG-only MockDeviceKit bootstrap support.
 
-Stable/public baseline:
-- `MWDATCore`
-- `MWDATCamera`
-- `MWDATMockDevice`
+See [INTEGRATION.md](INTEGRATION.md) for the detailed implementation status.
 
-Capabilities that require explicit SDK/version/release-channel validation before AWL advertises them:
-- `MWDATSpeech`
-- voice invocations in `MWDATCore`
-- `MWDATInputs`
-- `MWDATMotion`
-
-Experimental modules are capability-gated. AWL must not advertise them unless the connected device/session actually supports and authorizes them.
-
-## MockDeviceKit
-
-Use Meta's `MWDATMockDevice` package to exercise the **normal DAT session path** without physical glasses. Keep MockDeviceKit below the concrete iOS `MetaDATSession` bridge; do not add mock-specific types or branches to AgentWearLinkCore. See `docs/meta-mock-device-kit.md`.
-
-## Next implementation gate
-
-Build the official CameraAccess sample and its MockDeviceKit path first. Then copy only validated session/capability mappings into the concrete iOS bridge behind `MetaDATAdapter`.
-
-
-## Pinned integration compile gate
-
-The reference integration package in this directory pins Meta Wearables DAT to
-**1.0.0**, matching Meta's current CameraAccess sample project. The integration package also uses the sample's iOS **17.2** deployment floor.
-
-Resolve/build the integration package separately from the root package so vendor SDK
-changes cannot destabilize deterministic Core CI:
+## Build gate
 
 ```bash
 cd Adapters/MetaDAT
@@ -50,10 +24,18 @@ swift package resolve
 xcodebuild \
   -scheme AgentWearLinkMetaDATIntegration \
   -destination 'generic/platform=iOS Simulator' \
+  -skipPackagePluginValidation \
   build
 ```
 
-For a release-quality iOS check, build this package/target with the repository's
-documented Xcode toolchain and an iOS destination. The root `swift test` remains
-vendor-independent and must not be interpreted as proof that concrete MWDAT sources
-compile.
+This is a compile gate against the pinned vendor SDK, not physical-device proof.
+
+## Behavioral simulator host
+
+MockDeviceKit requires linked-app runtime context. A bare package xctest is therefore not the behavioral harness. The reference iOS app/XCUITest host lives under `TestApp/` and is tracked by #122.
+
+See [MockHarness.md](MockHarness.md) and [../../docs/meta-mock-device-kit.md](../../docs/meta-mock-device-kit.md).
+
+## Physical gates
+
+Real Bluetooth, camera sensor wake/shutter/photo transfer, wearable audio routing, locked/pocketed invocation, firmware-specific behavior, and iPhone network transitions require a physical Ray-Ban Meta + iPhone validation run.

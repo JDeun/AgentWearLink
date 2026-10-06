@@ -9,7 +9,7 @@ Reference surfaces compared:
 - AWL `Adapters/MetaDAT`
 - AWL SDK-neutral `AgentWearLinkMetaDAT`
 
-This file is a living implementation audit. Items are evidence-backed observations, not assumptions about undocumented SDK behavior.
+This file preserves the 2026-10-06 cross-audit findings and their resolution status. For current implementation status, use `Adapters/MetaDAT/INTEGRATION.md`; do not treat historical `PR pending/open` wording below as the current backlog.
 
 ## Confirmed patterns
 
@@ -66,12 +66,12 @@ Status: fixed and merged in PR #72.
 Concrete MWDATCore scaffold now obtains state/error streams before `session.start()` and avoids switching to a second state stream after startup.
 
 ### F3 — unbounded concrete startup
-Status: PR #73 pending.
+Status: resolved; bounded startup behavior was subsequently merged.
 
 `DeviceSession.start()` is asynchronous with respect to actual readiness. The bridge needs a bounded wait for `.started`.
 
-### F4 — registration loss does not currently tear down concrete AWL session
-Status: open.
+### F4 — registration loss teardown
+Status: resolved in the concrete lifecycle work; registration loss invalidates active capability/session ownership.
 
 Add registration-state observation to the iOS host bridge. When registration becomes non-registered while a session/capability is active:
 - stop child capabilities
@@ -82,18 +82,18 @@ Add registration-state observation to the iOS host bridge. When registration bec
 
 Do not auto-replay the interrupted interaction.
 
-### F5 — compatibility/device availability not yet wired
-Status: open.
+### F5 — compatibility/device availability
+Status: resolved in selected-device/live-readiness handling; physical transition behavior still requires hardware evidence.
 
 Before advertising physical capabilities, track device/link/compatibility state. Incompatible/update-required devices must fail explicitly instead of presenting a nominal camera/speech capability.
 
-### F6 — background ownership policy not yet wired
-Status: open.
+### F6 — background ownership policy
+Status: code-side lifecycle invalidation/fresh-readiness policy implemented; physical iOS background behavior remains a hardware gate.
 
 The reference iOS host must stop camera/session ownership according to validated DAT/iOS background behavior. A background transition must cancel pending private-media operations and must not retain raw media.
 
-### F7 — capability advertisement is currently construction-time static
-Status: open design constraint.
+### F7 — live capability advertisement
+Status: resolved code-side by live readiness-derived capability semantics; physical permission/device transitions remain validation work.
 
 The SDK-neutral `MetaDATAdapter` maps `session.capabilities` once at initialization. This is acceptable only if the concrete host exposes the conservative intersection of:
 - SDK/module support
@@ -103,8 +103,8 @@ The SDK-neutral `MetaDATAdapter` maps `session.capabilities` once at initializat
 
 If those facts can change during the adapter lifetime, the capability contract needs an explicit refresh/change mechanism rather than optimistic static advertisement.
 
-### F8 — snapshot one-shot concurrency still needs concrete-host enforcement
-Status: SDK-neutral boundary in PR #74; concrete host pending.
+### F8 — snapshot one-shot concurrency
+Status: code-side bounded capture/cancellation generation handling implemented; physical capture timing remains a hardware gate.
 
 The MWDATCamera host must allow at most one pending capture per owned camera stream unless the pinned SDK explicitly proves safe concurrency. It must pair one capture request with one result, and fail on timeout/disconnect/background.
 
