@@ -22,6 +22,15 @@ public actor OpenClawGatewayState {
               hello.protocolVersion == OpenClawProtocol.currentVersion else {
             throw AWLOpenClawError.protocolMismatch
         }
+        let policy = hello.policy
+        guard policy.maxPayload > 0,
+              policy.maxBufferedBytes > 0,
+              policy.tickIntervalMs > 0,
+              policy.tickIntervalMs <= 3_600_000,
+              policy.attachments?.maxBytes ?? 1 > 0,
+              policy.attachments?.maxImageBytes ?? 1 > 0 else {
+            throw AWLOpenClawError.invalidPolicy
+        }
     }
 
     public func acceptHello(_ hello: OpenClawHelloOK) throws {
@@ -71,6 +80,7 @@ public actor OpenClawGatewayState {
 public enum AWLOpenClawError: Error, Sendable, Equatable {
     case notReady
     case protocolMismatch
+    case invalidPolicy
     case sequenceGap(expected: Int, actual: Int)
     case payloadTooLarge(actual: Int, maximum: Int)
     case gateway(code: String, retryable: Bool, retryAfterMilliseconds: Int? = nil)
