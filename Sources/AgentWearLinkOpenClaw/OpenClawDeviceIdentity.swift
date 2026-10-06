@@ -43,14 +43,6 @@ public protocol OpenClawDeviceIdentityStore: Sendable {
     func loadOrCreate(_ candidate: OpenClawDeviceIdentity) async throws -> OpenClawDeviceIdentity
 }
 
-public extension OpenClawDeviceIdentityStore {
-    func loadOrCreate(_ candidate: OpenClawDeviceIdentity) async throws -> OpenClawDeviceIdentity {
-        if let existing = try await load() { return existing }
-        try await save(candidate)
-        return try await load() ?? candidate
-    }
-}
-
 public actor InMemoryOpenClawDeviceIdentityStore: OpenClawDeviceIdentityStore {
     private var identity: OpenClawDeviceIdentity?
 
