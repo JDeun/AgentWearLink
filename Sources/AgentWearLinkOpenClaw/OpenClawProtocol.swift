@@ -154,6 +154,8 @@ public struct OpenClawEventEnvelope: Decodable, Sendable, Equatable {
 /// Minimal recursive JSON value used only at the OpenClaw protocol edge.
 public enum JSONValue: Codable, Sendable, Equatable {
     case string(String)
+    case integer(Int64)
+    case unsignedInteger(UInt64)
     case number(Double)
     case bool(Bool)
     case object([String: JSONValue])
@@ -164,6 +166,8 @@ public enum JSONValue: Codable, Sendable, Equatable {
         let c = try decoder.singleValueContainer()
         if c.decodeNil() { self = .null }
         else if let v = try? c.decode(Bool.self) { self = .bool(v) }
+        else if let v = try? c.decode(Int64.self) { self = .integer(v) }
+        else if let v = try? c.decode(UInt64.self) { self = .unsignedInteger(v) }
         else if let v = try? c.decode(Double.self) { self = .number(v) }
         else if let v = try? c.decode(String.self) { self = .string(v) }
         else if let v = try? c.decode([String: JSONValue].self) { self = .object(v) }
@@ -175,6 +179,8 @@ public enum JSONValue: Codable, Sendable, Equatable {
         var c = encoder.singleValueContainer()
         switch self {
         case let .string(v): try c.encode(v)
+        case let .integer(v): try c.encode(v)
+        case let .unsignedInteger(v): try c.encode(v)
         case let .number(v): try c.encode(v)
         case let .bool(v): try c.encode(v)
         case let .object(v): try c.encode(v)
