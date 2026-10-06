@@ -69,32 +69,57 @@ public enum MetaDATEvent: Sendable, Equatable {
 
 /// Normalizes Meta DAT session semantics into AgentWearLink Core contracts.
 private final class MetaDATInteractionEventSource: @unchecked Sendable {
+    private struct Subscription {
+        let generation: UInt64
+        let continuation: AsyncStream<InteractionEvent>.Continuation
+    }
+
     private let lock = NSLock()
-    private var continuation: AsyncStream<InteractionEvent>.Continuation?
+    private var nextGeneration: UInt64 = 0
+    private var subscription: Subscription?
 
     func stream() -> AsyncStream<InteractionEvent> {
         AsyncStream { continuation in
             lock.lock()
-            let previous = self.continuation
-            self.continuation = continuation
+            nextGeneration &+= 1
+            let previous = subscription
+            subscription = Subscription(
+                generation: nextGeneration,
+                continuation: continuation
+            )
             lock.unlock()
 
-            previous?.finish()
+            previous?.continuation.finish()
         }
+    }
+
+    func currentGeneration() -> UInt64? {
+        lock.lock()
+        let generation = subscription?.generation
+        lock.unlock()
+        return generation
     }
 
     func yield(_ event: InteractionEvent) {
         lock.lock()
-        let continuation = self.continuation
+        let continuation = subscription?.continuation
         lock.unlock()
         continuation?.yield(event)
     }
 
-    func finish() {
+    func finish(generation: UInt64?) {
+        guard let generation else { return }
+
         lock.lock()
-        let continuation = self.continuation
-        self.continuation = nil
+        let continuation: AsyncStream<InteractionEvent>.Continuation?
+        if subscription?.generation == generation {
+            continuation = subscription?.continuation
+            subscription = nil
+        } else {
+            continuation = nil
+        }
         lock.unlock()
+
         continuation?.finish()
     }
 }
@@ -117,6 +142,11 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
     public func connect() async throws {
         guard eventTask == nil else { return }
 
+        // Public event subscriptions are connection-generation scoped. Runtime
+        // callers install one before every connect; capture its generation so a
+        // failed connect can finish only that subscription.
+        let publicEventGeneration = eventSource.currentGeneration()
+
         // Subscribe before connect. A concrete DAT host may emit lifecycle or
         // failure events while establishing the device session.
         let stream = session.events()
@@ -132,6 +162,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
             guard let source = session as? any MetaDATVoiceInvocationSource else {
                 forwardingTask.cancel()
                 eventTask = nil
+                eventSource.finish(generation: publicEventGeneration)
                 throw AWLError.capabilityUnavailable(
                     "Meta DAT voice invocation is advertised without a concrete invocation source"
                 )
@@ -155,6 +186,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
             invocationTask = nil
             eventTask = nil
             await session.disconnect()
+            eventSource.finish(generation: publicEventGeneration)
             throw AWLError.device(String(describing: error))
         }
     }
@@ -181,13 +213,18 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
     }
 
     public func disconnect() async {
+        // Snapshot the public subscription before yielding to the session.
+        // A new subscription installed while disconnect is suspended belongs to
+        // a later generation and must survive this teardown.
+        let publicEventGeneration = eventSource.currentGeneration()
+
         eventTask?.cancel()
         invocationTask?.cancel()
         snapshotInFlight = false
         eventTask = nil
         invocationTask = nil
         await session.disconnect()
-        eventSource.finish()
+        eventSource.finish(generation: publicEventGeneration)
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
@@ -216,6 +253,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
     private nonisolated static func mapCapabilities(_ source: MetaDATCapabilities) -> CapabilitySet {
         var result: CapabilitySet = []
         if source.contains(.speech) { result.insert(.speechInput) }
+        if source.contains(.rawAudio) { result.insert(.rawAudioInput) }
         if source.contains(.cameraSnapshot) { result.insert(.cameraSnapshot) }
         if source.contains(.speaker) { result.insert(.speakerOutput) }
         if source.contains(.voiceInvocation) { result.insert(.voiceInvocation) }
