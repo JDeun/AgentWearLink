@@ -14,18 +14,22 @@ public actor OpenClawRPCDispatcher {
     private var receiveTask: Task<Void, Never>?
     private var lastActivityMilliseconds: Int64?
     private let nowMilliseconds: @Sendable () -> Int64
+    private let requestTimeout: Duration
 
     public init(
         socket: any OpenClawWebSocket,
         state: OpenClawGatewayState,
         registry: OpenClawRPCRegistry = .init(),
+        requestTimeout: Duration = .seconds(30),
         nowMilliseconds: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970 * 1_000)
         }
     ) {
         self.socket = socket
         self.state = state
+        precondition(requestTimeout > .zero)
         self.registry = registry
+        self.requestTimeout = requestTimeout
         self.nowMilliseconds = nowMilliseconds
     }
 
@@ -87,6 +91,19 @@ public actor OpenClawRPCDispatcher {
                 Task {
                     do {
                         try await socket.send(text: text)
+                    } catch {
+                        await self.fail(id: id, error: error)
+                        return
+                    }
+
+                    do {
+                        try await Task.sleep(for: requestTimeout)
+                        await self.fail(
+                            id: id,
+                            error: OpenClawRPCDispatcherError.deadlineExceeded
+                        )
+                    } catch is CancellationError {
+                        // Request completion/cancellation owns cleanup.
                     } catch {
                         await self.fail(id: id, error: error)
                     }
@@ -162,4 +179,9 @@ public actor OpenClawRPCDispatcher {
             responses.removeValue(forKey: item.id)?.resume(throwing: error)
         }
     }
+}
+
+
+public enum OpenClawRPCDispatcherError: Error, Sendable, Equatable {
+    case deadlineExceeded
 }
