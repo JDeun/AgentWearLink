@@ -18,6 +18,7 @@ This directory is the implementation and validation documentation for AgentWearL
 - [meta-dat-validation.md](meta-dat-validation.md) — P0-A physical DAT validation runbook
 - [meta-mock-device-kit.md](meta-mock-device-kit.md) — MockDeviceKit setup, capabilities, limitations, and AWL test architecture
 - [meta-dat-bridge.md](meta-dat-bridge.md) — official DAT session/camera API patterns mapped to the concrete AWL host bridge
+- [meta-dat-audit.md](meta-dat-audit.md) — cross-audit findings against Meta CameraAccess, DisplayAccess, and BirdSpotter
 
 ## OpenClaw integration
 
