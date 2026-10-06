@@ -18,12 +18,14 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["awl-meta-host-state"].waitForExistence(timeout: 10))
 
         client = MockDeviceTestClient(portFilePath: portFile)
-        XCTAssertTrue(await client.waitForServer(timeout: 15))
+        let serverReady = await client.waitForServer(timeout: 15)
+        XCTAssertTrue(serverReady)
     }
 
     override func tearDown() async throws {
         if let pairedDeviceID {
-            XCTAssertTrue(await client.unpairDevice(deviceId: pairedDeviceID))
+            let unpaired = await client.unpairDevice(deviceId: pairedDeviceID)
+            XCTAssertTrue(unpaired)
         }
         if let portFile {
             try? FileManager.default.removeItem(atPath: portFile)
@@ -33,9 +35,13 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
     func testPairAndDriveRayBanMetaReadyState() async throws {
         let id = try XCTUnwrap(await client.pairDevice())
         pairedDeviceID = id
-        XCTAssertTrue(await client.powerOn(deviceId: id))
-        XCTAssertTrue(await client.unfold(deviceId: id))
-        XCTAssertTrue(await client.don(deviceId: id))
-        XCTAssertNotNil(await client.getDeviceState())
+        let poweredOn = await client.powerOn(deviceId: id)
+        XCTAssertTrue(poweredOn)
+        let unfolded = await client.unfold(deviceId: id)
+        XCTAssertTrue(unfolded)
+        let donned = await client.don(deviceId: id)
+        XCTAssertTrue(donned)
+        let state = await client.getDeviceState()
+        XCTAssertNotNil(state)
     }
 }
