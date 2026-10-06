@@ -8,7 +8,7 @@ public struct InteractionID: Hashable, Sendable, Codable {
     }
 }
 
-public enum InteractionEvent: Sendable, Equatable {
+public enum InteractionEvent: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     case sessionStarted(InteractionID)
     case text(InteractionID, String)
     case invocation(InteractionID, String?)
@@ -28,6 +28,27 @@ public enum InteractionEvent: Sendable, Equatable {
             return id
         }
     }
+
+    public var description: String {
+        switch self {
+        case let .sessionStarted(id):
+            return "InteractionEvent.sessionStarted(interactionID: \(id.rawValue.uuidString))"
+        case let .text(id, text):
+            return "InteractionEvent.text(interactionID: \(id.rawValue.uuidString), textBytes: \(text.utf8.count))"
+        case let .invocation(id, phrase):
+            let phraseDescription = phrase.map { String($0.utf8.count) } ?? "nil"
+            return "InteractionEvent.invocation(interactionID: \(id.rawValue.uuidString), phraseBytes: \(phraseDescription))"
+        case let .interrupted(id):
+            return "InteractionEvent.interrupted(interactionID: \(id.rawValue.uuidString))"
+        case let .sessionEnded(id):
+            return "InteractionEvent.sessionEnded(interactionID: \(id.rawValue.uuidString))"
+        case let .failed(id, _):
+            let idDescription = id?.rawValue.uuidString ?? "nil"
+            return "InteractionEvent.failed(interactionID: \(idDescription), error: <redacted>)"
+        }
+    }
+
+    public var debugDescription: String { description }
 }
 
 public enum AWLError: Error, Sendable, Equatable {
