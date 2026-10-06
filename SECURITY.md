@@ -21,6 +21,10 @@ The reference deployment prefers private WSS connectivity through a Tailnet, per
 
 A Tailnet connection establishes network reachability; it does not replace OpenClaw application authentication or device authorization.
 
+## CI supply-chain policy
+
+GitHub Actions and other third-party workflow actions must be pinned to full immutable commit SHAs. Keep the corresponding release tag in an inline comment for reviewability. Dependabot remains enabled for the `github-actions` ecosystem so updates arrive as explicit, reviewable pull requests rather than mutable tag changes.
+
 ## Reporting
 
 For now, avoid publishing exploitable credential, authentication, privacy, or remote-execution details in a public issue. Contact the repository owner privately through the contact mechanism on the GitHub profile. A dedicated security advisory workflow may be added before the first stable release.
