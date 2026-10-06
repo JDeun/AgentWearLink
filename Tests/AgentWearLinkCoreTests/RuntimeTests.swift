@@ -59,7 +59,8 @@ private actor BlockingLifecycleAgent: AgentAdapter {
             await withCheckedContinuation { waiters.append($0) }
         }
     }
-    func disconnect() async {}
+    private(set) var disconnects = 0
+    func disconnect() async { disconnects += 1 }
     func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error> {
         AsyncThrowingStream { $0.finish() }
     }
@@ -70,6 +71,7 @@ private actor BlockingLifecycleAgent: AgentAdapter {
         waiters.removeAll()
     }
     func connectCount() -> Int { connects }
+    func counts() -> (Int, Int) { (connects, disconnects) }
 }
 
 private actor FailingDevice: DeviceAdapter {
@@ -168,6 +170,33 @@ final class RuntimeTests: XCTestCase {
         try await first.value
         try await second.value
         await runtime.stop()
+    }
+
+
+    func testStopDuringStartCannotResurrectRuntime() async throws {
+        let device = MockDeviceAdapter()
+        let agent = BlockingLifecycleAgent()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
+
+        let starting = Task { try await runtime.start() }
+        try await Task.sleep(for: .milliseconds(10))
+        let connectCount = await agent.connectCount()
+        XCTAssertEqual(connectCount, 1)
+
+        await runtime.stop()
+        await agent.release()
+        try await starting.value
+
+        let afterInterruptedStart = await agent.counts()
+        XCTAssertEqual(afterInterruptedStart.0, 1)
+        XCTAssertGreaterThanOrEqual(afterInterruptedStart.1, 1)
+
+        try await runtime.start()
+        await runtime.stop()
+
+        let final = await agent.counts()
+        XCTAssertEqual(final.0, 2)
+        XCTAssertGreaterThanOrEqual(final.1, 2)
     }
 
     func testFailedDeviceConnectAlsoRollsBackDevice() async {
