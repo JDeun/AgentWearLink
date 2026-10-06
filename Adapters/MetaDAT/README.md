@@ -12,14 +12,14 @@ The iOS reference application will own the Meta Swift Package dependency and com
 - Meta types leaking into core APIs,
 - future non-Meta devices inheriting unnecessary dependencies.
 
-## Current DAT 1.0 modules relevant to AWL
+## Current DAT modules relevant to AWL
 
 Stable/public baseline:
 - `MWDATCore`
 - `MWDATCamera`
 - `MWDATMockDevice`
 
-Experimental capabilities introduced in DAT 1.0:
+Capabilities that require explicit SDK/version/release-channel validation before AWL advertises them:
 - `MWDATSpeech`
 - voice invocations in `MWDATCore`
 - `MWDATInputs`
@@ -27,6 +27,10 @@ Experimental capabilities introduced in DAT 1.0:
 
 Experimental modules are capability-gated. AWL must not advertise them unless the connected device/session actually supports and authorizes them.
 
+## MockDeviceKit
+
+Use Meta's `MWDATMockDevice` package to exercise the **normal DAT session path** without physical glasses. Keep MockDeviceKit below the concrete iOS `MetaDATSession` bridge; do not add mock-specific types or branches to AgentWearLinkCore. See `docs/meta-mock-device-kit.md`.
+
 ## Next implementation gate
 
-Build the official CameraAccess sample and Meta Mock Device Kit first. Then copy only the validated session/capability mappings into `MetaDATAdapter`.
+Build the official CameraAccess sample and its MockDeviceKit path first. Then copy only validated session/capability mappings into the concrete iOS bridge behind `MetaDATAdapter`.
