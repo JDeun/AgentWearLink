@@ -4,19 +4,27 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable {
     public let endpoint: URL
     public let bearerToken: String?
     public let timeout: TimeInterval
+    public let maximumResponseBytes: Int
 
-    public init(endpoint: URL, bearerToken: String? = nil, timeout: TimeInterval = 30) {
+    public init(
+        endpoint: URL,
+        bearerToken: String? = nil,
+        timeout: TimeInterval = 30,
+        maximumResponseBytes: Int = 1_048_576
+    ) {
+        precondition(maximumResponseBytes > 0)
         self.endpoint = endpoint
         self.bearerToken = bearerToken
         self.timeout = timeout
+        self.maximumResponseBytes = maximumResponseBytes
     }
 }
 
-/// Minimal generic HTTP transport.
+/// Buffered HTTP baseline transport.
 ///
-/// This is intentionally not named OpenClaw: a compatible gateway can adapt
-/// its request/response contract at the edge without changing AWL Core.
-public actor HTTPAgentTransport: AgentAdapter {
+/// This type deliberately does not claim streaming semantics. SSE/WebSocket
+/// transports are separate implementations of AgentTransport.
+public actor HTTPAgentTransport: AgentTransport {
     private let configuration: HTTPAgentTransportConfiguration
     private let session: URLSession
     private var tasks: [InteractionID: URLSessionDataTask] = [:]
@@ -30,13 +38,14 @@ public actor HTTPAgentTransport: AgentAdapter {
     }
 
     public func connect() async throws {}
+
     public func disconnect() async {
         for task in tasks.values { task.cancel() }
         tasks.removeAll()
     }
 
-    public func responses(
-        for request: AgentRequest
+    public func send(
+        _ request: AgentRequest
     ) -> AsyncThrowingStream<AgentResponse, Error> {
         let configuration = self.configuration
         let session = self.session
@@ -48,6 +57,8 @@ public actor HTTPAgentTransport: AgentAdapter {
             )
             urlRequest.httpMethod = "POST"
             urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.setValue("application/json, text/plain", forHTTPHeaderField: "Accept")
+
             if let token = configuration.bearerToken {
                 urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
@@ -60,27 +71,58 @@ public actor HTTPAgentTransport: AgentAdapter {
             }
 
             let task = session.dataTask(with: urlRequest) { data, response, error in
+                defer { Task { await self.finish(request.interactionID) } }
+
                 if let error {
-                    continuation.finish(throwing: error)
+                    let nsError = error as NSError
+                    if nsError.domain == NSURLErrorDomain &&
+                        nsError.code == NSURLErrorCancelled {
+                        continuation.finish(throwing: AWLError.cancelled)
+                    } else if nsError.domain == NSURLErrorDomain &&
+                                nsError.code == NSURLErrorTimedOut {
+                        continuation.finish(throwing: AWLError.timeout)
+                    } else {
+                        continuation.finish(
+                            throwing: AWLError.transport(error.localizedDescription)
+                        )
+                    }
                     return
                 }
 
                 guard let http = response as? HTTPURLResponse else {
-                    continuation.finish(throwing: AWLError.transport("non-HTTP response"))
+                    continuation.finish(
+                        throwing: AWLError.transport("non-HTTP response")
+                    )
                     return
                 }
 
                 guard (200..<300).contains(http.statusCode) else {
-                    let category: AWLError = (http.statusCode == 401 || http.statusCode == 403)
+                    let category: AWLError =
+                        (http.statusCode == 401 || http.statusCode == 403)
                         ? .authentication
                         : .transport("HTTP \(http.statusCode)")
                     continuation.finish(throwing: category)
                     return
                 }
 
-                guard let data,
-                      let text = String(data: data, encoding: .utf8) else {
-                    continuation.finish(throwing: AWLError.agent("empty or non-UTF8 response"))
+                guard let data else {
+                    continuation.finish(
+                        throwing: AWLError.agent("empty response")
+                    )
+                    return
+                }
+
+                guard data.count <= configuration.maximumResponseBytes else {
+                    continuation.finish(
+                        throwing: AWLError.transport("response exceeds configured byte limit")
+                    )
+                    return
+                }
+
+                guard let text = String(data: data, encoding: .utf8) else {
+                    continuation.finish(
+                        throwing: AWLError.agent("non-UTF8 response")
+                    )
                     return
                 }
 
@@ -100,8 +142,12 @@ public actor HTTPAgentTransport: AgentAdapter {
         tasks[id] = task
     }
 
+    private func finish(_ id: InteractionID) {
+        tasks[id] = nil
+    }
+
     public func cancel(interactionID: InteractionID) async {
-        tasks[interactionID]?.cancel()
-        tasks[interactionID] = nil
+        let task = tasks.removeValue(forKey: interactionID)
+        task?.cancel()
     }
 }
