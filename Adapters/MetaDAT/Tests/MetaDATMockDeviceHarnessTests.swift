@@ -7,8 +7,13 @@ import MWDATMockDevice
 final class MetaDATMockDeviceHarnessTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
-        try? Wearables.configure()
-        MockDeviceKit.shared.enable()
+        try Wearables.configure()
+        MockDeviceKit.shared.enable(
+            config: MockDeviceKitConfig(
+                initiallyRegistered: true,
+                initialPermissionsGranted: true
+            )
+        )
     }
 
     override func tearDown() async throws {
