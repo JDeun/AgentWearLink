@@ -40,6 +40,14 @@ let package = Package(
                 .product(name: "MWDATMockDevice", package: "meta-wearables-dat-ios")
             ],
             path: "Tests"
+        ),
+        .testTarget(
+            name: "AgentWearLinkMetaDATMockDeviceUITests",
+            dependencies: [
+                "AgentWearLinkMetaDATIntegration",
+                .product(name: "MWDATMockDeviceTestClient", package: "meta-wearables-dat-ios")
+            ],
+            path: "UITests"
         )
     ]
 )
