@@ -289,16 +289,21 @@ Implemented or scaffolded:
 - OpenClaw Chat Completions adapter,
 - OpenClaw native Gateway protocol v4 frame models,
 - Gateway challenge/connect handshake,
+- persistent Ed25519 device identity and Keychain credential storage,
 - hello-ok negotiated policy state,
-- RPC correlation registry,
+- long-lived RPC/event dispatcher,
+- native agent run lifecycle and AgentAdapter bridge,
+- tick watchdog, reconnect supervisor and event-sequence gap retirement,
+- concurrent Gateway event broadcast,
 - Tailnet endpoint/reconnect model,
+- read-only native Gateway integration probe,
 - Meta DAT registration/session scaffold.
 
 Next implementation priorities:
 
-1. persistent OpenClaw device identity and pairing/token storage,
-2. long-lived Gateway receive/RPC dispatcher,
-3. streamed agent event mapping and cancellation,
-4. Meta DAT concrete capability mapping,
-5. real Tailnet/OpenClaw integration test,
-6. physical Ray-Ban/iPhone validation.
+1. run the read-only probe against the owner's real Mac mini Gateway over Tailscale,
+2. add a controlled native agent text smoke test after health/pairing succeeds,
+3. implement Meta DAT concrete capability mapping,
+4. complete real Tailnet/OpenClaw P0-B validation,
+5. add iOS companion composition/Keychain wiring,
+6. perform physical Ray-Ban/iPhone validation.
