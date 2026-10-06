@@ -33,8 +33,12 @@ public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertibl
         self.timeout = timeout
         self.maximumEventBytes = maximumEventBytes
     }
+
     public var description: String {
-        "OpenClawConfiguration(baseURL: \(baseURL), bearerToken: <redacted>, model: \(model), conversationID: \(conversationID), sessionKey: \(sessionKey ?? "nil"), messageChannel: \(messageChannel ?? "nil"), timeout: \(timeout), maximumEventBytes: \(maximumEventBytes))"
+        let sessionKeyDescription = sessionKey == nil ? "nil" : "<redacted>"
+        let messageChannelDescription = messageChannel == nil ? "nil" : "<redacted>"
+
+        return "OpenClawConfiguration(baseURL: \(baseURL), bearerToken: <redacted>, model: \(model), conversationID: <redacted>, sessionKey: \(sessionKeyDescription), messageChannel: \(messageChannelDescription), timeout: \(timeout), maximumEventBytes: \(maximumEventBytes))"
     }
 
     public var debugDescription: String { description }
