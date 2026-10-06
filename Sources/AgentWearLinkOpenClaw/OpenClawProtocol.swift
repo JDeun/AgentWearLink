@@ -42,18 +42,15 @@ public struct OpenClawConnectParams: Encodable, Sendable {
     public struct Auth: Encodable, Sendable {
         public let token: String?
         public let password: String?
-        public let deviceToken: String?
         public let bootstrapToken: String?
 
         public init(
             token: String? = nil,
             password: String? = nil,
-            deviceToken: String? = nil,
             bootstrapToken: String? = nil
         ) {
             self.token = token
             self.password = password
-            self.deviceToken = deviceToken
             self.bootstrapToken = bootstrapToken
         }
     }
