@@ -1,6 +1,6 @@
 import Foundation
 
-public struct HTTPAgentTransportConfiguration: Sendable, Equatable {
+public struct HTTPAgentTransportConfiguration: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     public let endpoint: URL
     public let bearerToken: String?
     public let timeout: TimeInterval
@@ -19,6 +19,15 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable {
         self.timeout = timeout
         self.maximumResponseBytes = maximumResponseBytes
     }
+    public var description: String {
+        "HTTPAgentTransportConfiguration(" +
+        "endpoint: \(endpoint), " +
+        "bearerToken: \(bearerToken == nil ? "nil" : "<redacted>"), " +
+        "timeout: \(timeout), " +
+        "maximumResponseBytes: \(maximumResponseBytes))"
+    }
+
+    public var debugDescription: String { description }
 }
 
 /// Buffered HTTP baseline transport.
