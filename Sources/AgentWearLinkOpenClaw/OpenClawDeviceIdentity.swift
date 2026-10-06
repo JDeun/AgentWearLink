@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-public struct OpenClawDeviceIdentity: Sendable, Equatable, Codable {
+public struct OpenClawDeviceIdentity: Sendable, Equatable, Codable, CustomStringConvertible, CustomDebugStringConvertible {
     public let privateKeyRaw: Data
 
     public init(privateKeyRaw: Data) throws {
@@ -35,20 +35,16 @@ public struct OpenClawDeviceIdentity: Sendable, Equatable, Codable {
             rawRepresentation: privateKeyRaw
         ).signature(for: payload)
     }
+    public var description: String {
+        "OpenClawDeviceIdentity(privateKeyRaw: <redacted>)"
+    }
+
+    public var debugDescription: String { description }
 }
 
 public protocol OpenClawDeviceIdentityStore: Sendable {
     func load() async throws -> OpenClawDeviceIdentity?
     func save(_ identity: OpenClawDeviceIdentity) async throws
-    func loadOrCreate(_ candidate: OpenClawDeviceIdentity) async throws -> OpenClawDeviceIdentity
-}
-
-public extension OpenClawDeviceIdentityStore {
-    func loadOrCreate(_ candidate: OpenClawDeviceIdentity) async throws -> OpenClawDeviceIdentity {
-        if let existing = try await load() { return existing }
-        try await save(candidate)
-        return try await load() ?? candidate
-    }
 }
 
 public actor InMemoryOpenClawDeviceIdentityStore: OpenClawDeviceIdentityStore {
@@ -63,12 +59,6 @@ public actor InMemoryOpenClawDeviceIdentityStore: OpenClawDeviceIdentityStore {
     public func save(_ identity: OpenClawDeviceIdentity) async throws {
         self.identity = identity
     }
-
-    public func loadOrCreate(_ candidate: OpenClawDeviceIdentity) async throws -> OpenClawDeviceIdentity {
-        if let identity { return identity }
-        identity = candidate
-        return candidate
-    }
 }
 
 public actor OpenClawDeviceIdentityManager {
@@ -79,6 +69,12 @@ public actor OpenClawDeviceIdentityManager {
     }
 
     public func loadOrCreate() async throws -> OpenClawDeviceIdentity {
-        try await store.loadOrCreate(OpenClawDeviceIdentity.generate())
+        if let identity = try await store.load() {
+            return identity
+        }
+
+        let identity = OpenClawDeviceIdentity.generate()
+        try await store.save(identity)
+        return identity
     }
 }
