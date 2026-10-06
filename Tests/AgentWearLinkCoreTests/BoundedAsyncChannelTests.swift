@@ -9,8 +9,11 @@ final class BoundedAsyncChannelTests: XCTestCase {
         await channel.send(2)
         await channel.send(3)
 
-        XCTAssertEqual(await channel.next(), 2)
-        XCTAssertEqual(await channel.next(), 3)
+        let first = await channel.next()
+        let second = await channel.next()
+
+        XCTAssertEqual(first, 2)
+        XCTAssertEqual(second, 3)
     }
 
     func testFinishUnblocksWaitingConsumer() async {
