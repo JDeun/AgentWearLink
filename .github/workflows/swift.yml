@@ -18,3 +18,18 @@ jobs:
         run: swift --version
       - name: Test core package
         run: swift test
+
+  meta-dat-integration:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Resolve pinned Meta DAT SDK
+        working-directory: Adapters/MetaDAT
+        run: swift package resolve
+      - name: Compile concrete Meta DAT integration
+        working-directory: Adapters/MetaDAT
+        run: swift build
