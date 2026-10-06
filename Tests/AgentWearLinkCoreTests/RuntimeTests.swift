@@ -180,7 +180,8 @@ final class RuntimeTests: XCTestCase {
 
         let starting = Task { try await runtime.start() }
         try await Task.sleep(for: .milliseconds(10))
-        XCTAssertEqual(await agent.connectCount(), 1)
+        let connectCount = await agent.connectCount()
+        XCTAssertEqual(connectCount, 1)
 
         await runtime.stop()
         await agent.release()
