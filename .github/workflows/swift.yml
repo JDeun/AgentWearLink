@@ -41,11 +41,13 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
-      - name: Compile Meta DAT MockDeviceKit test seam
+      - name: Run package-hosted Meta DAT integration tests
         working-directory: Adapters/MetaDAT
         run: |
           xcodebuild \
             -scheme AgentWearLinkMetaDATIntegration \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1 \
             -skipPackagePluginValidation \
-            build-for-testing
+            test
