@@ -77,7 +77,7 @@ jobs:
         timeout-minutes: 2
         working-directory: Adapters/MetaDAT/TestApp
         run: |
-          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation test
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing test
       - name: Explain behavioral test boundary
         run: |
           echo "Meta DAT package target and behavioral host are compile-gated here."
