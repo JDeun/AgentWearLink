@@ -12,7 +12,7 @@ final class VisionContractTests: XCTestCase {
         XCTAssertThrowsError(
             try ImageAttachment(data: Data(repeating: 0, count: 17), format: .jpeg, maximumBytes: 16)
         ) { error in
-            XCTAssertEqual(error as? AWLError, .device("image payload exceeds configured limit"))
+            XCTAssertEqual(error as? AWLError, .capabilityUnavailable("image payload exceeds configured limit"))
         }
     }
 
