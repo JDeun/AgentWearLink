@@ -14,18 +14,22 @@ public actor OpenClawRPCDispatcher {
     private var receiveTask: Task<Void, Never>?
     private var lastActivityMilliseconds: Int64?
     private let nowMilliseconds: @Sendable () -> Int64
+    private let inboundMaximumBytes: Int
 
     public init(
         socket: any OpenClawWebSocket,
         state: OpenClawGatewayState,
         registry: OpenClawRPCRegistry = .init(),
+        inboundMaximumBytes: Int = OpenClawFrameRouter.defaultInboundMaximumBytes,
         nowMilliseconds: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970 * 1_000)
         }
     ) {
+        precondition(inboundMaximumBytes > 0)
         self.socket = socket
         self.state = state
         self.registry = registry
+        self.inboundMaximumBytes = inboundMaximumBytes
         self.nowMilliseconds = nowMilliseconds
     }
 
@@ -113,7 +117,8 @@ public actor OpenClawRPCDispatcher {
             while !Task.isCancelled {
                 let text = try await socket.receive()
                 lastActivityMilliseconds = nowMilliseconds()
-                let frame = try router.decode(Data(text.utf8))
+                let data = Data(text.utf8)
+                let frame = try router.decode(data, maximumBytes: inboundMaximumBytes)
 
                 switch frame {
                 case let .response(response):
