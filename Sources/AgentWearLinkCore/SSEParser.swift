@@ -23,8 +23,15 @@ public struct ServerSentEvent: Sendable, Equatable {
 ///
 /// The parser is transport-only: it does not interpret agent-specific event
 /// names or JSON payloads.
+///
+/// WHATWG event streams permit CRLF, LF, or CR line endings. UTF-8 decoding
+/// uses replacement semantics and one leading BOM is ignored. An incomplete
+/// event is intentionally not dispatched until a blank line is observed.
 public struct SSEParser: Sendable {
-    private var buffer = Data()
+    private var lineBuffer = Data()
+    private var skipLeadingLF = false
+    private var isFirstLine = true
+
     private var currentID: String?
     private var currentEvent: String?
     private var dataLines: [String] = []
@@ -33,56 +40,95 @@ public struct SSEParser: Sendable {
     public init() {}
 
     public mutating func append(_ bytes: Data) -> [ServerSentEvent] {
-        buffer.append(bytes)
         var events: [ServerSentEvent] = []
 
-        while let range = buffer.firstRange(of: Data([0x0A])) {
-            let lineData = buffer[..<range.lowerBound]
-            buffer.removeSubrange(...range.lowerBound)
-
-            guard var line = String(data: lineData, encoding: .utf8) else {
-                continue
-            }
-            if line.last == "\r" { line.removeLast() }
-
-            if line.isEmpty {
-                if !dataLines.isEmpty {
-                    events.append(
-                        ServerSentEvent(
-                            id: currentID,
-                            event: currentEvent,
-                            data: dataLines.joined(separator: "\n"),
-                            retryMilliseconds: currentRetry
-                        )
-                    )
+        for byte in bytes {
+            if skipLeadingLF {
+                skipLeadingLF = false
+                if byte == 0x0A {
+                    continue
                 }
-                currentEvent = nil
-                dataLines.removeAll(keepingCapacity: true)
-                currentRetry = nil
-                continue
             }
 
-            if line.hasPrefix(":") { continue }
+            switch byte {
+            case 0x0D:
+                processCurrentLine(into: &events)
+                skipLeadingLF = true
 
-            let pieces = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-            let field = String(pieces[0])
-            var value = pieces.count > 1 ? String(pieces[1]) : ""
-            if value.first == " " { value.removeFirst() }
+            case 0x0A:
+                processCurrentLine(into: &events)
 
-            switch field {
-            case "id":
-                if !value.contains("\0") { currentID = value }
-            case "event":
-                currentEvent = value
-            case "data":
-                dataLines.append(value)
-            case "retry":
-                currentRetry = Int(value)
             default:
-                break
+                lineBuffer.append(byte)
             }
         }
 
         return events
+    }
+
+    private mutating func processCurrentLine(
+        into events: inout [ServerSentEvent]
+    ) {
+        var line = String(decoding: lineBuffer, as: UTF8.self)
+        lineBuffer.removeAll(keepingCapacity: true)
+
+        if isFirstLine {
+            isFirstLine = false
+            if line.first == "\u{FEFF}" {
+                line.removeFirst()
+            }
+        }
+
+        if line.isEmpty {
+            if !dataLines.isEmpty {
+                events.append(
+                    ServerSentEvent(
+                        id: currentID,
+                        event: currentEvent,
+                        data: dataLines.joined(separator: "\n"),
+                        retryMilliseconds: currentRetry
+                    )
+                )
+            }
+
+            currentEvent = nil
+            dataLines.removeAll(keepingCapacity: true)
+            currentRetry = nil
+            return
+        }
+
+        if line.hasPrefix(":") {
+            return
+        }
+
+        let pieces = line.split(
+            separator: ":",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        let field = String(pieces[0])
+        var value = pieces.count > 1 ? String(pieces[1]) : ""
+        if value.first == " " {
+            value.removeFirst()
+        }
+
+        switch field {
+        case "id":
+            if !value.contains("\0") {
+                currentID = value
+            }
+
+        case "event":
+            currentEvent = value
+
+        case "data":
+            dataLines.append(value)
+
+        case "retry":
+            currentRetry = Int(value)
+
+        default:
+            break
+        }
     }
 }
