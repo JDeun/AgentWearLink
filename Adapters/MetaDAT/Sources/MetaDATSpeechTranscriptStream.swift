@@ -17,12 +17,11 @@ public struct MetaDATTranscript: Sendable, Equatable {
 /// Owns only the SDK transcription subscription. Attachment/start/stop remain
 /// separate slices so transcript policy cannot accidentally own session lifecycle.
 public final class MetaDATSpeechTranscriptStream: @unchecked Sendable {
-    private let tokens = ListenerTokenBag()
-
     public init() {}
 
     public func stream(from speech: Speech) -> AsyncStream<MetaDATTranscript> {
-        AsyncStream { continuation in
+        let tokens = ListenerTokenBag()
+        return AsyncStream(bufferingPolicy: .bufferingNewest(8)) { continuation in
             speech.transcriptionPublisher.listen { result in
                 continuation.yield(
                     MetaDATTranscript(
