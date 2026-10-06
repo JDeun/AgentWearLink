@@ -42,7 +42,8 @@ final class MetaDATAdapterTests: XCTestCase {
             XCTFail("Expected connect failure")
         } catch {}
 
-        XCTAssertEqual(await session.disconnectCount, 1)
+        let disconnectCount = await session.disconnectCount
+        XCTAssertEqual(disconnectCount, 1)
     }
 
     func testNormalizesSessionEvents() async throws {
