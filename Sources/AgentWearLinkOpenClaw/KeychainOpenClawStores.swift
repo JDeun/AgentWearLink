@@ -56,6 +56,20 @@ private struct OpenClawKeychain {
         }
     }
 
+    func addIfAbsent(_ data: Data, account: String) throws {
+        let item: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        let status = SecItemAdd(item as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw OpenClawKeychainError.unexpectedStatus(status)
+        }
+    }
+
     func delete(account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -84,6 +98,20 @@ public actor KeychainOpenClawDeviceIdentityStore: OpenClawDeviceIdentityStore {
 
     public func save(_ identity: OpenClawDeviceIdentity) async throws {
         try keychain.write(identity.privateKeyRaw, account: account)
+    }
+
+    public func loadOrCreate(_ candidate: OpenClawDeviceIdentity) async throws -> OpenClawDeviceIdentity {
+        if let existing = try await load() { return existing }
+
+        do {
+            try keychain.addIfAbsent(candidate.privateKeyRaw, account: account)
+            return candidate
+        } catch OpenClawKeychainError.unexpectedStatus(errSecDuplicateItem) {
+            guard let winner = try await load() else {
+                throw OpenClawKeychainError.invalidData
+            }
+            return winner
+        }
     }
 }
 
