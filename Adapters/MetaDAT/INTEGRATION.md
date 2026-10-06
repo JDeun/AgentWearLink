@@ -1,36 +1,69 @@
 # Meta DAT integration status
 
-## Implemented scaffold
+AgentWearLink pins Meta Wearables DAT **1.0.0** in `Adapters/MetaDAT`. Vendor SDK types remain outside `AgentWearLinkCore`.
 
-- SDK bootstrap via `Wearables.configure()`
-- Meta AI registration façade
-- callback filtering on `metaWearablesAction`
-- `AutoDeviceSelector`
-- `DeviceSession` creation/start/stop
-- wait for `.started` before declaring connect success
-- error stream forwarding into typed AWL device errors
-- cleanup on explicit disconnect
+## Implemented code-side foundation
 
-## Not implemented yet
+The concrete integration now includes:
 
-- camera capability
-- speech capability
-- voice invocation
-- raw PCM audio
-- device input/motion
-- iOS UI/Xcode project integration
+- `Wearables.configure()` bootstrap and Meta registration handling
+- deterministic selected-device choice plus link/compatibility loss handling
+- `DeviceSession` startup, bounded timeout, state/error monitoring, and teardown
+- live capability derivation from current readiness
+- camera configuration, ignition/first-frame readiness, bounded shutter/photo-result handling, normalization, cancellation generation, and deterministic mock fixtures
+- Speech transcript stream handling with final-only filtering and duplicate suppression
+- independent Voice Invocation listener, acknowledgement, and bounded reopen/backoff policy
+- foreground/background media invalidation and fresh-readiness rules
+- DEBUG-only MockDeviceKit host bootstrap and test-server rendezvous
+- pinned SDK compile gates for iOS Simulator
 
-These are intentionally separate slices because DAT 1.0 marks several of them experimental and because camera lifecycle currently has upstream reliability reports.
+These are code-side claims. They are not substitutes for physical Ray-Ban Meta evidence.
 
-## Build requirement
+## Deliberately not claimed as physically validated
 
-These files are not part of the root `AgentWearLinkCore` Swift package. Compile them in an iOS target that links:
+The following remain hardware/deployment gates:
 
-- `AgentWearLinkCore`
-- Meta `MWDATCore`
+- real Bluetooth pairing/link recovery
+- real camera sensor wake, shutter timing, and photo transfer
+- microphone/speaker routing on glasses
+- locked/pocketed hands-free invocation
+- background/foreground behavior on a physical iPhone
+- iPhone → Tailnet → OpenClaw deployment behavior
 
-Later feature files add `MWDATCamera`, `MWDATSpeech`, or other DAT modules only when required.
+Raw PCM audio is not inferred from DAT Speech. AWL advertises a capability only when the pinned SDK, selected device, permission state, and active lifecycle actually support it.
 
-## Lifecycle rule
+## Build and simulator integration
 
-Always stop capabilities before the parent `DeviceSession`, and stop the session on user-driven exit/background paths. Do not retain a stopped session for reuse; create a new session after device availability returns.
+Resolve and compile the pinned integration independently from the vendor-neutral root package:
+
+```bash
+cd Adapters/MetaDAT
+swift package resolve
+xcodebuild \
+  -scheme AgentWearLinkMetaDATIntegration \
+  -destination 'generic/platform=iOS Simulator' \
+  -skipPackagePluginValidation \
+  build
+```
+
+The generated package scheme also contains `AgentWearLinkMetaDATTestHost`. CI compile-gates that host and uses the DEBUG-only mock bootstrap for behavioral simulator work.
+
+Root `swift test` passing means Core/runtime contracts pass. It does **not** prove the concrete MWDAT integration or physical glasses.
+
+## Lifecycle invariants
+
+- Subscribe to session state/error streams before `start()` so startup transitions are not missed.
+- A stopped or invalidated session is not resurrected.
+- Foreground entry requires fresh device/media readiness.
+- Selected-device link or compatibility loss invalidates the active path.
+- Camera work is bounded and cancellation-safe; late results from an obsolete capture generation are ignored.
+- Voice Invocation is independent from ordinary camera/device-session ownership.
+- Unsupported capabilities are never advertised merely because an SDK symbol exists.
+
+## Validation map
+
+- [MockDeviceKit reference](../../docs/meta-mock-device-kit.md)
+- [DAT capability contract](../../docs/meta-dat-capabilities.md)
+- [DAT bridge notes](../../docs/meta-dat-bridge.md)
+- [Physical validation runbook](../../docs/meta-dat-validation.md)
+- [Known issues](../../docs/meta-dat-known-issues.md)
