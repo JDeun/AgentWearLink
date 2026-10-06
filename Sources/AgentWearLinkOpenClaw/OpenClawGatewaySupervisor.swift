@@ -14,7 +14,7 @@ public actor OpenClawGatewaySupervisor {
     private var watchdogTask: Task<Void, Never>?
     private var stopped = true
     private var tickIntervalMilliseconds = 30_000
-    private var transportGeneration: UInt64 = 0
+    public private(set) var transportGeneration: UInt64 = 0
 
     public init(
         connection: OpenClawGatewayConnection,
