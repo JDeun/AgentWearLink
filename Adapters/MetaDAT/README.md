@@ -12,14 +12,14 @@ The iOS reference application will own the Meta Swift Package dependency and com
 - Meta types leaking into core APIs,
 - future non-Meta devices inheriting unnecessary dependencies.
 
-## Current DAT 1.0 modules relevant to AWL
+## Current DAT modules relevant to AWL
 
 Stable/public baseline:
 - `MWDATCore`
 - `MWDATCamera`
 - `MWDATMockDevice`
 
-Experimental capabilities introduced in DAT 1.0:
+Capabilities that require explicit SDK/version/release-channel validation before AWL advertises them:
 - `MWDATSpeech`
 - voice invocations in `MWDATCore`
 - `MWDATInputs`
