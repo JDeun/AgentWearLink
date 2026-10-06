@@ -94,8 +94,8 @@ public actor InteractionCoordinator {
     }
 
     public func cancel(_ id: InteractionID) async {
-        let entry = tasks.removeValue(forKey: id)
-        entry?.task.cancel()
+        guard let entry = tasks.removeValue(forKey: id) else { return }
+        entry.task.cancel()
         await agent.cancel(interactionID: id)
     }
 
