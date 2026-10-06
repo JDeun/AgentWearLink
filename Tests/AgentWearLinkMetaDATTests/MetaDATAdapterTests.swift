@@ -30,7 +30,8 @@ final class MetaDATAdapterTests: XCTestCase {
 
         XCTAssertEqual(image.data, Data([1, 2, 3]))
         XCTAssertEqual(image.format, .jpeg)
-        XCTAssertEqual(await session.captureCount, 1)
+        let captureCount = await session.captureCount
+        XCTAssertEqual(captureCount, 1)
     }
 
     func testRejectsSnapshotWhenCapabilityNotAdvertised() async {
@@ -51,7 +52,8 @@ final class MetaDATAdapterTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(await session.captureCount, 0)
+        let captureCount = await session.captureCount
+        XCTAssertEqual(captureCount, 0)
     }
 
     func testRejectsSnapshotWhenBridgeIsMissing() async {
