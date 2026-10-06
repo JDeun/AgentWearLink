@@ -136,7 +136,7 @@ public actor HTTPAgentTransport: AgentTransport {
             continuation.onTermination = { _ in task.cancel() }
 
             Task {
-                let shouldStart = await self.register(
+                let shouldStart = self.register(
                     task,
                     for: request.interactionID
                 )
