@@ -1,16 +1,25 @@
 # OpenClaw reference adapter
 
-AgentWearLink's first agent-side reference adapter targets OpenClaw's OpenAI-compatible Chat Completions endpoint.
+AgentWearLink's first agent-runtime integration uses OpenClaw Gateway while keeping OpenClaw responsible for models, tools, memory, permissions, and session semantics.
 
-## Why this endpoint
+## Preferred path: native Gateway WebSocket
 
-OpenClaw documents this endpoint as a normal Gateway agent run. It therefore keeps model routing, permissions, memory/session behavior, and tool execution in OpenClaw rather than reimplementing them in AWL.
+The primary adapter is `OpenClawNativeAgentAdapter`. It uses the native Gateway WebSocket protocol and implements:
 
-The endpoint supports streaming responses and runs on the same Gateway port.
+- Gateway challenge/hello authentication
+- persistent device identity and credential reuse
+- RPC dispatch and correlation
+- agent run submission and terminal wait
+- incremental agent updates
+- cancellation
+- bounded reconnect supervision
+- preservation of accepted OpenClaw session keys
 
-## Required OpenClaw configuration
+A reconnect restores transport readiness. It does **not** silently replay an in-flight request whose delivery or completion is uncertain.
 
-The Chat Completions endpoint is disabled by default. Enable it explicitly:
+## Compatibility path: Chat Completions
+
+`OpenClawChatCompletionsAdapter` remains available for OpenClaw's OpenAI-compatible HTTP/SSE endpoint. That endpoint must be explicitly enabled in OpenClaw:
 
 ```json5
 {
@@ -24,40 +33,41 @@ The Chat Completions endpoint is disabled by default. Enable it explicitly:
 }
 ```
 
-Keep the Gateway on loopback, tailnet, or another private authenticated ingress.
+The compatibility adapter requests streaming responses, bounds individual SSE events, and maps content deltas into AWL response deltas. Do not confuse this HTTP/SSE path with the preferred native Gateway transport.
 
-## Authentication
+## Deployment
 
-With `gateway.auth.mode = "token"`, AWL sends:
-
-```text
-Authorization: Bearer <gateway token>
-```
-
-OpenClaw treats possession of this shared secret as full operator/owner authority. The token must therefore be stored in iOS Keychain or equivalent secure storage and must never be committed.
-
-## Session behavior
-
-AWL sets the OpenAI `user` field to:
+The intended personal reference topology is:
 
 ```text
-agentwearlink:<conversationID>
+Ray-Ban Meta → iPhone/AWL → Tailscale → Mac mini → OpenClaw Gateway
 ```
 
-Reusing one conversation ID gives repeated wearable turns a stable OpenClaw agent session.
+Tailscale is an exposure profile, not an AWL dependency. Prefer a private authenticated WSS endpoint such as Tailscale Serve where practical. See [tailscale.md](tailscale.md).
 
-For explicit cross-client routing, `x-openclaw-session-key` can be configured. Do not use OpenClaw reserved internal namespaces.
+## Session ownership
 
-## Channel context
+AWL transports an interaction into OpenClaw; it does not recreate OpenClaw's agent state. Existing model/tool/memory/session behavior remains owned by OpenClaw.
 
-The optional `x-openclaw-message-channel` header can provide synthetic ingress context for channel-aware policies. It is not a Telegram integration and does not make Telegram an AWL dependency.
+For the native adapter, the session key returned by an accepted run is retained as the authoritative run context. For the Chat Completions compatibility path, a stable AWL conversation identifier is mapped into the endpoint's session semantics.
 
-## Streaming
+Telegram is optional visibility only. It is never required as AWL transport.
 
-The adapter requests `stream: true` and consumes OpenAI-compatible SSE data frames. Each content delta becomes an AWL `AgentResponse.textDelta`.
+## Credentials and diagnostics
 
-The adapter bounds individual SSE events and supports cancellation per `InteractionID`.
+Reusable Gateway credentials and device private material belong in Keychain or equivalent secure storage. They must not be committed, logged, or exposed through diagnostic descriptions. Configuration diagnostics redact bearer credentials.
 
-## Security
+Tailnet reachability is not authorization. Gateway authentication remains required by the selected OpenClaw deployment mode.
 
-Do not expose the bearer-token endpoint directly to the public Internet. Prefer a private Tailnet/VPN or another authenticated private ingress.
+## Validation status
+
+Deterministic tests cover protocol framing, authentication/pairing contracts, RPC routing, incremental run updates, cancellation, reconnect boundaries, credential persistence, and secret-redaction invariants.
+
+Still requiring deployment/physical evidence:
+
+- iPhone → Tailnet → Mac mini/OpenClaw live text E2E
+- persistent credential reuse against the real Gateway
+- existing-session incremental streaming against the real Gateway
+- Wi-Fi/cellular/Tailnet transition behavior
+
+Use [openclaw-probe.md](openclaw-probe.md) for the read-only probe, [openclaw-chat-probe.md](openclaw-chat-probe.md) for the explicit mutating probe, and [p0b-openclaw-validation.md](p0b-openclaw-validation.md) for the full P0-B runbook.
