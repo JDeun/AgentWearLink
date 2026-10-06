@@ -27,6 +27,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         wearables: any WearablesInterface = Wearables.shared,
         connectTimeout: Duration = .seconds(15)
     ) {
+        precondition(connectTimeout > .zero)
         self.wearables = wearables
         self.connectTimeout = connectTimeout
     }
