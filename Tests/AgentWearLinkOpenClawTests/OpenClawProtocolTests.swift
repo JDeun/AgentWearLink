@@ -68,4 +68,25 @@ final class OpenClawProtocolTests: XCTestCase {
         XCTAssertEqual(event.event, "agent")
         XCTAssertEqual(event.seq, 7)
     }
+
+    func testJSONValuePreservesIntegerPrecisionAcrossRoundTrip() throws {
+        let fixtures: [(String, JSONValue)] = [
+            ("9007199254740991", .integer(9_007_199_254_740_991)),
+            ("9007199254740992", .integer(9_007_199_254_740_992)),
+            ("9007199254740993", .integer(9_007_199_254_740_993)),
+            ("9223372036854775807", .integer(Int64.max)),
+            ("18446744073709551615", .unsignedInteger(UInt64.max)),
+            ("1.25", .number(1.25))
+        ]
+
+        for (json, expected) in fixtures {
+            let decoded = try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
+            XCTAssertEqual(decoded, expected)
+
+            let encoded = try JSONEncoder().encode(decoded)
+            let roundTripped = try JSONDecoder().decode(JSONValue.self, from: encoded)
+            XCTAssertEqual(roundTripped, expected)
+        }
+    }
+
 }
