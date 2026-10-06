@@ -75,6 +75,10 @@ public actor OpenClawRPCDispatcher {
             throw AWLOpenClawError.notReady
         }
 
+        if let textParams = params as? OpenClawAgentParams {
+            try await state.validateOutboundFrameSize(textParams.message.utf8.count)
+        }
+
         let id = UUID().uuidString
         let frame = OpenClawRequestFrame(id: id, method: method, params: params)
         let data = try encoder.encode(frame)
