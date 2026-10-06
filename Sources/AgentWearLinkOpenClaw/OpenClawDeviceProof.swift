@@ -54,14 +54,11 @@ public struct OpenClawDeviceProofBuilder: Sendable {
 
     public func makeProof(
         identity: OpenClawDeviceIdentity,
-        clientID: String = "agentwearlink",
-        clientMode: String = "operator",
+        client: OpenClawGatewayClientIdentity = .backend,
         role: String = "operator",
         scopes: [String],
         token: String?,
-        challenge: OpenClawConnectChallenge,
-        platform: String = "ios",
-        deviceFamily: String = "iphone"
+        challenge: OpenClawConnectChallenge
     ) throws -> OpenClawDeviceProof {
         guard challenge.ts >= 0, !challenge.nonce.isEmpty else {
             throw OpenClawDeviceProofError.invalidChallenge
@@ -70,15 +67,15 @@ public struct OpenClawDeviceProofBuilder: Sendable {
         let id = try identity.deviceID
         let payload = buildPayloadV3(
             deviceID: id,
-            clientID: clientID,
-            clientMode: clientMode,
+            clientID: client.id,
+            clientMode: client.mode,
             role: role,
             scopes: scopes,
             token: token,
             nonce: challenge.nonce,
             signedAt: challenge.ts,
-            platform: platform,
-            deviceFamily: deviceFamily
+            platform: client.platform,
+            deviceFamily: client.deviceFamily
         )
         let signature = try identity.sign(payload)
 
