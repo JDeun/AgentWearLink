@@ -16,6 +16,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var deviceSession: DeviceSession?
     private var stateTask: Task<Void, Never>?
     private var errorTask: Task<Void, Never>?
+    private var registrationTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<InteractionEvent>.Continuation?
     private var stopping = false
     private let connectTimeout: Duration
@@ -45,6 +46,20 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         guard deviceSession == nil else { return }
 
         stopping = false
+
+        guard case .registered = wearables.registrationState else {
+            throw AWLError.device("Meta DAT application is not registered")
+        }
+
+        registrationTask = Task { [weak self] in
+            for await state in wearables.registrationStateStream() {
+                guard !Task.isCancelled else { break }
+                guard case .registered = state else {
+                    await self?.handleRegistrationLoss()
+                    break
+                }
+            }
+        }
 
         let selector = AutoDeviceSelector(wearables: wearables)
         let session = try wearables.createSession(deviceSelector: selector)
@@ -138,6 +153,14 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         errorTask = nil
     }
 
+    private func handleRegistrationLoss() {
+        guard !stopping, deviceSession != nil else { return }
+        eventContinuation?.yield(
+            .failed(nil, .device("Meta DAT registration became unavailable"))
+        )
+        tearDownSession()
+    }
+
     private func emitDeviceError(_ message: String) {
         guard !stopping else { return }
         eventContinuation?.yield(.failed(nil, .device(message)))
@@ -146,8 +169,10 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private func tearDownSession() {
         stateTask?.cancel()
         errorTask?.cancel()
+        registrationTask?.cancel()
         stateTask = nil
         errorTask = nil
+        registrationTask = nil
 
         deviceSession?.stop()
         deviceSession = nil
