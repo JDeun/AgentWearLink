@@ -57,7 +57,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             for await state in wearables.registrationStateStream() {
                 guard !Task.isCancelled else { break }
                 guard case .registered = state else {
-                    self?.handleRegistrationLoss()
+                    await self?.handleRegistrationLoss()
                     break
                 }
             }
@@ -95,7 +95,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         errorTask = Task { [weak self] in
             for await error in errorStream {
                 guard !Task.isCancelled else { break }
-                self?.emitDeviceError(error.localizedDescription)
+                await self?.emitDeviceError(error.localizedDescription)
             }
         }
 
@@ -121,7 +121,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
                 }
             }
         } catch {
-            await tearDownSession()
+            tearDownSession()
             throw error
         }
     }
@@ -223,7 +223,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     public func disconnect() async {
         guard deviceSession != nil else { return }
         stopping = true
-        await tearDownSession()
+        tearDownSession()
     }
 
     private func handleUnexpectedStop() {
