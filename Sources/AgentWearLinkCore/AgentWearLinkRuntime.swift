@@ -7,6 +7,7 @@ public actor AgentWearLinkRuntime {
     private let device: any DeviceAdapter
     private let agent: any AgentAdapter
     private let coordinator: InteractionCoordinator
+    private let output: @Sendable (InteractionEvent) async -> Void
     private var forwardingTask: Task<Void, Never>?
     private enum LifecycleState { case stopped, starting, running, stopping }
     private var lifecycleState: LifecycleState = .stopped
@@ -19,6 +20,7 @@ public actor AgentWearLinkRuntime {
     ) {
         self.device = device
         self.agent = agent
+        self.output = output
         self.coordinator = InteractionCoordinator(agent: agent, output: output)
     }
 
@@ -58,13 +60,48 @@ public actor AgentWearLinkRuntime {
             throw error
         }
 
+        lifecycleState = .running
         forwardingTask = Task { [coordinator] in
             for await event in events {
                 guard !Task.isCancelled else { break }
                 await coordinator.handle(event)
             }
+
+            await self.forwardingDidEnd(
+                generation: generation,
+                wasCancelled: Task.isCancelled
+            )
         }
-        lifecycleState = .running
+    }
+
+    private func forwardingDidEnd(
+        generation: UInt64,
+        wasCancelled: Bool
+    ) async {
+        guard !wasCancelled,
+              lifecycleState == .running,
+              lifecycleGeneration == generation else {
+            return
+        }
+
+        // Own the teardown here rather than recursively calling stop(). The
+        // forwarding task is the caller, so cancelling/awaiting it from stop()
+        // would couple cleanup to the task that is reporting the failure.
+        lifecycleState = .stopping
+        lifecycleGeneration &+= 1
+        forwardingTask = nil
+
+        await coordinator.cancelAll()
+        await device.disconnect()
+        await agent.disconnect()
+
+        lifecycleState = .stopped
+        await output(
+            .failed(
+                nil,
+                .device("device event stream ended unexpectedly")
+            )
+        )
     }
 
     public func stop() async {
