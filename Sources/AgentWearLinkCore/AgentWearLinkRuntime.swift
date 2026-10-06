@@ -113,11 +113,11 @@ public actor AgentWearLinkRuntime {
 
     public func stop() async {
         guard lifecycleState != .stopped, lifecycleState != .stopping else { return }
+        let activeGeneration = lifecycleGeneration
         lifecycleState = .stopping
         lifecycleGeneration &+= 1
         forwardingTask?.cancel()
         forwardingTask = nil
-        let activeGeneration = lifecycleGeneration &- 1
         await coordinator.deactivate(runtimeGeneration: activeGeneration)
         await device.disconnect()
         await agent.disconnect()
