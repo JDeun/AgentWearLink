@@ -45,6 +45,14 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
+      - name: Compile Meta DAT behavioral test host for iOS Simulator
+        working-directory: Adapters/MetaDAT
+        run: |
+          xcodebuild \
+            -scheme AgentWearLinkMetaDATTestHost \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            build
       - name: Explain behavioral test boundary
         run: |
           echo "Meta DAT package target is compile-gated here."
