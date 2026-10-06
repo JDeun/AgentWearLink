@@ -45,6 +45,35 @@ final class HTTPAgentTransportTests: XCTestCase {
         XCTAssertEqual(configuration.maximumResponseBytes, 4096)
     }
 
+    func testConfigurationDescriptionsRedactBearerToken() {
+        let secret = "AWL_HTTP_SECRET_SENTINEL"
+        let configuration = HTTPAgentTransportConfiguration(
+            endpoint: URL(string: "https://example.invalid/agent")!,
+            bearerToken: secret,
+            timeout: 12,
+            maximumResponseBytes: 4096
+        )
+
+        let description = String(describing: configuration)
+        let reflection = String(reflecting: configuration)
+
+        XCTAssertFalse(description.contains(secret))
+        XCTAssertFalse(reflection.contains(secret))
+        XCTAssertTrue(description.contains("<redacted>"))
+        XCTAssertTrue(reflection.contains("<redacted>"))
+        XCTAssertTrue(description.contains("https://example.invalid/agent"))
+        XCTAssertTrue(description.contains("4096"))
+    }
+
+    func testConfigurationDescriptionsDoNotInventCredentialWhenAbsent() {
+        let configuration = HTTPAgentTransportConfiguration(
+            endpoint: URL(string: "https://example.invalid/agent")!
+        )
+
+        XCTAssertTrue(String(describing: configuration).contains("bearerToken: nil"))
+        XCTAssertTrue(String(reflecting: configuration).contains("bearerToken: nil"))
+    }
+
     func testMapsAuthenticationFailure() async throws {
         URLProtocolStub.handler = { request in
             let response = HTTPURLResponse(
