@@ -63,7 +63,7 @@ MockDeviceKit app-hosted integration is being CI-gated separately. Real Bluetoot
 
 ## Quick start
 
-The vendor-neutral root package supports Swift 5.10+ and macOS 14+. The concrete `Adapters/MetaDAT` integration has a separate Swift 6.0+ toolchain contract because the pinned Meta DAT 1.0.0 dependency uses a Swift 6 package manifest; its reference iOS host targets iOS 17.2+.
+The vendor-neutral root package supports Swift 5.10+ and macOS 14+. The concrete `Adapters/MetaDAT` integration requires a Swift 6.0+ toolchain because the pinned Meta DAT 1.0.0 dependency uses a Swift 6 package manifest; the AWL integration sources are intentionally kept in Swift 5 language mode during migration. Its reference iOS host targets iOS 17.2+.
 
 ```bash
 git clone https://github.com/JDeun/AgentWearLink.git
@@ -71,7 +71,7 @@ cd AgentWearLink
 swift test
 ```
 
-For Meta DAT integration work, verify a Swift 6 toolchain before resolving or building the adapter:
+For Meta DAT integration work, verify a Swift 6-capable toolchain before resolving or building the adapter. The toolchain requirement does not imply that AWL's Meta sources have already migrated to Swift 6 language mode:
 
 ```bash
 swift --version
