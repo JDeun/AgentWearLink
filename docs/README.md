@@ -15,12 +15,14 @@ This directory is the implementation and validation documentation for AgentWearL
 
 - [meta-dat-ios.md](meta-dat-ios.md) — Meta DAT iOS integration
 - [meta-dat-known-issues.md](meta-dat-known-issues.md) — known DAT constraints and validation notes
+- [meta-dat-validation.md](meta-dat-validation.md) — P0-A physical DAT validation runbook
 
 ## OpenClaw integration
 
 - [openclaw.md](openclaw.md) — OpenClaw architecture and protocol integration
 - [openclaw-probe.md](openclaw-probe.md) — read-only Gateway/authentication probe
 - [openclaw-chat-probe.md](openclaw-chat-probe.md) — explicit mutating text E2E probe
+- [p0b-openclaw-validation.md](p0b-openclaw-validation.md) — full iPhone/Tailnet/OpenClaw P0-B validation runbook
 
 ## Networking and transports
 
