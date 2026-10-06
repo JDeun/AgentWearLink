@@ -49,7 +49,7 @@ jobs:
         working-directory: Adapters/MetaDAT
         run: |
           xcodebuild \
-            -scheme AgentWearLinkMetaDATTestHost \
+            -scheme AgentWearLinkMetaDATIntegration-Package \
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
