@@ -35,4 +35,12 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        TEST_TARGET_NAME: AgentWearLinkMetaDATTestHost
+schemes:
+  AgentWearLinkMetaDATTestHost:
+    build:
+      targets:
+        AgentWearLinkMetaDATTestHost: all
+        AgentWearLinkMetaDATUITests: [test]
+    test:
+      targets:
+        - name: AgentWearLinkMetaDATUITests
