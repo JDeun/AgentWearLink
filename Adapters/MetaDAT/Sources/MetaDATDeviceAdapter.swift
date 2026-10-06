@@ -18,9 +18,14 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var errorTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<InteractionEvent>.Continuation?
     private var stopping = false
+    private let connectTimeout: Duration
 
-    public init(wearables: any WearablesInterface = Wearables.shared) {
+    public init(
+        wearables: any WearablesInterface = Wearables.shared,
+        connectTimeout: Duration = .seconds(15)
+    ) {
         self.wearables = wearables
+        self.connectTimeout = connectTimeout
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
@@ -60,23 +65,10 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         do {
             try session.start()
 
-            var reachedStarted = false
-            for await state in stateStream {
-                if state == .started {
-                    reachedStarted = true
-                    break
-                }
-
-                if state == .stopped {
-                    break
-                }
-            }
-
-            guard reachedStarted else {
-                throw AWLError.device(
-                    "Meta DAT session stopped before reaching started"
-                )
-            }
+            try await waitUntilStarted(
+                stateStream,
+                timeout: connectTimeout
+            )
 
             // Do not create a second stateStream() after consuming .started.
             // Continue the same stream in one observer so SDK stream semantics cannot
@@ -94,6 +86,38 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         } catch {
             await tearDownSession()
             throw error
+        }
+    }
+
+    private func waitUntilStarted(
+        _ states: AsyncStream<DeviceSessionState>,
+        timeout: Duration
+    ) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                for await state in states {
+                    try Task.checkCancellation()
+                    if state == .started { return }
+                    if state == .stopped {
+                        throw AWLError.device(
+                            "Meta DAT session stopped before reaching started"
+                        )
+                    }
+                }
+                throw AWLError.device(
+                    "Meta DAT session state stream ended before reaching started"
+                )
+            }
+
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw AWLError.device(
+                    "Meta DAT session did not reach started before timeout"
+                )
+            }
+
+            _ = try await group.next()
+            group.cancelAll()
         }
     }
 
