@@ -3,20 +3,21 @@ import AgentWearLinkMetaDATIntegration
 
 @main
 struct MetaDATTestHostApp: App {
-    @State private var bootstrapError: String?
+    @State private var bootstrapState = "host-starting"
 
     var body: some Scene {
         WindowGroup {
             VStack(spacing: 12) {
                 Text("AgentWearLink Meta DAT Test Host")
-                Text(bootstrapError == nil ? "host-ready" : "host-error")
+                Text(bootstrapState)
                     .accessibilityIdentifier("awl-meta-host-state")
             }
             .task {
                 do {
                     try await MetaDATMockHostBootstrap.configureIfRequested()
+                    bootstrapState = "host-ready"
                 } catch {
-                    bootstrapError = String(describing: error)
+                    bootstrapState = "host-error: \(error)"
                 }
             }
         }
