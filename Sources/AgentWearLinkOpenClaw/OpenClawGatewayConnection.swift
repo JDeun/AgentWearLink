@@ -3,29 +3,33 @@ import Foundation
 public actor OpenClawGatewayConnection {
     private let socket: any OpenClawWebSocket
     private let state: OpenClawGatewayState
+    private let assembler: OpenClawConnectAssembler
     private let frameRouter = OpenClawFrameRouter()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
     public init(
         socket: any OpenClawWebSocket,
+        assembler: OpenClawConnectAssembler,
         state: OpenClawGatewayState = .init()
     ) {
         self.socket = socket
+        self.assembler = assembler
         self.state = state
     }
 
     public func connect(
         appVersion: String,
-        auth: OpenClawConnectParams.Auth?
+        scopes: [String] = ["operator.read", "operator.write"],
+        credentials: OpenClawConnectCredentials = .init(),
+        locale: String = "en-US"
     ) async throws -> OpenClawHelloOK {
         await state.beginConnect()
         await socket.connect()
 
         do {
             let challengeText = try await socket.receive()
-            let challengeData = Data(challengeText.utf8)
-            let frame = try frameRouter.decodePreAuth(challengeData)
+            let frame = try frameRouter.decodePreAuth(Data(challengeText.utf8))
 
             guard case let .event(event) = frame,
                   event.event == "connect.challenge",
@@ -33,18 +37,26 @@ public actor OpenClawGatewayConnection {
                 throw OpenClawHandshakeError.challengeRequired
             }
 
-            _ = try decodeChallenge(payload)
+            let challenge = try decodeChallenge(payload)
+            guard challenge.ts >= 0, !challenge.nonce.isEmpty else {
+                throw OpenClawHandshakeError.invalidChallenge
+            }
+
             await state.beginAuthentication()
 
-            let requestID = UUID().uuidString
-            let params = OpenClawConnectParams(
+            let assembled = try await assembler.assemble(
                 version: appVersion,
-                auth: auth
+                scopes: scopes,
+                credentials: credentials,
+                challenge: challenge,
+                locale: locale
             )
+
+            let requestID = UUID().uuidString
             let request = OpenClawRequestFrame(
                 id: requestID,
                 method: "connect",
-                params: params
+                params: assembled.params
             )
             let requestData = try encoder.encode(request)
 
@@ -54,10 +66,10 @@ public actor OpenClawGatewayConnection {
                     maximum: OpenClawProtocol.preAuthMaximumBytes
                 )
             }
-
             guard let requestText = String(data: requestData, encoding: .utf8) else {
                 throw OpenClawFrameError.malformedFrame
             }
+
             try await socket.send(text: requestText)
 
             let responseText = try await socket.receive()
@@ -71,6 +83,11 @@ public actor OpenClawGatewayConnection {
             }
 
             guard response.ok else {
+                if let error = response.error,
+                   let pairing = OpenClawPairingRequired(error: error) {
+                    throw OpenClawHandshakeError.pairingRequired(pairing)
+                }
+
                 throw AWLOpenClawError.gateway(
                     code: response.error?.code ?? "UNKNOWN",
                     retryable: response.error?.retryable ?? false
@@ -82,6 +99,7 @@ public actor OpenClawGatewayConnection {
             }
 
             let hello = try decodeHello(payload)
+            try await assembler.persistHello(hello, assembled: assembled)
             try await state.acceptHello(hello)
             return hello
         } catch {
@@ -99,18 +117,20 @@ public actor OpenClawGatewayConnection {
     private func decodeChallenge(
         _ value: JSONValue
     ) throws -> OpenClawConnectChallenge {
-        let data = try JSONEncoder().encode(value)
+        let data = try encoder.encode(value)
         return try decoder.decode(OpenClawConnectChallenge.self, from: data)
     }
 
     private func decodeHello(_ value: JSONValue) throws -> OpenClawHelloOK {
-        let data = try JSONEncoder().encode(value)
+        let data = try encoder.encode(value)
         return try decoder.decode(OpenClawHelloOK.self, from: data)
     }
 }
 
 public enum OpenClawHandshakeError: Error, Sendable, Equatable {
     case challengeRequired
+    case invalidChallenge
     case unexpectedConnectResponse
     case missingHello
+    case pairingRequired(OpenClawPairingRequired)
 }
