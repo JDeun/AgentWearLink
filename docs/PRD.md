@@ -78,7 +78,7 @@ The following are invariants:
 
 - `AgentWearLinkCore`: capabilities, normalized interactions, coordinator/runtime, generic transport primitives and deterministic mocks.
 - `AgentWearLinkOpenClaw`: OpenClaw-specific HTTP/native Gateway protocol integration.
-- `Adapters/MetaDAT`: Meta DAT registration/session/device integration scaffold.
+- `Adapters/MetaDAT`: pinned Meta DAT 1.0.0 integration for registration/device lifecycle, camera, Speech, Voice Invocation, live capabilities, lifecycle policy, and simulator/mock hosting.
 
 Future device/runtime adapters should remain outside Core.
 
@@ -279,31 +279,23 @@ When resuming work in another session:
 
 ## 14. Current implementation snapshot — 2026-10-06
 
-Implemented or scaffolded:
+Implemented code-side:
 
-- capability/event/request/response contracts,
-- interaction coordinator and runtime,
-- deterministic mock device/agent harness,
-- bounded streaming primitives and SSE parser,
-- generic buffered HTTP transport,
-- OpenClaw Chat Completions adapter,
-- OpenClaw native Gateway protocol v4 frame models,
-- Gateway challenge/connect handshake,
-- persistent Ed25519 device identity and Keychain credential storage,
-- hello-ok negotiated policy state,
-- long-lived RPC/event dispatcher,
-- native agent run lifecycle and AgentAdapter bridge,
-- tick watchdog, reconnect supervisor and event-sequence gap retirement,
-- concurrent Gateway event broadcast,
-- Tailnet endpoint/reconnect model,
-- read-only native Gateway integration probe,
-- Meta DAT registration/session scaffold.
+- capability/event/request/response contracts and coordinator/runtime;
+- deterministic mock device/agent harness and bounded streaming/HTTP/SSE primitives;
+- OpenClaw Chat Completions compatibility adapter;
+- preferred native OpenClaw Gateway WebSocket stack: challenge/connect authentication, persistent Ed25519 device identity/Keychain credentials, negotiated policy, RPC/event dispatch, incremental agent runs, cancellation, reconnect supervision, event-sequence retirement, and probes;
+- Meta DAT 1.0.0 pinned integration: registration/device lifecycle, selected-device handling, live capabilities, bounded camera capture/readiness/cancellation, Speech final-transcript filtering/deduplication, Voice Invocation acknowledgement/reopen policy, foreground/background readiness invalidation, and MockDeviceKit bootstrap;
+- Apple output/TTS boundary;
+- deterministic privacy/reliability regressions including credential diagnostic redaction and representative no-replay transition scenarios.
 
-Next implementation priorities:
+Current unclosed evidence/work priorities:
 
-1. run the read-only probe against the owner's real Mac mini Gateway over Tailscale,
-2. add a controlled native agent text smoke test after health/pairing succeeds,
-3. implement Meta DAT concrete capability mapping,
-4. complete real Tailnet/OpenClaw P0-B validation,
-5. add iOS companion composition/Keychain wiring,
-6. perform physical Ray-Ban/iPhone validation.
+1. complete the real iOS app-hosted MockDeviceKit/XCUITest gate (#122);
+2. run the read-only OpenClaw probe against the owner's Mac mini over Tailscale;
+3. validate one existing-session incremental native agent turn over the real Tailnet (#97/#118);
+4. validate persistent Gateway credential reuse in deployment (#117);
+5. run physical Ray-Ban Meta + iPhone camera/Speech/Voice/lifecycle gates (#1/#98 and children);
+6. complete physical reliability/privacy/network transition evidence (#59/#119/#120).
+
+Code-side completion must not be reported as physical completion. See `testing.md` for the evidence vocabulary.
