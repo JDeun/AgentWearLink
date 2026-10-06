@@ -42,10 +42,14 @@ launch host --ui-testing
 The initial camera fixture should use repository-owned small deterministic
 assets rather than depending on Meta sample assets.
 
+## Simulator selection
+
+CI intentionally selects any available iPhone Simulator at runtime. The handset profile is only an iOS app host for `MockDeviceKit`; its simulated camera hardware is never used by these tests. Pinning `iPhone 16 Pro`, `iPhone 16`, or another model would add runner-image fragility without increasing Meta camera coverage.
+
 ## Proof boundary
 
 This harness can prove SDK wiring, registration/device/session transitions,
 camera/photo result plumbing, and simulated voice launch where the pinned SDK
 supports it. It does **not** prove Bluetooth behavior, glasses firmware,
 lock-screen/background execution, microphone routing, or real Tailnet/OpenClaw
-behavior. Those remain physical validation gates.
+behavior. Those remain physical validation gates. In particular, cold-sensor wake behavior, real video ignition, shutter timing, and photo transfer over an actual Ray-Ban Meta link must be re-run on a physical iPhone + glasses before #1/#98 can close.
