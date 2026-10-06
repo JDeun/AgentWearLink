@@ -25,10 +25,20 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable {
 /// This type deliberately does not claim streaming semantics. SSE/WebSocket
 /// transports are separate implementations of AgentTransport.
 public actor HTTPAgentTransport: AgentTransport {
+    private enum OperationPhase {
+        case registering
+        case running(URLSessionDataTask)
+        case cancelled
+    }
+
+    private struct Operation {
+        let generation: UUID
+        var phase: OperationPhase
+    }
+
     private let configuration: HTTPAgentTransportConfiguration
     private let session: URLSession
-    private var tasks: [InteractionID: URLSessionDataTask] = [:]
-    private var pendingCancellations: Set<InteractionID> = []
+    private var operations: [InteractionID: Operation] = [:]
 
     public init(
         configuration: HTTPAgentTransportConfiguration,
@@ -41,39 +51,63 @@ public actor HTTPAgentTransport: AgentTransport {
     public func connect() async throws {}
 
     public func disconnect() async {
-        for task in tasks.values { task.cancel() }
-        tasks.removeAll()
-        pendingCancellations.removeAll()
+        for operation in operations.values {
+            if case let .running(task) = operation.phase {
+                task.cancel()
+            }
+        }
+        operations.removeAll(keepingCapacity: false)
     }
 
     public func send(
         _ request: AgentRequest
     ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        let id = request.interactionID
+
+        guard operations[id] == nil else {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(
+                    throwing: AWLError.transport("duplicate interaction ID")
+                )
+            }
+        }
+
+        var urlRequest = URLRequest(
+            url: configuration.endpoint,
+            timeoutInterval: configuration.timeout
+        )
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("application/json, text/plain", forHTTPHeaderField: "Accept")
+
+        if let token = configuration.bearerToken {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        do {
+            urlRequest.httpBody = try JSONEncoder().encode(request)
+        } catch {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: error)
+            }
+        }
+
+        let generation = UUID()
+        operations[id] = Operation(
+            generation: generation,
+            phase: .registering
+        )
+
         let configuration = self.configuration
         let session = self.session
 
         return AsyncThrowingStream { continuation in
-            var urlRequest = URLRequest(
-                url: configuration.endpoint,
-                timeoutInterval: configuration.timeout
-            )
-            urlRequest.httpMethod = "POST"
-            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            urlRequest.setValue("application/json, text/plain", forHTTPHeaderField: "Accept")
-
-            if let token = configuration.bearerToken {
-                urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            }
-
-            do {
-                urlRequest.httpBody = try JSONEncoder().encode(request)
-            } catch {
-                continuation.finish(throwing: error)
-                return
-            }
-
             let task = session.dataTask(with: urlRequest) { data, response, error in
-                defer { Task { await self.finish(request.interactionID) } }
+                defer {
+                    Task {
+                        await self.finish(id, generation: generation)
+                    }
+                }
 
                 if let error {
                     let nsError = error as NSError
@@ -116,7 +150,9 @@ public actor HTTPAgentTransport: AgentTransport {
 
                 guard data.count <= configuration.maximumResponseBytes else {
                     continuation.finish(
-                        throwing: AWLError.transport("response exceeds configured byte limit")
+                        throwing: AWLError.transport(
+                            "response exceeds configured byte limit"
+                        )
                     )
                     return
                 }
@@ -128,17 +164,22 @@ public actor HTTPAgentTransport: AgentTransport {
                     return
                 }
 
-                continuation.yield(.textDelta(request.interactionID, text))
-                continuation.yield(.completed(request.interactionID))
+                continuation.yield(.textDelta(id, text))
+                continuation.yield(.completed(id))
                 continuation.finish()
             }
 
-            continuation.onTermination = { _ in task.cancel() }
+            continuation.onTermination = { _ in
+                Task {
+                    await self.cancel(interactionID: id)
+                }
+            }
 
             Task {
                 let shouldStart = await self.register(
                     task,
-                    for: request.interactionID
+                    for: id,
+                    generation: generation
                 )
                 if shouldStart {
                     task.resume()
@@ -151,26 +192,54 @@ public actor HTTPAgentTransport: AgentTransport {
 
     private func register(
         _ task: URLSessionDataTask,
-        for id: InteractionID
+        for id: InteractionID,
+        generation: UUID
     ) -> Bool {
-        if pendingCancellations.remove(id) != nil {
+        guard var operation = operations[id],
+              operation.generation == generation else {
             return false
         }
-        guard tasks[id] == nil else { return false }
-        tasks[id] = task
-        return true
+
+        switch operation.phase {
+        case .registering:
+            operation.phase = .running(task)
+            operations[id] = operation
+            return true
+
+        case .cancelled:
+            operations[id] = nil
+            return false
+
+        case .running:
+            return false
+        }
     }
 
-    private func finish(_ id: InteractionID) {
-        tasks[id] = nil
+    private func finish(_ id: InteractionID, generation: UUID) {
+        guard operations[id]?.generation == generation else { return }
+        operations[id] = nil
     }
 
     public func cancel(interactionID: InteractionID) async {
-        if let task = tasks.removeValue(forKey: interactionID) {
-            task.cancel()
-        } else {
-            // Covers cancellation racing with asynchronous task registration.
-            pendingCancellations.insert(interactionID)
+        guard var operation = operations[interactionID] else {
+            return
         }
+
+        switch operation.phase {
+        case .registering:
+            operation.phase = .cancelled
+            operations[interactionID] = operation
+
+        case let .running(task):
+            operations[interactionID] = nil
+            task.cancel()
+
+        case .cancelled:
+            break
+        }
+    }
+
+    func operationCount() -> Int {
+        operations.count
     }
 }
