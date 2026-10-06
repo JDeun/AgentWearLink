@@ -30,6 +30,9 @@ jobs:
       - name: Resolve pinned Meta DAT SDK
         working-directory: Adapters/MetaDAT
         run: swift package resolve
+      - name: List Meta DAT integration schemes
+        working-directory: Adapters/MetaDAT
+        run: xcodebuild -list
       - name: Compile concrete Meta DAT integration for iOS Simulator
         working-directory: Adapters/MetaDAT
         run: |
