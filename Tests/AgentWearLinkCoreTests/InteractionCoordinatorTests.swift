@@ -17,13 +17,11 @@ private actor StubAgent: AgentAdapter {
     func disconnect() async {}
 
     func responses(
-        for event: InteractionEvent
-    ) -> AsyncThrowingStream<InteractionEvent, Error> {
+        for request: AgentRequest
+    ) -> AsyncThrowingStream<AgentResponse, Error> {
         requestCount += 1
-        let id = event.interactionID!
-
         return AsyncThrowingStream { continuation in
-            continuation.yield(.text(id, "response"))
+            continuation.yield(.textDelta(request.interactionID, "response"))
             continuation.finish()
         }
     }
@@ -45,15 +43,11 @@ final class InteractionCoordinatorTests: XCTestCase {
         }
 
         let id = InteractionID()
-        let event = InteractionEvent.text(id, "hello")
-
-        await coordinator.handle(event)
-        await coordinator.handle(event)
+        await coordinator.handle(.text(id, "hello"))
+        await coordinator.handle(.text(id, "hello"))
 
         try await Task.sleep(for: .milliseconds(20))
-
-        let count = await agent.requests()
-        XCTAssertEqual(count, 1)
+        XCTAssertEqual(await agent.requests(), 1)
     }
 
     func testInterruptionCancelsAgentInteraction() async {
@@ -67,7 +61,21 @@ final class InteractionCoordinatorTests: XCTestCase {
         await coordinator.handle(.text(id, "hello"))
         await coordinator.handle(.interrupted(id))
 
-        let cancellations = await agent.cancellations()
-        XCTAssertEqual(cancellations, [id])
+        XCTAssertEqual(await agent.cancellations(), [id])
+    }
+
+    func testAgentResponseIsNormalizedBackToInteractionEvent() async throws {
+        let agent = StubAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+
+        let id = InteractionID()
+        await coordinator.handle(.text(id, "hello"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let events = await recorded.values
+        XCTAssertTrue(events.contains(.text(id, "response")))
     }
 }
