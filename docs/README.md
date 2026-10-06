@@ -16,6 +16,7 @@ This directory is the implementation and validation documentation for AgentWearL
 - [meta-dat-ios.md](meta-dat-ios.md) — Meta DAT iOS integration
 - [meta-dat-known-issues.md](meta-dat-known-issues.md) — known DAT constraints and validation notes
 - [meta-dat-validation.md](meta-dat-validation.md) — P0-A physical DAT validation runbook
+- [meta-mock-device-kit.md](meta-mock-device-kit.md) — MockDeviceKit setup, capabilities, limitations, and AWL test architecture
 
 ## OpenClaw integration
 
