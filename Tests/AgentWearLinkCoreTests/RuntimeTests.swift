@@ -448,6 +448,16 @@ final class RuntimeTests: XCTestCase {
         try await runtime.start()
 
         let stopping = Task { await runtime.stop() }
+
+        // Do not assume sibling Task scheduling order. Wait until stop() has
+        // actually entered teardown before exercising start-during-stop.
+        for _ in 0..<100 {
+            let counts = await agent.counts()
+            if counts.1 >= 1 { break }
+            await Task.yield()
+        }
+        XCTAssertGreaterThanOrEqual((await agent.counts()).1, 1)
+
         let restarting = Task { try await runtime.start() }
 
         await stopping.value
