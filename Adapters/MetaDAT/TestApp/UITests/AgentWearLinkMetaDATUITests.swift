@@ -21,5 +21,26 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         let client = MockDeviceTestClient(portFilePath: portFile)
         let serverReady = await client.waitForServer(timeout: 15)
         XCTAssertTrue(serverReady)
+
+        let deviceID = try? await client.pairDevice()
+        let pairedDeviceID = try? XCTUnwrap(deviceID ?? nil)
+        guard let pairedDeviceID else {
+            XCTFail("MockDeviceKit did not return a paired Ray-Ban Meta device")
+            return
+        }
+        defer {
+            Task {
+                _ = await client.unpairDevice(deviceId: pairedDeviceID)
+            }
+        }
+
+        XCTAssertTrue(await client.powerOn(deviceId: pairedDeviceID))
+        XCTAssertTrue(await client.unfold(deviceId: pairedDeviceID))
+        XCTAssertTrue(await client.don(deviceId: pairedDeviceID))
+        XCTAssertNotNil(
+            await client.getDeviceState(),
+            "Mock server must expose the paired device state"
+        )
+        XCTAssertTrue(await client.unpairDevice(deviceId: pairedDeviceID))
     }
 }
