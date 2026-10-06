@@ -122,6 +122,41 @@ final class MetaDATAdapterTests: XCTestCase {
         XCTAssertEqual(disconnectCount, 1)
     }
 
+    func testRejectsAdvertisedVoiceInvocationWithoutSource() async {
+        let adapter = MetaDATAdapter(
+            session: StubSession(capabilities: [.voiceInvocation])
+        )
+
+        do {
+            try await adapter.connect()
+            XCTFail("Expected missing invocation source failure")
+        } catch {
+            guard case AWLError.capabilityUnavailable = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testForwardsIndependentVoiceInvocationSource() async throws {
+        let id = UUID()
+        let session = VoiceStubSession(
+            invocation: MetaDATInvocation(id: id, phrase: "launch")
+        )
+        let adapter = MetaDATAdapter(session: session)
+        let events = adapter.events()
+        var iterator = events.makeAsyncIterator()
+
+        try await adapter.connect()
+        await session.emitInvocation()
+
+        let event = await iterator.next()
+        XCTAssertEqual(
+            event,
+            .invocation(InteractionID(rawValue: id), "launch")
+        )
+        await adapter.disconnect()
+    }
+
     func testNormalizesSessionEvents() async throws {
         let session = StubSession(capabilities: [.speech])
         let adapter = MetaDATAdapter(session: session)
@@ -231,4 +266,35 @@ private actor FailingConnectSession: MetaDATSession {
     func connect() async throws { throw AWLError.device("connect failed") }
     func disconnect() async { disconnectCount += 1 }
     nonisolated func events() -> AsyncStream<MetaDATEvent> { AsyncStream { _ in } }
+}
+
+
+private actor VoiceStubSession: MetaDATSession, MetaDATVoiceInvocationSource {
+    nonisolated let capabilities: MetaDATCapabilities = [.voiceInvocation]
+    nonisolated private let eventStream: AsyncStream<MetaDATEvent>
+    nonisolated private let invocationStream: AsyncStream<MetaDATInvocation>
+    private let eventContinuation: AsyncStream<MetaDATEvent>.Continuation
+    private let invocationContinuation: AsyncStream<MetaDATInvocation>.Continuation
+    private let invocation: MetaDATInvocation
+
+    init(invocation: MetaDATInvocation) {
+        self.invocation = invocation
+        let events = AsyncStream<MetaDATEvent>.makeStream()
+        self.eventStream = events.stream
+        self.eventContinuation = events.continuation
+        let invocations = AsyncStream<MetaDATInvocation>.makeStream()
+        self.invocationStream = invocations.stream
+        self.invocationContinuation = invocations.continuation
+    }
+
+    func connect() async throws {}
+    func disconnect() async {
+        eventContinuation.finish()
+        invocationContinuation.finish()
+    }
+    nonisolated func events() -> AsyncStream<MetaDATEvent> { eventStream }
+    nonisolated func invocationEvents() -> AsyncStream<MetaDATInvocation> {
+        invocationStream
+    }
+    func emitInvocation() { invocationContinuation.yield(invocation) }
 }
