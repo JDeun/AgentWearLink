@@ -17,6 +17,12 @@ The primary adapter is `OpenClawNativeAgentAdapter`. It uses the native Gateway 
 
 A reconnect restores transport readiness. It does **not** silently replay an in-flight request whose delivery or completion is uncertain.
 
+### Gateway client identity
+
+AWL uses OpenClaw's canonical protocol-v4 client registry instead of inventing a private client ID or treating the operator role as a client mode. The production native adapter identifies as `gateway-client` / `backend`; the read-only validation probe uses `openclaw-probe` / `probe`. AWL deliberately does not claim the official `openclaw-ios` application identity.
+
+The same client ID, mode, platform, and device family are used both in the emitted connect frame and in the signed V3 device-proof tuple.
+
 ## Compatibility path: Chat Completions
 
 `OpenClawChatCompletionsAdapter` remains available for OpenClaw's OpenAI-compatible HTTP/SSE endpoint. That endpoint must be explicitly enabled in OpenClaw:

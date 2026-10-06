@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 @testable import AgentWearLinkOpenClaw
@@ -89,6 +90,55 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
 
         XCTAssertNil(result.effectiveToken)
         XCTAssertTrue(result.usedBootstrapToken)
+    }
+
+    func testCanonicalClientIdentityMatchesSignedV3Tuple() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: InMemoryOpenClawDeviceCredentialStore()
+        )
+
+        let result = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(token: "shared"),
+            challenge: challenge
+        )
+
+        XCTAssertEqual(result.params.client.id, "gateway-client")
+        XCTAssertEqual(result.params.client.mode, "backend")
+        XCTAssertEqual(result.params.client.platform, "ios")
+        XCTAssertEqual(result.params.client.deviceFamily, "iphone")
+
+        let proof = try XCTUnwrap(result.params.device)
+        let payload = OpenClawDeviceProofBuilder().buildPayloadV3(
+            deviceID: try identity.deviceID,
+            clientID: result.params.client.id,
+            clientMode: result.params.client.mode,
+            role: result.params.role,
+            scopes: result.params.scopes,
+            token: result.effectiveToken,
+            nonce: proof.nonce,
+            signedAt: proof.signedAt,
+            platform: result.params.client.platform,
+            deviceFamily: result.params.client.deviceFamily
+        )
+        var encodedSignature = proof.signature
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        encodedSignature += String(
+            repeating: "=",
+            count: (4 - encodedSignature.count % 4) % 4
+        )
+
+        let signature = try XCTUnwrap(Data(base64Encoded: encodedSignature))
+        let publicKey = try Curve25519.Signing.PublicKey(
+            rawRepresentation: identity.publicKeyRaw
+        )
+        XCTAssertTrue(publicKey.isValidSignature(signature, for: payload))
     }
 
     func testSensitiveCredentialDescriptionsAreRedacted() throws {

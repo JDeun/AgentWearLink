@@ -23,6 +23,12 @@ final class OpenClawProtocolTests: XCTestCase {
         XCTAssertEqual(encodedParams["minProtocol"] as? Int, 4)
         XCTAssertEqual(encodedParams["maxProtocol"] as? Int, 4)
         XCTAssertEqual(encodedParams["role"] as? String, "operator")
+
+        let client = try XCTUnwrap(encodedParams["client"] as? [String: Any])
+        XCTAssertEqual(client["id"] as? String, "gateway-client")
+        XCTAssertEqual(client["mode"] as? String, "backend")
+        XCTAssertEqual(client["platform"] as? String, "ios")
+        XCTAssertEqual(client["deviceFamily"] as? String, "iphone")
     }
 
     func testDecodesGatewayResponseEnvelope() throws {

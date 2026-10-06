@@ -51,6 +51,7 @@ public struct OpenClawConnectAssembler: Sendable {
         scopes requestedScopes: [String],
         credentials: OpenClawConnectCredentials,
         challenge: OpenClawConnectChallenge,
+        clientIdentity: OpenClawGatewayClientIdentity = .backend,
         locale: String = "en-US"
     ) async throws -> OpenClawAssembledConnect {
         let identity = try await identityManager.loadOrCreate()
@@ -82,6 +83,7 @@ public struct OpenClawConnectAssembler: Sendable {
 
         let proof = try proofBuilder.makeProof(
             identity: identity,
+            client: clientIdentity,
             scopes: scopes,
             token: effectiveToken,
             challenge: challenge
@@ -96,6 +98,7 @@ public struct OpenClawConnectAssembler: Sendable {
         return OpenClawAssembledConnect(
             params: OpenClawConnectParams(
                 version: version,
+                clientIdentity: clientIdentity,
                 scopes: scopes,
                 auth: auth,
                 locale: locale,

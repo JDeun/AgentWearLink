@@ -22,6 +22,7 @@ public actor OpenClawGatewayConnection {
         appVersion: String,
         scopes: [String] = ["operator.read", "operator.write"],
         credentials: OpenClawConnectCredentials = .init(),
+        clientIdentity: OpenClawGatewayClientIdentity = .backend,
         locale: String = "en-US"
     ) async throws -> OpenClawHelloOK {
         await state.beginConnect()
@@ -49,6 +50,7 @@ public actor OpenClawGatewayConnection {
                 scopes: scopes,
                 credentials: credentials,
                 challenge: challenge,
+                clientIdentity: clientIdentity,
                 locale: locale
             )
 

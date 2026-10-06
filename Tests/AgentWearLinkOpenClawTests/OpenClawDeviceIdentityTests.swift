@@ -18,8 +18,8 @@ final class OpenClawDeviceIdentityTests: XCTestCase {
         let builder = OpenClawDeviceProofBuilder()
         let data = builder.buildPayloadV3(
             deviceID: "device",
-            clientID: "client",
-            clientMode: "operator",
+            clientID: "gateway-client",
+            clientMode: "backend",
             role: "operator",
             scopes: ["operator.write", "operator.read"],
             token: "token",
@@ -31,7 +31,7 @@ final class OpenClawDeviceIdentityTests: XCTestCase {
 
         XCTAssertEqual(
             String(decoding: data, as: UTF8.self),
-            "v3|device|client|operator|operator|operator.write,operator.read|123|token|nonce|ios|iphone"
+            "v3|device|gateway-client|backend|operator|operator.write,operator.read|123|token|nonce|ios|iphone"
         )
     }
 

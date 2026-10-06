@@ -19,23 +19,61 @@ public struct OpenClawRequestFrame<Params: Encodable & Sendable>: Encodable, Sen
     }
 }
 
+public struct OpenClawGatewayClientIdentity: Sendable, Equatable {
+    public let id: String
+    public let mode: String
+    public let platform: String
+    public let deviceFamily: String
+
+    public init(
+        id: String,
+        mode: String,
+        platform: String,
+        deviceFamily: String
+    ) {
+        self.id = id
+        self.mode = mode
+        self.platform = platform
+        self.deviceFamily = deviceFamily
+    }
+
+    /// Generic authenticated backend identity used by the production AWL client.
+    ///
+    /// These are canonical OpenClaw protocol-v4 registry values. AWL deliberately
+    /// does not claim the official OpenClaw iOS application identity.
+    public static let backend = Self(
+        id: "gateway-client",
+        mode: "backend",
+        platform: "ios",
+        deviceFamily: "iphone"
+    )
+
+    /// Canonical identity for the read-only validation probe.
+    public static let probe = Self(
+        id: "openclaw-probe",
+        mode: "probe",
+        platform: "ios",
+        deviceFamily: "iphone"
+    )
+}
+
 public struct OpenClawConnectParams: Encodable, Sendable {
     public struct Client: Encodable, Sendable {
         public let id: String
         public let version: String
         public let platform: String
         public let mode: String
+        public let deviceFamily: String
 
         public init(
-            id: String = "agentwearlink",
-            version: String,
-            platform: String = "ios",
-            mode: String = "operator"
+            identity: OpenClawGatewayClientIdentity,
+            version: String
         ) {
-            self.id = id
+            self.id = identity.id
             self.version = version
-            self.platform = platform
-            self.mode = mode
+            self.platform = identity.platform
+            self.mode = identity.mode
+            self.deviceFamily = identity.deviceFamily
         }
     }
 
@@ -69,6 +107,7 @@ public struct OpenClawConnectParams: Encodable, Sendable {
 
     public init(
         version: String,
+        clientIdentity: OpenClawGatewayClientIdentity = .backend,
         scopes: [String] = ["operator.read", "operator.write"],
         auth: Auth? = nil,
         locale: String = "en-US",
@@ -76,7 +115,7 @@ public struct OpenClawConnectParams: Encodable, Sendable {
     ) {
         self.minProtocol = OpenClawProtocol.currentVersion
         self.maxProtocol = OpenClawProtocol.currentVersion
-        self.client = Client(version: version)
+        self.client = Client(identity: clientIdentity, version: version)
         self.role = "operator"
         self.scopes = scopes
         self.caps = []

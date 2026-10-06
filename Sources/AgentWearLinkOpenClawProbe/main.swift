@@ -51,7 +51,8 @@ struct AgentWearLinkOpenClawProbe {
             credentials: .init(
                 token: token,
                 bootstrapToken: bootstrapToken
-            )
+            ),
+            clientIdentity: .probe
         )
 
         do {
