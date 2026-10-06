@@ -57,6 +57,7 @@ public enum AWLError: Error, Sendable, Equatable {
     case device(String)
     case transport(String)
     case agent(String)
+    case overloaded(String)
     case timeout
     case cancelled
 }
