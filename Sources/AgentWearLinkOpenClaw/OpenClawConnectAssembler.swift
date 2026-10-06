@@ -111,6 +111,19 @@ public struct OpenClawConnectAssembler: Sendable {
         )
     }
 
+    public func invalidateStoredCredentialIfUsed(
+        _ assembled: OpenClawAssembledConnect
+    ) async throws {
+        guard let stored = assembled.storedCredential,
+              assembled.effectiveToken == stored.token else {
+            return
+        }
+        try await credentialStore.remove(
+            deviceID: stored.deviceID,
+            role: stored.role
+        )
+    }
+
     public func persistHello(
         _ hello: OpenClawHelloOK,
         assembled: OpenClawAssembledConnect
