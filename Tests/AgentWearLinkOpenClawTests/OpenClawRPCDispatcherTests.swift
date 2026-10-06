@@ -32,7 +32,11 @@ private actor DispatcherSocket: OpenClawWebSocket {
         }
     }
 
-    func lastRequestID() throws -> String {
+    func lastRequestID() async throws -> String {
+        while sentFrames.isEmpty {
+            await Task.yield()
+        }
+
         guard let text = sentFrames.last,
               let data = text.data(using: .utf8),
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -77,7 +81,6 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
             )
         }
 
-        await Task.yield()
         let id = try await socket.lastRequestID()
         await socket.push(
             #"{"type":"res","id":"\#(id)","ok":true,"payload":{"status":"ok"}}"#
