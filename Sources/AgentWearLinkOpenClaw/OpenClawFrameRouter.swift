@@ -11,9 +11,28 @@ public enum OpenClawFrameError: Error, Sendable, Equatable {
     case unsupportedFrameType(String)
 }
 
-/// Validates the pre-auth ceiling and decodes only the outer frame family.
-/// Runtime-specific payload decoding happens after routing.
+/// Validates the pre-auth ceiling and decodes each inbound JSON frame once.
 public struct OpenClawFrameRouter: Sendable {
+    private struct Envelope: Decodable {
+        let frame: OpenClawInboundFrame
+
+        private enum CodingKeys: String, CodingKey { case type }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try container.decode(String.self, forKey: .type)
+
+            switch type {
+            case "res":
+                frame = .response(try OpenClawResponseEnvelope(from: decoder))
+            case "event":
+                frame = .event(try OpenClawEventEnvelope(from: decoder))
+            default:
+                throw OpenClawFrameError.unsupportedFrameType(type)
+            }
+        }
+    }
+
     public init() {}
 
     public func decodePreAuth(_ data: Data) throws -> OpenClawInboundFrame {
@@ -27,24 +46,12 @@ public struct OpenClawFrameRouter: Sendable {
     }
 
     public func decode(_ data: Data) throws -> OpenClawInboundFrame {
-        guard
-            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let type = object["type"] as? String
-        else {
+        do {
+            return try JSONDecoder().decode(Envelope.self, from: data).frame
+        } catch let error as OpenClawFrameError {
+            throw error
+        } catch {
             throw OpenClawFrameError.malformedFrame
-        }
-
-        switch type {
-        case "res":
-            return .response(
-                try JSONDecoder().decode(OpenClawResponseEnvelope.self, from: data)
-            )
-        case "event":
-            return .event(
-                try JSONDecoder().decode(OpenClawEventEnvelope.self, from: data)
-            )
-        default:
-            throw OpenClawFrameError.unsupportedFrameType(type)
         }
     }
 }
