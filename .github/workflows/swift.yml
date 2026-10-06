@@ -41,3 +41,11 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
+      - name: Compile Meta DAT MockDeviceKit test seam
+        working-directory: Adapters/MetaDAT
+        run: |
+          xcodebuild \
+            -scheme AgentWearLinkMetaDATIntegration \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            build-for-testing
