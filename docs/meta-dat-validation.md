@@ -33,6 +33,8 @@ If the official sample fails, stop here. Do not encode a workaround in AWL until
 
 ## Phase 2 — MockDeviceKit baseline
 
+Use the detailed reference in `meta-mock-device-kit.md`.
+
 Before physical bridge work, verify the same SDK generation with MockDeviceKit where supported:
 
 - simulated Ray-Ban Meta pairing
