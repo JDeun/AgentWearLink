@@ -50,7 +50,7 @@ jobs:
         run: |
           xcodebuild \
             -scheme AgentWearLinkMetaDATIntegration \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -skipPackagePluginValidation \
