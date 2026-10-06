@@ -64,7 +64,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         }
 
         let devices = wearables.devices.compactMap {
-            wearables.deviceForIdentifier($0)
+            self.wearables.deviceForIdentifier($0)
         }
         guard let selectedDevice = devices.min(by: {
             Self.deviceRank($0) < Self.deviceRank($1)
@@ -121,7 +121,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
                 }
             }
         } catch {
-            await tearDownSession()
+            tearDownSession()
             throw error
         }
     }
@@ -223,7 +223,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     public func disconnect() async {
         guard deviceSession != nil else { return }
         stopping = true
-        await tearDownSession()
+        tearDownSession()
     }
 
     private func handleUnexpectedStop() {
