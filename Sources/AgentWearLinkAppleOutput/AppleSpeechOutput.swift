@@ -24,7 +24,9 @@ public actor AppleSpeechOutput {
         switch response {
         case let .textDelta(id, text):
             if activeInteractionID != id {
-                await synthesizer.stop()
+                if activeInteractionID != nil {
+                    await synthesizer.stop()
+                }
                 activeInteractionID = id
                 pendingText = ""
             }
