@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import AgentWearLinkCore
 
@@ -5,8 +6,6 @@ private actor RuntimeRecorder {
     var events: [InteractionEvent] = []
     func append(_ event: InteractionEvent) { events.append(event) }
 }
-
-
 
 private final class ConnectEmittingDevice: DeviceAdapter, @unchecked Sendable {
     let capabilities: CapabilitySet = [.textInput]
@@ -28,23 +27,85 @@ private final class ConnectEmittingDevice: DeviceAdapter, @unchecked Sendable {
     func events() -> AsyncStream<InteractionEvent> { stream }
 }
 
+private final class StartupTrackingDevice: DeviceAdapter, @unchecked Sendable {
+    let capabilities: CapabilitySet = [.textInput]
 
+    private let lock = NSLock()
+    private var subscriptions = 0
+    private var connects = 0
+    private var disconnects = 0
+    private var continuation: AsyncStream<InteractionEvent>.Continuation?
+
+    func events() -> AsyncStream<InteractionEvent> {
+        AsyncStream { continuation in
+            let previous = lock.withLock { () -> AsyncStream<InteractionEvent>.Continuation? in
+                subscriptions += 1
+                let previous = self.continuation
+                self.continuation = continuation
+                return previous
+            }
+            previous?.finish()
+        }
+    }
+
+    func connect() async throws {
+        lock.withLock {
+            connects += 1
+        }
+    }
+
+    func disconnect() async {
+        let continuation = lock.withLock { () -> AsyncStream<InteractionEvent>.Continuation? in
+            disconnects += 1
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.finish()
+    }
+
+    func snapshot() -> (
+        subscriptions: Int,
+        connects: Int,
+        disconnects: Int,
+        hasActiveSubscription: Bool
+    ) {
+        lock.withLock {
+            (
+                subscriptions,
+                connects,
+                disconnects,
+                continuation != nil
+            )
+        }
+    }
+}
 
 private actor LifecycleAgent: AgentAdapter {
     private(set) var connects = 0
     private(set) var disconnects = 0
-    let failConnect: Bool
+    private var remainingConnectFailures: Int
 
-    init(failConnect: Bool = false) { self.failConnect = failConnect }
+    init(failConnect: Bool = false) {
+        self.remainingConnectFailures = failConnect ? 1 : 0
+    }
+
     func connect() async throws {
         connects += 1
-        if failConnect { throw AWLError.agent("connect failed") }
+        if remainingConnectFailures > 0 {
+            remainingConnectFailures -= 1
+            throw AWLError.agent("connect failed")
+        }
     }
+
     func disconnect() async { disconnects += 1 }
+
     func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error> {
         AsyncThrowingStream { $0.finish() }
     }
+
     func cancel(interactionID: InteractionID) async {}
+
     func counts() -> (Int, Int) { (connects, disconnects) }
 }
 
@@ -59,17 +120,23 @@ private actor BlockingLifecycleAgent: AgentAdapter {
             await withCheckedContinuation { waiters.append($0) }
         }
     }
+
     private(set) var disconnects = 0
+
     func disconnect() async { disconnects += 1 }
+
     func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error> {
         AsyncThrowingStream { $0.finish() }
     }
+
     func cancel(interactionID: InteractionID) async {}
+
     func release() {
         released = true
         for waiter in waiters { waiter.resume() }
         waiters.removeAll()
     }
+
     func connectCount() -> Int { connects }
     func counts() -> (Int, Int) { (connects, disconnects) }
 }
@@ -77,9 +144,16 @@ private actor BlockingLifecycleAgent: AgentAdapter {
 private actor FailingDevice: DeviceAdapter {
     nonisolated let capabilities: CapabilitySet = []
     private(set) var disconnects = 0
-    func connect() async throws { throw AWLError.device("connect failed") }
+
+    func connect() async throws {
+        throw AWLError.device("connect failed")
+    }
+
     func disconnect() async { disconnects += 1 }
-    nonisolated func events() -> AsyncStream<InteractionEvent> { AsyncStream { _ in } }
+
+    nonisolated func events() -> AsyncStream<InteractionEvent> {
+        AsyncStream { _ in }
+    }
 }
 
 final class RuntimeTests: XCTestCase {
@@ -122,6 +196,48 @@ final class RuntimeTests: XCTestCase {
         let events = await recorder.events
         XCTAssertTrue(events.contains(.text(device.emittedID, "echo: during-connect")))
         await runtime.stop()
+    }
+
+    func testAgentConnectFailureRollsBackPreSubscribedDeviceAndCanRestart() async throws {
+        let device = StartupTrackingDevice()
+        let agent = LifecycleAgent(failConnect: true)
+        let runtime = AgentWearLinkRuntime(
+            device: device,
+            agent: agent,
+            output: { _ in }
+        )
+
+        do {
+            try await runtime.start()
+            XCTFail("expected first start to fail")
+        } catch let error as AWLError {
+            XCTAssertEqual(error, .agent("connect failed"))
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        let afterFailure = device.snapshot()
+        XCTAssertEqual(afterFailure.subscriptions, 1)
+        XCTAssertEqual(afterFailure.connects, 0)
+        XCTAssertEqual(afterFailure.disconnects, 1)
+        XCTAssertFalse(afterFailure.hasActiveSubscription)
+
+        let agentAfterFailure = await agent.counts()
+        XCTAssertEqual(agentAfterFailure.0, 1)
+        XCTAssertEqual(agentAfterFailure.1, 1)
+
+        try await runtime.start()
+        await runtime.stop()
+
+        let afterRestart = device.snapshot()
+        XCTAssertEqual(afterRestart.subscriptions, 2)
+        XCTAssertEqual(afterRestart.connects, 1)
+        XCTAssertEqual(afterRestart.disconnects, 2)
+        XCTAssertFalse(afterRestart.hasActiveSubscription)
+
+        let agentAfterRestart = await agent.counts()
+        XCTAssertEqual(agentAfterRestart.0, 2)
+        XCTAssertEqual(agentAfterRestart.1, 2)
     }
 
     func testDeviceConnectFailureRollsBackAgentConnection() async {
@@ -172,7 +288,6 @@ final class RuntimeTests: XCTestCase {
         await runtime.stop()
     }
 
-
     func testStopDuringStartCannotResurrectRuntime() async throws {
         let device = MockDeviceAdapter()
         let agent = BlockingLifecycleAgent()
@@ -204,7 +319,11 @@ final class RuntimeTests: XCTestCase {
         let agent = LifecycleAgent()
         let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
 
-        do { try await runtime.start(); XCTFail("expected start failure") } catch {}
+        do {
+            try await runtime.start()
+            XCTFail("expected start failure")
+        } catch {}
+
         let deviceDisconnects = await device.disconnects
         XCTAssertEqual(deviceDisconnects, 1)
     }
