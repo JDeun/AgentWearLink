@@ -9,6 +9,6 @@ public protocol DeviceAdapter: Sendable {
 public protocol AgentAdapter: Sendable {
     func connect() async throws
     func disconnect() async
-    func responses(for request: AgentRequest) -> AsyncThrowingStream<AgentResponse, Error>
+    func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error>
     func cancel(interactionID: InteractionID) async
 }
