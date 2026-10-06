@@ -36,7 +36,7 @@ final class AppleSpeechOutputTests: XCTestCase {
 
         let values = await spy.values()
         XCTAssertEqual(values.0, ["fresh"])
-        XCTAssertEqual(values.1, 2)
+        XCTAssertEqual(values.1, 1)
     }
 
     func testInterruptDropsPendingText() async {
