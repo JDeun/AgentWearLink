@@ -25,6 +25,12 @@ public struct VisionCoordinator: Sendable {
         }
 
         let image = try await device.captureSnapshot(interactionID: interactionID)
+
+        // Capture implementations are allowed to be cancellation-insensitive. Re-check
+        // here so private media is never handed to the agent after the interaction was
+        // cancelled while capture was still completing.
+        try Task.checkCancellation()
+
         return await agent.responses(
             for: VisionRequest(interactionID: interactionID, prompt: prompt, image: image)
         )
