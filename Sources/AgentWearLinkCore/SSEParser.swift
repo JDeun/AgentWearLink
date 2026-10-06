@@ -27,7 +27,7 @@ public struct ServerSentEvent: Sendable, Equatable {
 /// WHATWG event streams permit CRLF, LF, or CR line endings. UTF-8 decoding
 /// uses replacement semantics and one leading BOM is ignored. An incomplete
 /// event is intentionally not dispatched until a blank line is observed.
-public struct SSEParser: Sendable {
+public enum SSEParserError: Error, Sendable, Equatable {\n    case pendingEventTooLarge(actual: Int, maximum: Int)\n}\n\npublic struct SSEParser: Sendable {
     private var lineBuffer = Data()
     private var skipLeadingLF = false
     private var isFirstLine = true
@@ -39,7 +39,7 @@ public struct SSEParser: Sendable {
 
     public init() {}
 
-    public mutating func append(_ bytes: Data) -> [ServerSentEvent] {
+    public mutating func append(_ bytes: Data) throws -> [ServerSentEvent] {
         var events: [ServerSentEvent] = []
 
         for byte in bytes {
@@ -52,14 +52,14 @@ public struct SSEParser: Sendable {
 
             switch byte {
             case 0x0D:
-                processCurrentLine(into: &events)
+                try processCurrentLine(into: &events)
                 skipLeadingLF = true
 
             case 0x0A:
-                processCurrentLine(into: &events)
+                try processCurrentLine(into: &events)
 
             default:
-                lineBuffer.append(byte)
+                lineBuffer.append(byte)\n                try validatePendingSize()
             }
         }
 
@@ -69,7 +69,7 @@ public struct SSEParser: Sendable {
     private mutating func processCurrentLine(
         into events: inout [ServerSentEvent]
     ) {
-        var line = String(decoding: lineBuffer, as: UTF8.self)
+        pendingEventBytes += lineBuffer.count + 1\n        try validatePendingSize()\n        var line = String(decoding: lineBuffer, as: UTF8.self)
         lineBuffer.removeAll(keepingCapacity: true)
 
         if isFirstLine {
