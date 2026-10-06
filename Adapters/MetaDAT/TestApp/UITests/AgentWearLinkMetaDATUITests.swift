@@ -3,7 +3,7 @@ import MWDATMockDeviceTestClient
 
 @MainActor
 final class AgentWearLinkMetaDATUITests: XCTestCase {
-    func testMockDeviceServerRendezvous() async {
+    func testMockDeviceServerRendezvousAndPairLifecycle() async throws {
         let portFile = NSTemporaryDirectory() + "awl-mwdat-\(UUID().uuidString).port"
         defer { try? FileManager.default.removeItem(atPath: portFile) }
 
@@ -22,25 +22,14 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         let serverReady = await client.waitForServer(timeout: 15)
         XCTAssertTrue(serverReady)
 
-        let deviceID = try? await client.pairDevice()
-        let pairedDeviceID = try? XCTUnwrap(deviceID ?? nil)
-        guard let pairedDeviceID else {
-            XCTFail("MockDeviceKit did not return a paired Ray-Ban Meta device")
-            return
-        }
-        defer {
-            Task {
-                _ = await client.unpairDevice(deviceId: pairedDeviceID)
-            }
-        }
-
-        XCTAssertTrue(await client.powerOn(deviceId: pairedDeviceID))
-        XCTAssertTrue(await client.unfold(deviceId: pairedDeviceID))
-        XCTAssertTrue(await client.don(deviceId: pairedDeviceID))
+        let deviceID = try XCTUnwrap(await client.pairDevice())
+        XCTAssertTrue(await client.powerOn(deviceId: deviceID))
+        XCTAssertTrue(await client.unfold(deviceId: deviceID))
+        XCTAssertTrue(await client.don(deviceId: deviceID))
         XCTAssertNotNil(
             await client.getDeviceState(),
             "Mock server must expose the paired device state"
         )
-        XCTAssertTrue(await client.unpairDevice(deviceId: pairedDeviceID))
+        XCTAssertTrue(await client.unpairDevice(deviceId: deviceID))
     }
 }
