@@ -45,18 +45,8 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
-      - name: Run package-hosted Meta DAT integration tests
-        working-directory: Adapters/MetaDAT
+      - name: Explain behavioral test boundary
         run: |
-          # These tests exercise the Meta DAT / MockDeviceKit contract, not the
-          # simulated iPhone camera. Avoid pinning a handset profile that may not
-          # exist on a future GitHub runner image.
-          SIMULATOR_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for runtime in d.values() for x in runtime if x.get("isAvailable") and x.get("name","").startswith("iPhone")))' )"
-          test -n "$SIMULATOR_ID"
-          xcodebuild \
-            -scheme AgentWearLinkMetaDATIntegration \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
-            -parallel-testing-enabled NO \
-            -maximum-concurrent-test-simulator-destinations 1 \
-            -skipPackagePluginValidation \
-            test
+          echo "Meta DAT package target is compile-gated here."
+          echo "Behavioral MockDeviceKit coverage runs in the app-hosted XCUITest harness (#122)."
+          echo "Package-hosted xctest is intentionally not used because MWDATCore requires linked-app runtime context."
