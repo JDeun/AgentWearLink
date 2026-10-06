@@ -52,10 +52,12 @@ public actor InteractionCoordinator {
         let task = Task { [agent, output] in
             do {
                 let responses = await agent.responses(for: request)
+                var observedTerminal = false
 
                 responseLoop: for try await response in responses {
-                    guard !Task.isCancelled else { break }
+                    guard !Task.isCancelled else { break responseLoop }
                     guard response.interactionID == id else {
+                        observedTerminal = true
                         await agent.cancel(interactionID: id)
                         await output(.failed(id, .agent("response interaction ID mismatch")))
                         break responseLoop
@@ -66,13 +68,24 @@ public actor InteractionCoordinator {
                         await output(.text(responseID, text))
 
                     case let .completed(responseID):
+                        observedTerminal = true
                         await output(.sessionEnded(responseID))
                         break responseLoop
 
                     case let .failed(responseID, error):
+                        observedTerminal = true
                         await output(.failed(responseID, error))
                         break responseLoop
                     }
+                }
+
+                if !observedTerminal && !Task.isCancelled {
+                    await output(
+                        .failed(
+                            id,
+                            .agent("response stream ended without terminal response")
+                        )
+                    )
                 }
             } catch is CancellationError {
                 // Lifecycle cancellation already carries the semantic event.
