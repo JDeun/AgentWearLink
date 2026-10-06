@@ -27,7 +27,6 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         wearables: any WearablesInterface = Wearables.shared,
         connectTimeout: Duration = .seconds(15)
     ) {
-        precondition(connectTimeout > .zero)
         self.wearables = wearables
         self.connectTimeout = connectTimeout
     }
@@ -70,9 +69,11 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         guard let selectedDevice = devices.min(by: {
             Self.deviceRank($0) < Self.deviceRank($1)
         }) else {
+            tearDownSession()
             throw AWLError.device("Meta DAT has no paired device eligible for session selection")
         }
         guard selectedDevice.compatibility() == .compatible else {
+            tearDownSession()
             throw AWLError.device("Selected Meta DAT device is not SDK-compatible")
         }
 
@@ -85,7 +86,13 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         }
 
         let selector = SpecificDeviceSelector(device: selectedIdentifier)
-        let session = try wearables.createSession(deviceSelector: selector)
+        let session: DeviceSession
+        do {
+            session = try wearables.createSession(deviceSelector: selector)
+        } catch {
+            tearDownSession()
+            throw error
+        }
         deviceSession = session
 
         // Obtain the streams before start() so initial state/error transitions
@@ -222,7 +229,6 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     }
 
     public func disconnect() async {
-        guard deviceSession != nil else { return }
         stopping = true
         tearDownSession()
     }
@@ -232,10 +238,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         eventContinuation?.yield(
             .failed(nil, .device("Meta DAT device session stopped"))
         )
-        deviceSession = nil
-        stateTask = nil
-        errorTask?.cancel()
-        errorTask = nil
+        tearDownSession()
     }
 
     private func handleRegistrationLoss() {
