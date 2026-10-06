@@ -119,6 +119,7 @@ public actor OpenClawGatewaySupervisor {
         await dispatcher.stop()
 
         var attempt = 1
+        var serverMinimumDelay = 0
         while !stopped {
             if let maximum = reconnectPolicy.maximumAttempts,
                attempt > maximum {
@@ -128,7 +129,11 @@ public actor OpenClawGatewaySupervisor {
 
             await state.beginReconnect(attempt: attempt)
 
-            let delay = reconnectPolicy.delayMilliseconds(forAttempt: attempt)
+            let delay = max(
+                reconnectPolicy.delayMilliseconds(forAttempt: attempt),
+                serverMinimumDelay
+            )
+            serverMinimumDelay = 0
             do {
                 try await Task.sleep(
                     nanoseconds: UInt64(delay) * 1_000_000
@@ -161,9 +166,12 @@ public actor OpenClawGatewaySupervisor {
                 }
             } catch let error as AWLOpenClawError {
                 switch error {
-                case let .gateway(_, retryable) where !retryable:
+                case let .gateway(_, retryable, _) where !retryable:
                     stopped = true
                     return
+                case let .gateway(_, _, retryAfterMilliseconds):
+                    serverMinimumDelay = retryAfterMilliseconds ?? 0
+                    attempt += 1
                 default:
                     attempt += 1
                 }
