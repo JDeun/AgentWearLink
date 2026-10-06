@@ -39,7 +39,7 @@ Build the official CameraAccess sample and its MockDeviceKit path first. Then co
 ## Pinned integration compile gate
 
 The reference integration package in this directory pins Meta Wearables DAT to
-**1.0.0**, matching Meta's current CameraAccess sample project.
+**1.0.0**, matching Meta's current CameraAccess sample project. The integration package also uses the sample's iOS **17.2** deployment floor.
 
 Resolve/build the integration package separately from the root package so vendor SDK
 changes cannot destabilize deterministic Core CI:
