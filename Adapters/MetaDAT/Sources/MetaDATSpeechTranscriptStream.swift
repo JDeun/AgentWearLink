@@ -28,7 +28,7 @@ public final class MetaDATSpeechTranscriptStream: @unchecked Sendable {
                     MetaDATTranscript(
                         text: result.text,
                         isFinal: result.isFinal,
-                        confidence: result.confidence >= 0 ? result.confidence : nil
+                        confidence: result.confidence >= 0 ? Double(result.confidence) : nil
                     )
                 )
             }.store(in: tokens)
