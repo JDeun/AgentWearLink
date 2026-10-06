@@ -180,4 +180,48 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         XCTAssertEqual(reconnect.params.device?.nonce, "fresh-nonce")
     }
 
+
+    func testInvalidationRemovesOnlyStoredCredentialActuallyUsed() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let identityStore = InMemoryOpenClawDeviceIdentityStore(identity: identity)
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        let deviceID = try identity.deviceID
+        try await store.save(.init(
+            deviceID: deviceID,
+            role: "operator",
+            scopes: ["operator.read"],
+            token: "stored"
+        ))
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(store: identityStore),
+            credentialStore: store
+        )
+
+        let storedConnect = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(),
+            challenge: challenge
+        )
+        try await assembler.invalidateStoredCredentialIfUsed(storedConnect)
+        let removed = try await store.load(deviceID: deviceID, role: "operator")
+        XCTAssertNil(removed)
+
+        try await store.save(.init(
+            deviceID: deviceID,
+            role: "operator",
+            scopes: ["operator.read"],
+            token: "stored-again"
+        ))
+        let explicitConnect = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(token: "explicit"),
+            challenge: challenge
+        )
+        try await assembler.invalidateStoredCredentialIfUsed(explicitConnect)
+        let preserved = try await store.load(deviceID: deviceID, role: "operator")
+        XCTAssertEqual(preserved?.token, "stored-again")
+    }
+
 }
