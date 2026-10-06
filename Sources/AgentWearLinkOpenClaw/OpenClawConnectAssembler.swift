@@ -1,10 +1,13 @@
 import Foundation
 
-public struct OpenClawConnectCredentials: Sendable, Equatable {
+public struct OpenClawConnectCredentials: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     public let token: String?
     public let password: String?
     public let explicitDeviceToken: String?
     public let bootstrapToken: String?
+
+    public var description: String { "OpenClawConnectCredentials(<redacted>)" }
+    public var debugDescription: String { description }
 
     public init(
         token: String? = nil,
@@ -19,12 +22,15 @@ public struct OpenClawConnectCredentials: Sendable, Equatable {
     }
 }
 
-public struct OpenClawAssembledConnect: Sendable {
+public struct OpenClawAssembledConnect: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     public let params: OpenClawConnectParams
     public let identity: OpenClawDeviceIdentity
     public let storedCredential: OpenClawDeviceCredential?
     public let effectiveToken: String?
     public let usedBootstrapToken: Bool
+
+    public var description: String { "OpenClawAssembledConnect(<redacted>)" }
+    public var debugDescription: String { description }
 }
 
 public struct OpenClawConnectAssembler: Sendable {
