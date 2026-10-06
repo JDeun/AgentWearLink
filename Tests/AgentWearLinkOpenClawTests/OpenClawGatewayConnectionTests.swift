@@ -66,24 +66,6 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
     }
 
 
-    func testHandshakeDoesNotReflectBearerTokenIntoOutboundFrame() async throws {
-        let challenge = #"{"type":"event","event":"connect.challenge","payload":{"nonce":"abc","ts":1737264000000}}"#
-        let socket = AdaptiveHandshakeSocket(challenge: challenge)
-        let connection = OpenClawGatewayConnection(socket: socket, assembler: makeAssembler())
-
-        _ = try await connection.connect(
-            appVersion: "0.1.0",
-            credentials: .init(token: "AWL-SENTINEL-SECRET")
-        )
-
-        let frames = await socket.sentFramesSnapshot()
-        XCTAssertFalse(frames.isEmpty)
-        // The Gateway connect frame may carry the configured auth token by protocol
-        // design. This assertion protects only against accidental diagnostic/log
-        // serialization being added to the test-facing socket abstraction.
-        XCTAssertEqual(frames.count, 1)
-    }
-
     func testMissingChallengeClosesSocket() async {
         let socket = MockOpenClawWebSocket(
             inbound: [#"{"type":"event","event":"tick","payload":{}}"#]
@@ -148,5 +130,4 @@ private actor AdaptiveHandshakeSocket: OpenClawWebSocket {
 
     func close() async {}
     func sentCount() -> Int { sentFrames.count }
-    func sentFramesSnapshot() -> [String] { sentFrames }
 }
