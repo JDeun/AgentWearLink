@@ -127,8 +127,14 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
         }
         eventTask = forwardingTask
 
-        if mappedCapabilities.contains(.voiceInvocation),
-           let source = session as? any MetaDATVoiceInvocationSource {
+        if mappedCapabilities.contains(.voiceInvocation) {
+            guard let source = session as? any MetaDATVoiceInvocationSource else {
+                forwardingTask.cancel()
+                eventTask = nil
+                throw AWLError.capabilityUnavailable(
+                    "Meta DAT voice invocation is advertised without a concrete invocation source"
+                )
+            }
             let invocations = source.invocationEvents()
             invocationTask = Task { [weak self] in
                 for await invocation in invocations {
