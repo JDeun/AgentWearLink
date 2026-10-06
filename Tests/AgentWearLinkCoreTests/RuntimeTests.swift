@@ -456,7 +456,8 @@ final class RuntimeTests: XCTestCase {
             if counts.1 >= 1 { break }
             await Task.yield()
         }
-        XCTAssertGreaterThanOrEqual((await agent.counts()).1, 1)
+        let enteredTeardown = await agent.counts()
+        XCTAssertGreaterThanOrEqual(enteredTeardown.1, 1)
 
         let restarting = Task { try await runtime.start() }
 
