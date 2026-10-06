@@ -43,6 +43,7 @@ public actor HTTPAgentTransport: AgentTransport {
     public func disconnect() async {
         for task in tasks.values { task.cancel() }
         tasks.removeAll()
+        pendingCancellations.removeAll()
     }
 
     public func send(
