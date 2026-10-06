@@ -243,9 +243,11 @@ extension InteractionCoordinatorTests {
 
 
 private actor WrongIDAgent: AgentAdapter {
+    private var cancelled: [InteractionID] = []
     func connect() async throws {}
     func disconnect() async {}
-    func cancel(interactionID: InteractionID) async {}
+    func cancel(interactionID: InteractionID) async { cancelled.append(interactionID) }
+    func cancellations() -> [InteractionID] { cancelled }
 
     func responses(
         for request: AgentRequest
@@ -276,5 +278,7 @@ extension InteractionCoordinatorTests {
             event.interactionID != nil && event.interactionID != id
         })
         XCTAssertTrue(events.contains(.failed(id, .agent("response interaction ID mismatch"))))
+        let cancellations = await agent.cancellations()
+        XCTAssertEqual(cancellations, [id])
     }
 }
