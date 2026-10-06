@@ -83,6 +83,34 @@ private actor FailingDevice: DeviceAdapter {
 }
 
 final class RuntimeTests: XCTestCase {
+    func testMockDeviceSubscriptionIsInstalledBeforeEventsReturns() async {
+        let device = MockDeviceAdapter()
+        var iterator = device.events().makeAsyncIterator()
+        let id = InteractionID()
+        let expected = InteractionEvent.text(id, "immediate")
+
+        await device.emit(expected)
+
+        let received = await iterator.next()
+        XCTAssertEqual(received, expected)
+        await device.disconnect()
+    }
+
+    func testReplacingMockSubscriptionDoesNotLetOldTerminationClearNewSubscriber() async {
+        let device = MockDeviceAdapter()
+        var first = device.events().makeAsyncIterator()
+        var second = device.events().makeAsyncIterator()
+        let id = InteractionID()
+        let expected = InteractionEvent.text(id, "new-subscriber")
+
+        XCTAssertNil(await first.next())
+
+        await device.emit(expected)
+
+        XCTAssertEqual(await second.next(), expected)
+        await device.disconnect()
+    }
+
     func testMockDeviceToMockAgentRoundTrip() async throws {
         let device = MockDeviceAdapter()
         let agent = MockAgentAdapter()
@@ -95,7 +123,6 @@ final class RuntimeTests: XCTestCase {
         }
 
         try await runtime.start()
-        try await Task.sleep(for: .milliseconds(10))
 
         let id = InteractionID()
         await device.emit(.text(id, "hello"))
