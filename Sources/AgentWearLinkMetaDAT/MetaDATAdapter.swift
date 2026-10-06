@@ -34,10 +34,41 @@ public enum MetaDATEvent: Sendable, Equatable {
 }
 
 /// Normalizes Meta DAT session semantics into AgentWearLink Core contracts.
+private final class MetaDATInteractionEventSource: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: AsyncStream<InteractionEvent>.Continuation?
+
+    func stream() -> AsyncStream<InteractionEvent> {
+        AsyncStream { continuation in
+            lock.lock()
+            let previous = self.continuation
+            self.continuation = continuation
+            lock.unlock()
+
+            previous?.finish()
+        }
+    }
+
+    func yield(_ event: InteractionEvent) {
+        lock.lock()
+        let continuation = self.continuation
+        lock.unlock()
+        continuation?.yield(event)
+    }
+
+    func finish() {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.finish()
+    }
+}
+
 public actor MetaDATAdapter: DeviceAdapter {
     private let session: any MetaDATSession
     private let mappedCapabilities: CapabilitySet
-    private var continuation: AsyncStream<InteractionEvent>.Continuation?
+    private nonisolated let eventSource = MetaDATInteractionEventSource()
     private var eventTask: Task<Void, Never>?
 
     public nonisolated var capabilities: CapabilitySet { mappedCapabilities }
@@ -68,19 +99,11 @@ public actor MetaDATAdapter: DeviceAdapter {
         eventTask?.cancel()
         eventTask = nil
         await session.disconnect()
-        continuation?.finish()
-        continuation = nil
+        eventSource.finish()
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
-        AsyncStream { continuation in
-            Task { await self.install(continuation) }
-        }
-    }
-
-    private func install(_ continuation: AsyncStream<InteractionEvent>.Continuation) {
-        self.continuation?.finish()
-        self.continuation = continuation
+        eventSource.stream()
     }
 
     private func forward(_ event: MetaDATEvent) {
@@ -99,7 +122,7 @@ public actor MetaDATAdapter: DeviceAdapter {
         case let .failed(id, message):
             normalized = .failed(id.map { InteractionID(rawValue: $0) }, .device(message))
         }
-        continuation?.yield(normalized)
+        eventSource.yield(normalized)
     }
 
     private nonisolated static func mapCapabilities(_ source: MetaDATCapabilities) -> CapabilitySet {
