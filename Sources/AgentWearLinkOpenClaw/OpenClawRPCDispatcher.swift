@@ -22,7 +22,7 @@ public actor OpenClawRPCDispatcher {
         registry: OpenClawRPCRegistry = .init(),
         requestTimeout: Duration = .seconds(30),
         nowMilliseconds: @escaping @Sendable () -> Int64 = {
-            Int64(Date().timeIntervalSince1970 * 1_000)
+            Int64(ProcessInfo.processInfo.systemUptime * 1_000)
         }
     ) {
         self.socket = socket
