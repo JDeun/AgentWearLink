@@ -36,6 +36,47 @@ private actor StubAgent: AgentAdapter {
 }
 
 final class InteractionCoordinatorTests: XCTestCase {
+
+    func testRuntimeGenerationAdmissionRejectsStaleEventsAfterDeactivation() async {
+        let agent = MockAgentAdapter()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let generation: UInt64 = 41
+        let id = InteractionID()
+
+        await coordinator.activate(runtimeGeneration: generation)
+        await coordinator.deactivate(runtimeGeneration: generation)
+        await coordinator.handle(.text(id, "stale"), runtimeGeneration: generation)
+
+        try? await Task.sleep(for: .milliseconds(20))
+        let events = await recorded.values
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testNewRuntimeGenerationRejectsOldGenerationButAcceptsCurrent() async {
+        let agent = MockAgentAdapter()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.activate(runtimeGeneration: 1)
+        await coordinator.deactivate(runtimeGeneration: 1)
+        await coordinator.activate(runtimeGeneration: 2)
+        await coordinator.handle(.text(id, "old"), runtimeGeneration: 1)
+        await coordinator.handle(.text(id, "current"), runtimeGeneration: 2)
+
+        try? await Task.sleep(for: .milliseconds(30))
+        let events = await recorded.values
+        XCTAssertFalse(events.contains(.text(id, "echo: old")))
+        XCTAssertTrue(events.contains(.text(id, "echo: current")))
+        await coordinator.deactivate(runtimeGeneration: 2)
+    }
+
+
     func testDuplicateRequestForInteractionIsSuppressed() async throws {
         let agent = StubAgent()
         let recorded = RecordedEvents()
