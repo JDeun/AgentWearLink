@@ -36,5 +36,28 @@ final class GatewayConnectionStateTests: XCTestCase {
         let policy = GatewayReconnectPolicy(maximumAttempts: 0)
         XCTAssertEqual(policy.maximumAttempts, 0)
     }
+
+    func testHelloValidationRejectsProtocolMismatchWithoutPublishingReady() async throws {
+        let state = OpenClawGatewayState()
+        let hello = try JSONDecoder().decode(
+            OpenClawHelloOK.self,
+            from: Data(#"""
+            {
+              "type":"hello-ok","protocol":999,
+              "server":{"version":"x","connId":"c"},
+              "features":{"methods":[],"events":[]},
+              "auth":{"role":"operator","scopes":["operator.read"],"deviceToken":"must-not-be-trusted"},
+              "policy":{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000}
+            }
+            """#.utf8)
+        )
+
+        XCTAssertThrowsError(try OpenClawGatewayState.validateHello(hello)) {
+            XCTAssertEqual($0 as? AWLOpenClawError, .protocolMismatch)
+        }
+        let connectionState = await state.connectionState
+        XCTAssertEqual(connectionState, .disconnected)
+    }
+
 }
 
