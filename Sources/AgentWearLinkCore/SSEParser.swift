@@ -61,11 +61,11 @@ public struct SSEParser: Sendable {
     }
 
     private mutating func processCurrentLine(into events: inout [ServerSentEvent]) throws {
-        pendingEventBytes += lineBuffer.count + 1
-        try validatePendingSize()
-
+        let completedLineBytes = lineBuffer.count + 1
         var line = String(decoding: lineBuffer, as: UTF8.self)
         lineBuffer.removeAll(keepingCapacity: true)
+        pendingEventBytes += completedLineBytes
+        try validatePendingSize()
 
         if isFirstLine {
             isFirstLine = false
