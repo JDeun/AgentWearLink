@@ -19,7 +19,12 @@ private actor VisionStubDevice: SnapshotCapturingDevice {
 }
 
 private actor VisionStubAgent: VisionAgentAdapter {
+    nonisolated let supportsVisionInput: Bool
     private(set) var requestCount = 0
+
+    init(supportsVisionInput: Bool = true) {
+        self.supportsVisionInput = supportsVisionInput
+    }
     func connect() async throws {}
     func disconnect() async {}
     func cancel(interactionID: InteractionID) async {}
@@ -47,6 +52,24 @@ final class VisionCoordinatorTests: XCTestCase {
             XCTFail("expected capability failure")
         } catch {
             XCTAssertEqual(error as? AWLError, .capabilityUnavailable("device does not support camera snapshots"))
+        }
+
+        let captures = await device.captures()
+        let requests = await agent.requests()
+        XCTAssertEqual(captures, 0)
+        XCTAssertEqual(requests, 0)
+    }
+
+    func testUnsupportedAgentFailsBeforePrivateMediaCapture() async {
+        let device = VisionStubDevice(capabilities: [.cameraSnapshot])
+        let agent = VisionStubAgent(supportsVisionInput: false)
+        let coordinator = VisionCoordinator(device: device, agent: agent)
+
+        do {
+            _ = try await coordinator.responses(interactionID: InteractionID(), prompt: "what is this?")
+            XCTFail("expected capability failure")
+        } catch {
+            XCTAssertEqual(error as? AWLError, .capabilityUnavailable("agent does not support image input"))
         }
 
         let captures = await device.captures()
