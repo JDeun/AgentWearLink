@@ -1,0 +1,26 @@
+name: Integration or feature proposal
+description: Propose a concrete device, runtime, transport, or capability need
+title: "[Proposal] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Concrete integration need
+      description: Which real device/runtime/workflow requires this change?
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Proposed boundary
+      description: Which package or adapter should own the behavior, and why?
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: What can be deterministic CI, and what requires physical/deployment validation?
+    validations:
+      required: true
