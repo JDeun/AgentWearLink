@@ -11,10 +11,6 @@ let package = Package(
         .library(
             name: "AgentWearLinkMetaDATIntegration",
             targets: ["AgentWearLinkMetaDATIntegration"]
-        ),
-        .executable(
-            name: "AgentWearLinkMetaDATTestHost",
-            targets: ["AgentWearLinkMetaDATTestHost"]
         )
     ],
     dependencies: [
@@ -36,11 +32,6 @@ let package = Package(
                 .product(name: "MWDATMockDevice", package: "meta-wearables-dat-ios")
             ],
             path: "Sources"
-        ),
-        .executableTarget(
-            name: "AgentWearLinkMetaDATTestHost",
-            dependencies: ["AgentWearLinkMetaDATIntegration"],
-            path: "TestHost"
         ),
         .testTarget(
             name: "AgentWearLinkMetaDATIntegrationTests",
