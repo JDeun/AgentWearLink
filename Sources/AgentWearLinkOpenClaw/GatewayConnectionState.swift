@@ -21,8 +21,8 @@ public struct GatewayReconnectPolicy: Sendable, Equatable {
     public let maximumAttempts: Int?
 
     public init(
-        initialDelayMilliseconds: Int = 500,
-        maximumDelayMilliseconds: Int = 15_000,
+        initialDelayMilliseconds: Int = 1_000,
+        maximumDelayMilliseconds: Int = 30_000,
         maximumAttempts: Int? = nil
     ) {
         precondition(initialDelayMilliseconds > 0)
