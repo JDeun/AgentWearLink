@@ -38,27 +38,29 @@ private final class StartupTrackingDevice: DeviceAdapter, @unchecked Sendable {
 
     func events() -> AsyncStream<InteractionEvent> {
         AsyncStream { continuation in
-            lock.lock()
-            subscriptions += 1
-            let previous = self.continuation
-            self.continuation = continuation
-            lock.unlock()
+            let previous = lock.withLock { () -> AsyncStream<InteractionEvent>.Continuation? in
+                subscriptions += 1
+                let previous = self.continuation
+                self.continuation = continuation
+                return previous
+            }
             previous?.finish()
         }
     }
 
     func connect() async throws {
-        lock.lock()
-        connects += 1
-        lock.unlock()
+        lock.withLock {
+            connects += 1
+        }
     }
 
     func disconnect() async {
-        lock.lock()
-        disconnects += 1
-        let continuation = self.continuation
-        self.continuation = nil
-        lock.unlock()
+        let continuation = lock.withLock { () -> AsyncStream<InteractionEvent>.Continuation? in
+            disconnects += 1
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
         continuation?.finish()
     }
 
@@ -68,14 +70,14 @@ private final class StartupTrackingDevice: DeviceAdapter, @unchecked Sendable {
         disconnects: Int,
         hasActiveSubscription: Bool
     ) {
-        lock.lock()
-        defer { lock.unlock() }
-        return (
-            subscriptions,
-            connects,
-            disconnects,
-            continuation != nil
-        )
+        lock.withLock {
+            (
+                subscriptions,
+                connects,
+                disconnects,
+                continuation != nil
+            )
+        }
     }
 }
 
