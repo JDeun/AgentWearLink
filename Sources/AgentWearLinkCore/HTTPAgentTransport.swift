@@ -12,6 +12,7 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable {
         timeout: TimeInterval = 30,
         maximumResponseBytes: Int = 1_048_576
     ) {
+        precondition(timeout.isFinite && timeout > 0)
         precondition(maximumResponseBytes > 0)
         self.endpoint = endpoint
         self.bearerToken = bearerToken

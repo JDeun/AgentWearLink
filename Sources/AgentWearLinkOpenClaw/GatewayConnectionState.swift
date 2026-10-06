@@ -27,6 +27,7 @@ public struct GatewayReconnectPolicy: Sendable, Equatable {
     ) {
         precondition(initialDelayMilliseconds > 0)
         precondition(maximumDelayMilliseconds >= initialDelayMilliseconds)
+        precondition(maximumAttempts == nil || maximumAttempts! >= 0)
         self.initialDelayMilliseconds = initialDelayMilliseconds
         self.maximumDelayMilliseconds = maximumDelayMilliseconds
         self.maximumAttempts = maximumAttempts

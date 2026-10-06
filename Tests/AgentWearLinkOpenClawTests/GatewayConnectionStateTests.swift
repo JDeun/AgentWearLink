@@ -32,4 +32,9 @@ final class GatewayConnectionStateTests: XCTestCase {
         XCTAssertEqual(policy.delayMilliseconds(forAttempt: 4), 4_000)
         XCTAssertEqual(policy.delayMilliseconds(forAttempt: 20), 4_000)
     }
+    func testZeroMaximumAttemptsExplicitlyDisablesReconnectAttempts() {
+        let policy = GatewayReconnectPolicy(maximumAttempts: 0)
+        XCTAssertEqual(policy.maximumAttempts, 0)
+    }
 }
+

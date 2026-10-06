@@ -22,6 +22,7 @@ public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertibl
     ) {
         precondition(!bearerToken.isEmpty)
         precondition(!conversationID.isEmpty)
+        precondition(timeout.isFinite && timeout > 0)
         precondition(maximumEventBytes > 0)
 
         self.baseURL = baseURL
