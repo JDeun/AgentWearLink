@@ -131,15 +131,29 @@ public actor HTTPAgentTransport: AgentTransport {
                 continuation.finish()
             }
 
-            Task { await self.store(task, for: request.interactionID) }
             continuation.onTermination = { _ in task.cancel() }
-            task.resume()
+
+            Task {
+                let shouldStart = await self.register(
+                    task,
+                    for: request.interactionID
+                )
+                if shouldStart {
+                    task.resume()
+                } else {
+                    task.cancel()
+                }
+            }
         }
     }
 
-    private func store(_ task: URLSessionDataTask, for id: InteractionID) {
-        tasks[id]?.cancel()
+    private func register(
+        _ task: URLSessionDataTask,
+        for id: InteractionID
+    ) -> Bool {
+        guard tasks[id] == nil else { return false }
         tasks[id] = task
+        return true
     }
 
     private func finish(_ id: InteractionID) {
