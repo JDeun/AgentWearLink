@@ -1,18 +1,26 @@
 # Security Policy
 
-AgentWearLink handles microphones, cameras, wearable sessions, and authenticated agent endpoints. Treat all media and credentials as sensitive.
+AgentWearLink is currently pre-alpha and has not reached a stable security-support release.
 
-## Baseline rules
+## Sensitive material
 
-- Never commit tokens, API keys, certificates, provisioning secrets, or private endpoint credentials.
-- Store application secrets in platform secure storage such as iOS Keychain.
-- Use authenticated encrypted transports.
-- Do not expose an unauthenticated agent gateway to the public Internet.
-- Redact secrets from logs.
-- Do not persist raw microphone audio or camera images by default.
-- Bound media buffers and validate payload sizes.
-- Treat device and agent responses as untrusted input at adapter boundaries.
+Never include the following in public issues, logs, fixtures, or pull requests:
+
+- OpenClaw tokens or bootstrap tokens
+- device private keys or persisted device credentials
+- Tailscale authentication material
+- private wearable camera images
+- raw private audio
+- personal conversation/session contents
+
+Use synthetic fixtures when reporting bugs.
+
+## Security model
+
+The reference deployment prefers private WSS connectivity through a Tailnet, persistent device identity stored in platform Keychain facilities, minimum required OpenClaw scopes, bounded media/stream buffers, and no silent replay of uncertain mutating requests.
+
+A Tailnet connection establishes network reachability; it does not replace OpenClaw application authentication or device authorization.
 
 ## Reporting
 
-Until a private security reporting channel is configured, avoid posting exploitable credential or privacy vulnerabilities with sensitive reproduction data in a public issue. Contact the repository owner privately through an appropriate GitHub-supported channel.
+For now, avoid publishing exploitable credential, authentication, privacy, or remote-execution details in a public issue. Contact the repository owner privately through the contact mechanism on the GitHub profile. A dedicated security advisory workflow may be added before the first stable release.

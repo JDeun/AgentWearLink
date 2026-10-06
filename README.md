@@ -1,110 +1,115 @@
 # AgentWearLink
 
-**An open interoperability layer between wearable devices and AI agents.**
+**An open interoperability layer between wearable devices and AI agent runtimes.**
 
-AgentWearLink (AWL) connects wearable device capabilities—speech, audio, cameras, buttons, sensors, and output surfaces—to AI agent runtimes through explicit, replaceable adapters.
+[한국어](README.ko.md) · [Architecture](docs/architecture.md) · [PRD](docs/PRD.md) · [Testing](docs/testing.md)
 
-> **Project status:** pre-alpha / architecture and hardware validation.
+AgentWearLink (AWL) normalizes wearable capabilities—speech, audio, camera snapshots, invocation, and output—behind replaceable adapters, then connects them to an existing AI agent runtime without moving the runtime's intelligence into AWL.
 
-## Why AgentWearLink?
+> **Status:** pre-alpha. Core and OpenClaw foundations are implemented and tested; physical Ray-Ban Meta + iPhone validation is still in progress.
 
-Wearable integrations are commonly coupled to one device vendor, one model provider, or one agent runtime. AgentWearLink separates those concerns:
+## Why
 
-```text
-Wearable / Device SDK
-        │
-   Device Adapter
-        │
-  AgentWearLink Core
-        │
-    Agent Adapter
-        │
-    AI Agent Runtime
-```
-
-The core is intended to remain **device-agnostic** and **agent-agnostic**.
-
-## First reference implementation
-
-The first implementation validates the architecture with:
-
-- **Device:** Ray-Ban Meta through Meta Wearables Device Access Toolkit (DAT), using iOS.
-- **Agent:** OpenClaw.
-- **Interaction:** speech/audio first, event-driven camera snapshots, streaming responses, and device audio output.
-- **Invocation:** manual interaction first; DAT voice invocation is a later reliability gate.
-
-These are reference adapters, **not dependencies of the AgentWearLink core**.
-
-## Design principles
-
-1. **Adapters over vendor coupling.** Vendor SDK details stay behind device adapters.
-2. **Agents stay agents.** Memory, tools, model routing, RAG, and orchestration belong to the connected agent runtime.
-3. **Capability-driven I/O.** Devices advertise what they can input and output.
-4. **Event-driven vision.** Camera access is intentional, not continuous by default.
-5. **Streaming where it matters.** Interactive responses should not depend on polling.
-6. **Local-first where practical.** Avoid unnecessary paid model or media services.
-7. **Secure by default.** Credentials are never committed and transports must authenticate.
-
-## Planned architecture
+Wearable integrations are often coupled to one device vendor, model provider, or chat surface. AWL separates the layers:
 
 ```text
-┌──────────────── Device side ────────────────┐
-│ Meta DAT │ future SDKs │ custom devices     │
-└───────────────────┬─────────────────────────┘
-                    │ DeviceAdapter
-                    ▼
-             ┌───────────────┐
-             │ AWL Core      │
-             │ capabilities  │
-             │ events        │
-             │ sessions      │
-             │ streaming     │
-             └───────┬───────┘
-                     │ AgentAdapter
-                     ▼
-┌──────────────── Agent side ─────────────────┐
-│ OpenClaw │ Hermes │ custom/local runtimes   │
-└─────────────────────────────────────────────┘
+Wearable SDK          AgentWearLink Core          Agent runtime
+─────────────          ──────────────────          ─────────────
+Meta DAT      ──────▶  normalized events  ──────▶ OpenClaw
+future SDKs            capabilities               future runtimes
+custom devices         lifecycle/streaming        local/custom agents
 ```
 
-## Scope
+The agent runtime continues to own models, memory, tools, RAG, MCP, routing, and orchestration.
 
-### AgentWearLink owns
+## Reference implementation
 
-- device capability normalization
-- interaction/session lifecycle
-- normalized multimodal events
-- transport boundaries
-- agent adapter contracts
-- response streaming
-- audio/output handoff
-- reconnect and failure semantics
+The first end-to-end target is:
 
-### AgentWearLink does not own
+- **Wearable:** Ray-Ban Meta
+- **Phone:** iPhone + Meta Wearables Device Access Toolkit (DAT)
+- **Agent:** OpenClaw on a Mac mini
+- **Private network:** Tailscale
+- **Output:** native Apple TTS via `AVSpeechSynthesizer`
+- **Vision:** explicit, event-driven snapshots only
 
-- LLM/model routing
-- agent memory
-- RAG
-- tool/MCP orchestration
-- business logic
-- a canonical chat service
+Meta DAT, OpenClaw, Tailscale, Telegram, and Apple TTS are reference integrations—not Core dependencies.
 
-Those responsibilities remain with the connected agent.
+## What is implemented
+
+- vendor-neutral capability and interaction contracts
+- deterministic interaction/runtime lifecycle
+- bounded async streaming and SSE parsing
+- HTTP transport primitives
+- native OpenClaw Gateway WebSocket transport
+- OpenClaw device identity, challenge proof, pairing, RPC dispatch, streaming agent runs, cancellation, and reconnect supervision
+- read-only OpenClaw health probe
+- explicit mutating OpenClaw text E2E probe
+- Meta DAT adapter boundary/scaffold
+- bounded explicit vision contracts with pre-capture agent capability checks
+- Apple host output package with native `AVSpeechSynthesizer` bridge
+- deterministic reliability regression suite
+
+Physical DAT, audio routing, hands-free invocation, and live vision validation remain hardware gates.
+
+## Packages
+
+| Package | Responsibility |
+| --- | --- |
+| `AgentWearLinkCore` | Vendor-neutral capabilities, events, lifecycle, streaming, vision contracts |
+| `AgentWearLinkOpenClaw` | OpenClaw Gateway/auth/RPC/agent integration |
+| `AgentWearLinkMetaDAT` | Meta DAT adapter boundary |
+| `AgentWearLinkAppleOutput` | Apple-host speech output lifecycle and native TTS bridge |
+
+## Quick start
+
+Requirements: Swift 5.10+, macOS 14+ for development, or iOS 17+ for the reference host.
+
+```bash
+git clone https://github.com/JDeun/AgentWearLink.git
+cd AgentWearLink
+swift test
+```
+
+For a live OpenClaw deployment, first use the read-only probe documented in [docs/openclaw-probe.md](docs/openclaw-probe.md). The mutating P0-B text validation is documented in [docs/openclaw-chat-probe.md](docs/openclaw-chat-probe.md).
+
+## Design invariants
+
+1. Vendor SDK types do not leak into Core.
+2. AWL does not reimplement agent intelligence.
+3. Unsupported capabilities are not advertised.
+4. Camera capture is explicit; continuous vision is not the default.
+5. Media and stream queues are bounded.
+6. Reconnect restores transport availability but never silently replays an uncertain mutating request.
+7. Credentials and device private keys stay outside source control.
+8. New abstractions require a real integration need rather than speculative generality.
 
 ## Roadmap
 
-- **P0-A:** Meta DAT + physical iPhone/Ray-Ban hardware validation
-- **P0-B:** generic core contracts + OpenClaw text E2E
-- **P0-C:** Ray-Ban audio → agent → TTS/audio E2E
-- **P0-D:** hands-free voice invocation
-- **P1:** event-driven vision
-- **P2:** reliability, recovery, telemetry, security hardening
-- **P3:** additional device/agent adapters when real integrations require them
+| Gate | Target |
+| --- | --- |
+| P0-A | Physical Meta DAT validation |
+| P0-B | iPhone → Tailnet → OpenClaw text E2E |
+| P0-C | Wearable audio → agent → native TTS/audio |
+| P0-D | Hands-free DAT voice invocation |
+| P1 | Physical event-driven vision E2E |
+| P2 | Physical reliability, privacy, and recovery matrix |
+| P3 | Additional device/agent adapters driven by real integrations |
 
-## Development rule
+See [docs/PRD.md](docs/PRD.md) for the canonical implementation requirements.
 
-AgentWearLink will not add speculative adapters merely to appear generic. The interfaces are generic; implementations are added when they can be tested against a real device or agent runtime.
+## Documentation
+
+Start at [docs/README.md](docs/README.md) for the documentation map. Architecture decisions are recorded under [docs/adr](docs/adr).
+
+## Contributing
+
+AgentWearLink is pre-alpha, so changes should preserve package boundaries and include deterministic tests where possible. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+## Security
+
+Do not report credentials, private device keys, or private media in a public issue. See [SECURITY.md](SECURITY.md).
 
 ## License
 
-License selection is pending the initial repository governance decision.
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE).
