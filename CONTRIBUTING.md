@@ -1,24 +1,25 @@
-# Contributing
+# Contributing to AgentWearLink
 
-AgentWearLink is pre-alpha. Contributions should preserve the device/agent boundary and avoid speculative abstraction.
+AgentWearLink is pre-alpha. Contributions are welcome, but changes should preserve the interoperability boundary rather than optimize only for the first Meta/OpenClaw deployment.
 
-## Development principles
+## Before changing code
 
-- Keep vendor-specific types inside device adapters.
-- Keep runtime-specific types inside agent adapters.
-- Add capabilities only when backed by a concrete integration or test.
-- Prefer small PRs tied to an issue.
-- Add tests for core behavior.
-- Never commit credentials or private media.
+1. Read `docs/PRD.md` and the relevant ADR.
+2. Keep vendor/runtime-specific types outside `AgentWearLinkCore`.
+3. Do not add speculative abstractions without a concrete integration need.
+4. Preserve bounded buffering, explicit cancellation, and no-silent-replay semantics.
+5. Never commit credentials, device private keys, tokens, or private media.
+
+## Development
+
+```bash
+swift test
+```
+
+New deterministic behavior should include regression coverage. Hardware-only behavior should include reproducible validation steps and the device/OS/SDK/runtime versions used.
 
 ## Pull requests
 
-A PR should explain:
+Keep each PR focused. Explain the invariant being changed, failure mode addressed, and what remains hardware- or deployment-dependent.
 
-1. the problem,
-2. the boundary it changes,
-3. how it was tested,
-4. hardware/runtime dependencies,
-5. security/privacy implications.
-
-Hardware-dependent changes should clearly distinguish automated tests from physical-device validation.
+For mutating OpenClaw validation, use the explicit chat probe only after the read-only probe succeeds. Do not automatically retry an interaction whose delivery status is uncertain.
