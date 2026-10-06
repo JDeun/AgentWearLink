@@ -23,3 +23,23 @@ New deterministic behavior should include regression coverage. Hardware-only beh
 Keep each PR focused. Explain the invariant being changed, failure mode addressed, and what remains hardware- or deployment-dependent.
 
 For mutating OpenClaw validation, use the explicit chat probe only after the read-only probe succeeds. Do not automatically retry an interaction whose delivery status is uncertain.
+
+
+## Work tracking
+
+AgentWearLink uses two issue levels so implementation context survives handoff between
+contributors and development sessions.
+
+- **Umbrella / gate issues** describe a delivery milestone or physical validation gate.
+  They own end-to-end acceptance criteria, not individual implementation patches.
+- **Child work issues** describe one reviewable engineering unit. Each should record why
+  the work exists, scope, relevant verified external constraints, invariants, dependencies,
+  and concrete acceptance criteria.
+
+Pull requests should reference the child issue they implement. A child issue may close
+when its code/documentation acceptance criteria are met even when the umbrella remains
+open for physical validation. Do not close a hardware-gated umbrella based only on CI.
+
+For vendor integrations, explicitly state what CI does and does not prove. In particular,
+the root Swift package does not compile the Meta DAT concrete iOS scaffold; the pinned
+vendor-SDK compile gate is tracked separately.
