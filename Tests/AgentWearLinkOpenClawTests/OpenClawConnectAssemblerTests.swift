@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 @testable import AgentWearLinkOpenClaw
@@ -125,13 +126,19 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
             platform: result.params.client.platform,
             deviceFamily: result.params.client.deviceFamily
         )
-        let expectedSignature = try identity.sign(payload)
-            .base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        var encodedSignature = proof.signature
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        encodedSignature += String(
+            repeating: "=",
+            count: (4 - encodedSignature.count % 4) % 4
+        )
 
-        XCTAssertEqual(proof.signature, expectedSignature)
+        let signature = try XCTUnwrap(Data(base64Encoded: encodedSignature))
+        let publicKey = try Curve25519.Signing.PublicKey(
+            rawRepresentation: identity.publicKeyRaw
+        )
+        XCTAssertTrue(publicKey.isValidSignature(signature, for: payload))
     }
 
     func testSensitiveCredentialDescriptionsAreRedacted() throws {
