@@ -6,8 +6,11 @@ options:
 packages:
   MetaIntegration:
     path: ..
+  MetaWearablesDAT:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    exactVersion: 1.0.0
 targets:
-  AgentWearLinkMetaDATTestHost:
+  AgentWearLinkMetaDATIOSHost:
     type: application
     platform: iOS
     sources:
@@ -19,4 +22,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.MetaDATTestHost
         GENERATE_INFOPLIST_FILE: YES
-        CODE_SIGNING_ALLOWED: NO
+    scheme:
+      testTargets:
+        - AgentWearLinkMetaDATUITests
+  AgentWearLinkMetaDATUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: AgentWearLinkMetaDATIOSHost
+      - package: MetaWearablesDAT
+        product: MWDATMockDeviceTestClient
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.MetaDATUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: AgentWearLinkMetaDATIOSHost
