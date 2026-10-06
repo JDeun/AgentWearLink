@@ -157,6 +157,34 @@ final class MetaDATAdapterTests: XCTestCase {
         await adapter.disconnect()
     }
 
+    func testRejectsConcurrentSnapshotCapture() async throws {
+        let session = BlockingSnapshotSession()
+        let adapter = MetaDATAdapter(session: session)
+
+        let first = Task {
+            try await adapter.captureSnapshot(
+                interactionID: InteractionID(rawValue: UUID())
+            )
+        }
+        await session.waitUntilCaptureStarted()
+
+        do {
+            _ = try await adapter.captureSnapshot(
+                interactionID: InteractionID(rawValue: UUID())
+            )
+            XCTFail("Expected concurrent capture rejection")
+        } catch {
+            guard case AWLError.device = error else {
+                await session.release()
+                _ = try? await first.value
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+
+        await session.release()
+        _ = try await first.value
+    }
+
     func testNormalizesSessionEvents() async throws {
         let session = StubSession(capabilities: [.speech])
         let adapter = MetaDATAdapter(session: session)
@@ -297,4 +325,39 @@ private actor VoiceStubSession: MetaDATSession, MetaDATVoiceInvocationSource {
         invocationStream
     }
     func emitInvocation() { invocationContinuation.yield(invocation) }
+}
+
+
+private actor BlockingSnapshotSession: MetaDATSnapshotSession {
+    nonisolated let capabilities: MetaDATCapabilities = [.cameraSnapshot]
+    private var started = false
+    private var released = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func connect() async throws {}
+    func disconnect() async {}
+    nonisolated func events() -> AsyncStream<MetaDATEvent> { AsyncStream { _ in } }
+
+    func captureSnapshotData() async throws -> MetaDATSnapshot {
+        started = true
+        for waiter in startWaiters { waiter.resume() }
+        startWaiters.removeAll()
+
+        if !released {
+            await withCheckedContinuation { releaseWaiters.append($0) }
+        }
+        return MetaDATSnapshot(data: Data([1]), format: .jpeg)
+    }
+
+    func waitUntilCaptureStarted() async {
+        if started { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        for waiter in releaseWaiters { waiter.resume() }
+        releaseWaiters.removeAll()
+    }
 }
