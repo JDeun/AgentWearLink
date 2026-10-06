@@ -55,7 +55,19 @@ final class OpenClawGatewayStateTests: XCTestCase {
             try await state.observeSequence(2)
             XCTFail("Expected sequence failure")
         } catch let error as AWLOpenClawError {
-            XCTAssertEqual(error, .nonMonotonicSequence)
+            XCTAssertEqual(error, .sequenceGap(expected: 3, actual: 2))
+        }
+    }
+
+    func testForwardSequenceGapIsRejected() async throws {
+        let state = OpenClawGatewayState()
+        try await state.observeSequence(10)
+
+        do {
+            try await state.observeSequence(12)
+            XCTFail("Expected sequence gap")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(error, .sequenceGap(expected: 11, actual: 12))
         }
     }
 
