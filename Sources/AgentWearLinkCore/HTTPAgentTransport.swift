@@ -28,6 +28,7 @@ public actor HTTPAgentTransport: AgentTransport {
     private let configuration: HTTPAgentTransportConfiguration
     private let session: URLSession
     private var tasks: [InteractionID: URLSessionDataTask] = [:]
+    private var pendingCancellations: Set<InteractionID> = []
 
     public init(
         configuration: HTTPAgentTransportConfiguration,
@@ -42,6 +43,7 @@ public actor HTTPAgentTransport: AgentTransport {
     public func disconnect() async {
         for task in tasks.values { task.cancel() }
         tasks.removeAll()
+        pendingCancellations.removeAll()
     }
 
     public func send(
@@ -131,15 +133,32 @@ public actor HTTPAgentTransport: AgentTransport {
                 continuation.finish()
             }
 
-            Task { await self.store(task, for: request.interactionID) }
             continuation.onTermination = { _ in task.cancel() }
-            task.resume()
+
+            Task {
+                let shouldStart = await self.register(
+                    task,
+                    for: request.interactionID
+                )
+                if shouldStart {
+                    task.resume()
+                } else {
+                    task.cancel()
+                }
+            }
         }
     }
 
-    private func store(_ task: URLSessionDataTask, for id: InteractionID) {
-        tasks[id]?.cancel()
+    private func register(
+        _ task: URLSessionDataTask,
+        for id: InteractionID
+    ) -> Bool {
+        if pendingCancellations.remove(id) != nil {
+            return false
+        }
+        guard tasks[id] == nil else { return false }
         tasks[id] = task
+        return true
     }
 
     private func finish(_ id: InteractionID) {
@@ -147,7 +166,11 @@ public actor HTTPAgentTransport: AgentTransport {
     }
 
     public func cancel(interactionID: InteractionID) async {
-        let task = tasks.removeValue(forKey: interactionID)
-        task?.cancel()
+        if let task = tasks.removeValue(forKey: interactionID) {
+            task.cancel()
+        } else {
+            // Covers cancellation racing with asynchronous task registration.
+            pendingCancellations.insert(interactionID)
+        }
     }
 }
