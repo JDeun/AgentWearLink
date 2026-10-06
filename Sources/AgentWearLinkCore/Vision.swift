@@ -21,7 +21,13 @@ public struct ImageAttachment: Sendable, Equatable {
         format: Format,
         maximumBytes: Int = ImageAttachment.defaultMaximumBytes
     ) throws {
-        guard maximumBytes > 0, data.count <= maximumBytes else {
+        guard maximumBytes > 0 else {
+            throw AWLError.capabilityUnavailable("image payload exceeds configured limit")
+        }
+        guard !data.isEmpty else {
+            throw AWLError.capabilityUnavailable("image payload is empty")
+        }
+        guard data.count <= maximumBytes else {
             throw AWLError.capabilityUnavailable("image payload exceeds configured limit")
         }
         self.data = data
