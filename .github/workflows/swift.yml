@@ -41,7 +41,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
-      - name: Run Meta DAT MockDeviceKit integration tests
+      - name: Run package-hosted Meta DAT integration tests
         working-directory: Adapters/MetaDAT
         run: |
           xcodebuild \
