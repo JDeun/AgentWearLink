@@ -4,7 +4,28 @@ import XCTest
 
 private actor RuntimeRecorder {
     var events: [InteractionEvent] = []
-    func append(_ event: InteractionEvent) { events.append(event) }
+    private var countWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+    func append(_ event: InteractionEvent) {
+        events.append(event)
+
+        var pending: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+        for waiter in countWaiters {
+            if events.count >= waiter.count {
+                waiter.continuation.resume()
+            } else {
+                pending.append(waiter)
+            }
+        }
+        countWaiters = pending
+    }
+
+    func waitUntilCount(_ count: Int) async {
+        guard events.count < count else { return }
+        await withCheckedContinuation { continuation in
+            countWaiters.append((count, continuation))
+        }
+    }
 }
 
 private final class ConnectEmittingDevice: DeviceAdapter, @unchecked Sendable {
@@ -153,6 +174,67 @@ private actor FailingDevice: DeviceAdapter {
 
     nonisolated func events() -> AsyncStream<InteractionEvent> {
         AsyncStream { _ in }
+    }
+}
+
+private final class RestartableEndingDevice: DeviceAdapter, @unchecked Sendable {
+    let capabilities: CapabilitySet = [.textInput]
+
+    private let lock = NSLock()
+    private var continuation: AsyncStream<InteractionEvent>.Continuation?
+    private var subscriptions = 0
+    private var connects = 0
+    private var disconnects = 0
+
+    func events() -> AsyncStream<InteractionEvent> {
+        AsyncStream { continuation in
+            let previous = lock.withLock { () -> AsyncStream<InteractionEvent>.Continuation? in
+                subscriptions += 1
+                let previous = self.continuation
+                self.continuation = continuation
+                return previous
+            }
+            previous?.finish()
+        }
+    }
+
+    func connect() async throws {
+        lock.withLock { connects += 1 }
+    }
+
+    func disconnect() async {
+        let active = lock.withLock { () -> AsyncStream<InteractionEvent>.Continuation? in
+            disconnects += 1
+            let active = continuation
+            continuation = nil
+            return active
+        }
+        active?.finish()
+    }
+
+    func finishUnexpectedly() {
+        let active = lock.withLock { () -> AsyncStream<InteractionEvent>.Continuation? in
+            let active = continuation
+            continuation = nil
+            return active
+        }
+        active?.finish()
+    }
+
+    func snapshot() -> (
+        subscriptions: Int,
+        connects: Int,
+        disconnects: Int,
+        hasActiveSubscription: Bool
+    ) {
+        lock.withLock {
+            (
+                subscriptions,
+                connects,
+                disconnects,
+                continuation != nil
+            )
+        }
     }
 }
 
@@ -369,5 +451,86 @@ final class RuntimeTests: XCTestCase {
         try await runtime.start()
         try await runtime.start()
         await runtime.stop()
+    }
+
+
+    func testUnexpectedDeviceEventStreamFinishFailsAndCleansUpRuntime() async throws {
+        let device = RestartableEndingDevice()
+        let agent = LifecycleAgent()
+        let recorder = RuntimeRecorder()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent) { event in
+            await recorder.append(event)
+        }
+
+        try await runtime.start()
+        device.finishUnexpectedly()
+        await recorder.waitUntilCount(1)
+
+        let events = await recorder.events
+        XCTAssertEqual(
+            events,
+            [.failed(nil, .device("device event stream ended unexpectedly"))]
+        )
+
+        let deviceState = device.snapshot()
+        XCTAssertEqual(deviceState.subscriptions, 1)
+        XCTAssertEqual(deviceState.connects, 1)
+        XCTAssertEqual(deviceState.disconnects, 1)
+        XCTAssertFalse(deviceState.hasActiveSubscription)
+
+        let agentState = await agent.counts()
+        XCTAssertEqual(agentState.0, 1)
+        XCTAssertEqual(agentState.1, 1)
+    }
+
+    func testIntentionalStopDoesNotReportDeviceStreamFailure() async throws {
+        let device = RestartableEndingDevice()
+        let agent = LifecycleAgent()
+        let recorder = RuntimeRecorder()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent) { event in
+            await recorder.append(event)
+        }
+
+        try await runtime.start()
+        await runtime.stop()
+
+        let events = await recorder.events
+        XCTAssertTrue(events.isEmpty)
+
+        let deviceState = device.snapshot()
+        XCTAssertEqual(deviceState.disconnects, 1)
+        XCTAssertFalse(deviceState.hasActiveSubscription)
+    }
+
+    func testRuntimeCanRestartAfterUnexpectedDeviceStreamFailure() async throws {
+        let device = RestartableEndingDevice()
+        let agent = LifecycleAgent()
+        let recorder = RuntimeRecorder()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent) { event in
+            await recorder.append(event)
+        }
+
+        try await runtime.start()
+        device.finishUnexpectedly()
+        await recorder.waitUntilCount(1)
+
+        try await runtime.start()
+        await runtime.stop()
+
+        let deviceState = device.snapshot()
+        XCTAssertEqual(deviceState.subscriptions, 2)
+        XCTAssertEqual(deviceState.connects, 2)
+        XCTAssertEqual(deviceState.disconnects, 2)
+        XCTAssertFalse(deviceState.hasActiveSubscription)
+
+        let agentState = await agent.counts()
+        XCTAssertEqual(agentState.0, 2)
+        XCTAssertEqual(agentState.1, 2)
+
+        let events = await recorder.events
+        XCTAssertEqual(
+            events,
+            [.failed(nil, .device("device event stream ended unexpectedly"))]
+        )
     }
 }
