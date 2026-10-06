@@ -11,6 +11,15 @@ final class GatewayConnectionStateTests: XCTestCase {
         )
     }
 
+    func testDefaultReconnectBackoffMatchesReferenceClient() {
+        let policy = GatewayReconnectPolicy()
+
+        XCTAssertEqual(policy.delayMilliseconds(forAttempt: 1), 1_000)
+        XCTAssertEqual(policy.delayMilliseconds(forAttempt: 2), 2_000)
+        XCTAssertEqual(policy.delayMilliseconds(forAttempt: 3), 4_000)
+        XCTAssertEqual(policy.delayMilliseconds(forAttempt: 10), 30_000)
+    }
+
     func testReconnectBackoffIsBounded() {
         let policy = GatewayReconnectPolicy(
             initialDelayMilliseconds: 500,
