@@ -18,6 +18,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var errorTask: Task<Void, Never>?
     private var registrationTask: Task<Void, Never>?
     private var deviceMonitorTask: Task<Void, Never>?
+    private var selectedDeviceListenerTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<InteractionEvent>.Continuation?
     private var stopping = false
     private let connectTimeout: Duration
@@ -75,6 +76,9 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         }
 
         let selectedIdentifier = selectedDevice.identifier
+        selectedDeviceListenerTask = Task { [weak self] in
+            await self?.monitorSelectedDeviceSignals(selectedDevice)
+        }
         deviceMonitorTask = Task { [weak self] in
             await self?.monitorSelectedDevice(selectedIdentifier)
         }
@@ -120,6 +124,34 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             await tearDownSession()
             throw error
         }
+    }
+
+    private func monitorSelectedDeviceSignals(_ device: Device) async {
+        let linkToken = device.addLinkStateListener { [weak self] state in
+            guard state != .connected else { return }
+            Task { await self?.handleSelectedDeviceUnavailable(
+                "Selected Meta DAT device link became unavailable: \(state)"
+            ) }
+        }
+        let compatibilityToken = device.addCompatibilityListener { [weak self] compatibility in
+            guard compatibility != .compatible else { return }
+            Task { await self?.handleSelectedDeviceUnavailable(
+                "Selected Meta DAT device became incompatible: \(compatibility)"
+            ) }
+        }
+
+        await withTaskCancellationHandler {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+            }
+        } onCancel: {
+            Task {
+                await linkToken.cancel()
+                await compatibilityToken.cancel()
+            }
+        }
+        await linkToken.cancel()
+        await compatibilityToken.cancel()
     }
 
     private func monitorSelectedDevice(_ selectedIdentifier: DeviceIdentifier) async {
@@ -223,10 +255,12 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         errorTask?.cancel()
         registrationTask?.cancel()
         deviceMonitorTask?.cancel()
+        selectedDeviceListenerTask?.cancel()
         stateTask = nil
         errorTask = nil
         registrationTask = nil
         deviceMonitorTask = nil
+        selectedDeviceListenerTask = nil
 
         deviceSession?.stop()
         deviceSession = nil
