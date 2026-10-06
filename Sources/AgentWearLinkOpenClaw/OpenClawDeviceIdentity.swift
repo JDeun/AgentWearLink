@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-public struct OpenClawDeviceIdentity: Sendable, Equatable, Codable {
+public struct OpenClawDeviceIdentity: Sendable, Equatable, Codable, CustomStringConvertible, CustomDebugStringConvertible {
     public let privateKeyRaw: Data
 
     public init(privateKeyRaw: Data) throws {
@@ -35,6 +35,11 @@ public struct OpenClawDeviceIdentity: Sendable, Equatable, Codable {
             rawRepresentation: privateKeyRaw
         ).signature(for: payload)
     }
+    public var description: String {
+        "OpenClawDeviceIdentity(privateKeyRaw: <redacted>)"
+    }
+
+    public var debugDescription: String { description }
 }
 
 public protocol OpenClawDeviceIdentityStore: Sendable {
