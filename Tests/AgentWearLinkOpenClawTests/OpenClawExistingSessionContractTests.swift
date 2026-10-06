@@ -7,7 +7,8 @@ final class OpenClawExistingSessionContractTests: XCTestCase {
         {
           "runId":"run-existing-session",
           "sessionKey":"agent:main:main",
-          "agentId":"main"
+          "agentId":"main",
+          "acceptedAt":1737264000000
         }
         """#.utf8)
 
