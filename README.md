@@ -63,12 +63,20 @@ MockDeviceKit app-hosted integration is being CI-gated separately. Real Bluetoot
 
 ## Quick start
 
-Requirements: Swift 5.10+, macOS 14+ for development, or iOS 17+ for the reference host.
+The vendor-neutral root package supports Swift 5.10+ and macOS 14+. The concrete `Adapters/MetaDAT` integration has a separate Swift 6.0+ toolchain contract because the pinned Meta DAT 1.0.0 dependency uses a Swift 6 package manifest; its reference iOS host targets iOS 17.2+.
 
 ```bash
 git clone https://github.com/JDeun/AgentWearLink.git
 cd AgentWearLink
 swift test
+```
+
+For Meta DAT integration work, verify a Swift 6 toolchain before resolving or building the adapter:
+
+```bash
+swift --version
+cd Adapters/MetaDAT
+swift package resolve
 ```
 
 For a live OpenClaw deployment, first use the read-only probe documented in [docs/openclaw-probe.md](docs/openclaw-probe.md). The mutating P0-B text validation is documented in [docs/openclaw-chat-probe.md](docs/openclaw-chat-probe.md).
