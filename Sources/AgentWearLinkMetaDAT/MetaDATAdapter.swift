@@ -216,7 +216,6 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
     private nonisolated static func mapCapabilities(_ source: MetaDATCapabilities) -> CapabilitySet {
         var result: CapabilitySet = []
         if source.contains(.speech) { result.insert(.speechInput) }
-        if source.contains(.rawAudio) { result.insert(.rawAudioInput) }
         if source.contains(.cameraSnapshot) { result.insert(.cameraSnapshot) }
         if source.contains(.speaker) { result.insert(.speakerOutput) }
         if source.contains(.voiceInvocation) { result.insert(.voiceInvocation) }
