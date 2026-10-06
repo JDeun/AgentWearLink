@@ -221,7 +221,8 @@ final class MetaDATAdapterTests: XCTestCase {
             XCTFail("Expected first connect to fail")
         } catch {}
 
-        XCTAssertNil(await failedIterator.next())
+        let failedResult = await failedIterator.next()
+        XCTAssertNil(failedResult)
 
         let retryStream = adapter.events()
         var retryIterator = retryStream.makeAsyncIterator()
@@ -230,8 +231,9 @@ final class MetaDATAdapterTests: XCTestCase {
         let id = UUID()
         session.emit(.sessionStarted(id))
 
+        let retryEvent = await retryIterator.next()
         XCTAssertEqual(
-            await retryIterator.next(),
+            retryEvent,
             .sessionStarted(InteractionID(rawValue: id))
         )
 
@@ -257,7 +259,8 @@ final class MetaDATAdapterTests: XCTestCase {
         var replacementIterator = replacementStream.makeAsyncIterator()
 
         // Replacing a subscriber terminates the old stream immediately.
-        XCTAssertNil(await firstIterator.next())
+        let firstResult = await firstIterator.next()
+        XCTAssertNil(firstResult)
 
         session.releaseDisconnect()
         await disconnect.value
@@ -268,8 +271,9 @@ final class MetaDATAdapterTests: XCTestCase {
         let id = UUID()
         session.emit(.sessionStarted(id))
 
+        let replacementEvent = await replacementIterator.next()
         XCTAssertEqual(
-            await replacementIterator.next(),
+            replacementEvent,
             .sessionStarted(InteractionID(rawValue: id))
         )
 
