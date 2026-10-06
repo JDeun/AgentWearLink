@@ -49,10 +49,10 @@ public struct SSEParser: Sendable {
 
             switch byte {
             case 0x0D:
-                try processCurrentLine(into: &events)
+                try processCurrentLine(into: &events, terminatorByteCount: 1)
                 skipLeadingLF = true
             case 0x0A:
-                try processCurrentLine(into: &events)
+                try processCurrentLine(into: &events, terminatorByteCount: 1)
             default:
                 lineBuffer.append(byte)
                 try validatePendingSize()
@@ -68,13 +68,16 @@ public struct SSEParser: Sendable {
     public mutating func finish() throws -> [ServerSentEvent] {
         var events: [ServerSentEvent] = []
         if !lineBuffer.isEmpty {
-            try processCurrentLine(into: &events)
+            try processCurrentLine(into: &events, terminatorByteCount: 0)
         }
         return events
     }
 
-    private mutating func processCurrentLine(into events: inout [ServerSentEvent]) throws {
-        let completedLineBytes = lineBuffer.count + 1
+    private mutating func processCurrentLine(
+        into events: inout [ServerSentEvent],
+        terminatorByteCount: Int
+    ) throws {
+        let completedLineBytes = lineBuffer.count + terminatorByteCount
         var line = String(decoding: lineBuffer, as: UTF8.self)
         lineBuffer.removeAll(keepingCapacity: true)
         pendingEventBytes += completedLineBytes
