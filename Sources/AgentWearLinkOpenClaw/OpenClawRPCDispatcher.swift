@@ -149,6 +149,7 @@ public actor OpenClawRPCDispatcher {
         } catch is CancellationError {
             // stop() owns terminal signaling.
         } catch {
+            await state.disconnect()
             await failAll(error)
             for continuation in eventContinuations.values {
                 continuation.finish(throwing: error)
