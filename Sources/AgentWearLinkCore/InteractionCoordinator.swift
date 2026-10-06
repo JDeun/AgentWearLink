@@ -63,7 +63,7 @@ public actor InteractionCoordinator {
                 await output(.failed(id, .agent(String(describing: error))))
             }
 
-            await self.finish(id)
+            self.finish(id)
         }
 
         tasks[id] = task
