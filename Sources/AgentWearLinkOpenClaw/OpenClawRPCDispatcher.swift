@@ -8,7 +8,9 @@ public actor OpenClawRPCDispatcher {
     private let encoder = JSONEncoder()
 
     private var responses: [String: CheckedContinuation<OpenClawResponseEnvelope, Error>] = [:]
-    private var eventContinuation: AsyncThrowingStream<OpenClawEventEnvelope, Error>.Continuation?
+    private var eventContinuations: [
+        UUID: AsyncThrowingStream<OpenClawEventEnvelope, Error>.Continuation
+    ] = [:]
     private var receiveTask: Task<Void, Never>?
     private var lastActivityMilliseconds: Int64?
     private let nowMilliseconds: @Sendable () -> Int64
@@ -28,8 +30,12 @@ public actor OpenClawRPCDispatcher {
     }
 
     public func events() -> AsyncThrowingStream<OpenClawEventEnvelope, Error> {
-        AsyncThrowingStream { continuation in
-            self.eventContinuation = continuation
+        let id = UUID()
+        return AsyncThrowingStream { continuation in
+            eventContinuations[id] = continuation
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeEventSubscriber(id) }
+            }
         }
     }
 
@@ -96,8 +102,10 @@ public actor OpenClawRPCDispatcher {
         receiveTask = nil
         lastActivityMilliseconds = nil
         await failAll(AWLOpenClawError.disconnected)
-        eventContinuation?.finish()
-        eventContinuation = nil
+        for continuation in eventContinuations.values {
+            continuation.finish()
+        }
+        eventContinuations.removeAll(keepingCapacity: false)
     }
 
     private func receiveLoop() async {
@@ -116,17 +124,25 @@ public actor OpenClawRPCDispatcher {
 
                 case let .event(event):
                     try await state.observeSequence(event.seq)
-                    eventContinuation?.yield(event)
+                    for continuation in eventContinuations.values {
+                        continuation.yield(event)
+                    }
                 }
             }
         } catch is CancellationError {
             // stop() owns terminal signaling.
         } catch {
             await failAll(error)
-            eventContinuation?.finish(throwing: error)
-            eventContinuation = nil
+            for continuation in eventContinuations.values {
+                continuation.finish(throwing: error)
+            }
+            eventContinuations.removeAll(keepingCapacity: false)
         }
         receiveTask = nil
+    }
+
+    private func removeEventSubscriber(_ id: UUID) {
+        eventContinuations[id] = nil
     }
 
     private func cancel(id: String) async {
