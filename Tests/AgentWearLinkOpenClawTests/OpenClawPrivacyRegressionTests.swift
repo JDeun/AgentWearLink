@@ -16,6 +16,44 @@ final class OpenClawPrivacyRegressionTests: XCTestCase {
         XCTAssertFalse(String(reflecting: configuration).contains(secret))
     }
 
+    func testConfigurationDescriptionRedactsConversationRoutingIdentifiers() {
+        let conversationID = "AWL_CONVERSATION_SENTINEL_A1"
+        let sessionKey = "AWL_SESSION_SENTINEL_B2"
+        let messageChannel = "AWL_CHANNEL_SENTINEL_C3"
+        let configuration = OpenClawConfiguration(
+            baseURL: URL(string: "https://gateway.example.test:18789")!,
+            bearerToken: "token",
+            conversationID: conversationID,
+            sessionKey: sessionKey,
+            messageChannel: messageChannel
+        )
+
+        for rendered in [
+            String(describing: configuration),
+            String(reflecting: configuration)
+        ] {
+            XCTAssertFalse(rendered.contains(conversationID))
+            XCTAssertFalse(rendered.contains(sessionKey))
+            XCTAssertFalse(rendered.contains(messageChannel))
+            XCTAssertTrue(rendered.contains("conversationID: <redacted>"))
+            XCTAssertTrue(rendered.contains("sessionKey: <redacted>"))
+            XCTAssertTrue(rendered.contains("messageChannel: <redacted>"))
+        }
+    }
+
+    func testConfigurationDescriptionPreservesAbsentOptionalRoutingState() {
+        let configuration = OpenClawConfiguration(
+            baseURL: URL(string: "https://gateway.example.test:18789")!,
+            bearerToken: "token",
+            conversationID: "privacy-test"
+        )
+
+        let rendered = String(describing: configuration)
+        XCTAssertTrue(rendered.contains("conversationID: <redacted>"))
+        XCTAssertTrue(rendered.contains("sessionKey: nil"))
+        XCTAssertTrue(rendered.contains("messageChannel: nil"))
+    }
+
     func testEndpointDescriptionDoesNotExposeCredentialSentinel() throws {
         let secret = "AWL_SECRET_SENTINEL_9C2B"
         let configuration = OpenClawConfiguration(
