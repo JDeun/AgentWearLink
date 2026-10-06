@@ -12,9 +12,13 @@ AgentWearLink is pre-alpha. Contributions are welcome, but changes should preser
 
 ## Development
 
+Run vendor-neutral contracts from the repository root:
+
 ```bash
 swift test
 ```
+
+For Meta DAT integration work, also resolve/build the pinned package under `Adapters/MetaDAT`. App-hosted MockDeviceKit changes must pass the dedicated iOS simulator/XCUITest gate. See `docs/testing.md` for the evidence hierarchy.
 
 New deterministic behavior should include regression coverage. Hardware-only behavior should include reproducible validation steps and the device/OS/SDK/runtime versions used.
 
@@ -41,5 +45,4 @@ when its code/documentation acceptance criteria are met even when the umbrella r
 open for physical validation. Do not close a hardware-gated umbrella based only on CI.
 
 For vendor integrations, explicitly state what CI does and does not prove. In particular,
-the root Swift package does not compile the Meta DAT concrete iOS scaffold; the pinned
-vendor-SDK compile gate is tracked separately.
+the root Swift package remains vendor-neutral; Meta DAT has its own pinned vendor-SDK compile gate and app-hosted simulator/XCUITest evidence layer. Neither may be described as physical-device proof.
