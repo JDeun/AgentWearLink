@@ -11,12 +11,17 @@ let package = Package(
         .library(name: "AgentWearLinkCore", targets: ["AgentWearLinkCore"]),
         .library(name: "AgentWearLinkOpenClaw", targets: ["AgentWearLinkOpenClaw"]),
         .library(name: "AgentWearLinkMetaDAT", targets: ["AgentWearLinkMetaDAT"]),
+        .library(name: "AgentWearLinkAppleOutput", targets: ["AgentWearLinkAppleOutput"]),
         .executable(name: "awl-openclaw-probe", targets: ["AgentWearLinkOpenClawProbe"])
     ],
     targets: [
         .target(name: "AgentWearLinkCore"),
         .target(
             name: "AgentWearLinkMetaDAT",
+            dependencies: ["AgentWearLinkCore"]
+        ),
+        .target(
+            name: "AgentWearLinkAppleOutput",
             dependencies: ["AgentWearLinkCore"]
         ),
         .target(
