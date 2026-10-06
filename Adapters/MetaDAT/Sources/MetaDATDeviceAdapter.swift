@@ -45,8 +45,13 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         let session = try wearables.createSession(deviceSelector: selector)
         deviceSession = session
 
+        // Obtain the streams before start() so initial state/error transitions
+        // cannot be missed. Meta's current samples use the same ordering.
+        let stateStream = session.stateStream()
+        let errorStream = session.errorStream()
+
         errorTask = Task { [weak self] in
-            for await error in session.errorStream() {
+            for await error in errorStream {
                 guard !Task.isCancelled else { break }
                 await self?.emitDeviceError(error.localizedDescription)
             }
@@ -56,7 +61,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             try session.start()
 
             var reachedStarted = false
-            for await state in session.stateStream() {
+            for await state in stateStream {
                 if state == .started {
                     reachedStarted = true
                     break
@@ -73,8 +78,11 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
                 )
             }
 
+            // Do not create a second stateStream() after consuming .started.
+            // Continue the same stream in one observer so SDK stream semantics cannot
+            // create a gap between startup and steady-state monitoring.
             stateTask = Task { [weak self] in
-                for await state in session.stateStream() {
+                for await state in stateStream {
                     guard !Task.isCancelled else { break }
 
                     if state == .stopped {
