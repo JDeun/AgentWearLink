@@ -33,4 +33,24 @@ final class OpenClawFrameRouterTests: XCTestCase {
             try OpenClawFrameRouter().decodePreAuth(data)
         )
     }
+
+    func testRejectsMalformedFrameDeterministically() {
+        XCTAssertThrowsError(
+            try OpenClawFrameRouter().decode(Data(#"{"type":"res","id":}"#.utf8))
+        ) { error in
+            XCTAssertEqual(error as? OpenClawFrameError, .malformedFrame)
+        }
+    }
+
+    func testRejectsUnsupportedFrameTypeDeterministically() {
+        XCTAssertThrowsError(
+            try OpenClawFrameRouter().decode(Data(#"{"type":"mystery"}"#.utf8))
+        ) { error in
+            XCTAssertEqual(
+                error as? OpenClawFrameError,
+                .unsupportedFrameType("mystery")
+            )
+        }
+    }
+
 }
