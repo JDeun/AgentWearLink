@@ -1,3 +1,15 @@
+private actor AgentEventSocket: OpenClawWebSocket {
+    private var frames: [String]
+    init(frames: [String]) { self.frames = frames }
+    func connect() async {}
+    func send(text: String) async throws {}
+    func receive() async throws -> String {
+        guard !frames.isEmpty else { throw AWLOpenClawError.disconnected }
+        return frames.removeFirst()
+    }
+    func close() async {}
+}
+
 import Foundation
 import XCTest
 @testable import AgentWearLinkOpenClaw
@@ -91,4 +103,45 @@ final class OpenClawAgentRunTests: XCTestCase {
         XCTAssertTrue(result.aborted)
         XCTAssertNil(result.runIds)
     }
+
+    func testAgentUpdatesFilterOtherRunsAndPreserveIncrementalOrder() async throws {
+        let state = OpenClawGatewayState()
+        let socket = AgentEventSocket(frames: [
+            #"{"type":"event","event":"agent","seq":1,"payload":{"runId":"other","stream":"assistant","seq":1,"data":{"delta":"ignore"}}}"#,
+            #"{"type":"event","event":"agent","seq":2,"payload":{"runId":"run-1","stream":"assistant","seq":1,"data":{"delta":"hel"}}}"#,
+            #"{"type":"event","event":"agent","seq":3,"payload":{"runId":"run-1","stream":"assistant","seq":2,"data":{"delta":"lo"}}}"#
+        ])
+        await state.beginConnect()
+        try await state.acceptHello(
+            OpenClawHelloOK(
+                type: "hello-ok",
+                protocolVersion: 4,
+                server: .init(version: "test", connId: "c1"),
+                features: .init(methods: [], events: ["agent"]),
+                auth: .init(role: "operator", scopes: ["operator.read"], deviceToken: nil),
+                policy: .init(maxPayload: 1024, maxBufferedBytes: 2048, tickIntervalMs: 15000, attachments: nil)
+            )
+        )
+        let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
+        let client = OpenClawAgentRunClient(dispatcher: dispatcher)
+        let events = await dispatcher.events()
+        let updates = await client.updates(from: events, runID: "run-1")
+        await dispatcher.start()
+
+        var deltas: [String] = []
+        do {
+            for try await update in updates {
+                if case let .assistant(_, .object(data)?) = update,
+                   case let .string(delta)? = data["delta"] {
+                    deltas.append(delta)
+                }
+            }
+        } catch {
+            // The finite mock retires the transport after delivering its frames.
+        }
+
+        XCTAssertEqual(deltas, ["hel", "lo"])
+        await dispatcher.stop()
+    }
+
 }
