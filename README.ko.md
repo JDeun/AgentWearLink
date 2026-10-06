@@ -43,12 +43,12 @@ Meta DAT, OpenClaw, Tailscale, Telegram, Apple TTS는 레퍼런스 통합이며 
 - OpenClaw device identity, challenge proof, pairing, RPC dispatch, streaming agent run, cancellation, reconnect supervision
 - 읽기 전용 OpenClaw health probe
 - 명시적 opt-in 방식의 실제 OpenClaw text E2E probe
-- Meta DAT adapter boundary/scaffold
+- Meta DAT 1.0.0 고정 통합: registration/device lifecycle, camera, Speech, Voice Invocation, live capability 및 lifecycle 정책
 - 크기 제한 및 agent capability 선검사를 포함한 명시적 vision contract
 - Apple host output package 및 `AVSpeechSynthesizer` bridge
 - deterministic reliability regression test
 
-실제 DAT 연동, Ray-Ban 오디오 라우팅, hands-free invocation, 실제 vision E2E는 실기기 검증 단계가 남아 있습니다.
+MockDeviceKit app-hosted 통합은 별도 CI gate로 검증 중입니다. 실제 Bluetooth, 카메라 센서 wake/shutter 및 사진 전송, 웨어러블 오디오 라우팅, 잠금/주머니 상태 invocation, 모바일 Tailnet 전환, 실제 vision E2E는 실기기·배포 검증이 남아 있습니다.
 
 ## 패키지 구조
 
