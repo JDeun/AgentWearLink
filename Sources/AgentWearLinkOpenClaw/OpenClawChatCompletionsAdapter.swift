@@ -91,10 +91,10 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
                     )
                 }
 
-                await self.finish(request.interactionID)
+                self.finish(request.interactionID)
             }
 
-            Task { await self.install(task, for: request.interactionID) }
+            Task { self.install(task, for: request.interactionID) }
             continuation.onTermination = { _ in task.cancel() }
         }
     }
