@@ -1,10 +1,15 @@
 import Foundation
 
-public struct OpenClawDeviceCredential: Codable, Sendable, Equatable {
+public struct OpenClawDeviceCredential: Codable, Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     public let deviceID: String
     public let role: String
     public let scopes: [String]
     public let token: String
+
+    public var description: String {
+        "OpenClawDeviceCredential(deviceID: \\(deviceID), role: \\(role), scopes: \\(scopes), token: <redacted>)"
+    }
+    public var debugDescription: String { description }
 
     public init(
         deviceID: String,

@@ -65,6 +65,7 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
         XCTAssertEqual(sentCount, 1)
     }
 
+
     func testMissingChallengeClosesSocket() async {
         let socket = MockOpenClawWebSocket(
             inbound: [#"{"type":"event","event":"tick","payload":{}}"#]
