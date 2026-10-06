@@ -49,3 +49,10 @@ camera/photo result plumbing, and simulated voice launch where the pinned SDK
 supports it. It does **not** prove Bluetooth behavior, glasses firmware,
 lock-screen/background execution, microphone routing, or real Tailnet/OpenClaw
 behavior. Those remain physical validation gates.
+
+
+## App-hosted behavioral boundary
+
+Behavioral MockDeviceKit pairing must run from an iOS application host. The host launches with `--awl-meta-ui-testing`, starts the DEBUG-only mock server through `MetaDATMockHostBootstrap`, and publishes its port through `MWDAT_TEST_SERVER_PORT_FILE`. The UI-test client is created only after the application launches, waits for the server, and owns bounded pair/unpair cleanup.
+
+The source stubs live in `TestHost/` and `UITests/`. They intentionally require an Xcode application/UI-test target because a bare Swift-package xctest process does not have Meta's linked-app Keychain context. This simulator proof does not replace physical Bluetooth, background, audio, or camera validation.
