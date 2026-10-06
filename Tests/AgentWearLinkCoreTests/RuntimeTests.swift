@@ -48,6 +48,30 @@ private actor LifecycleAgent: AgentAdapter {
     func counts() -> (Int, Int) { (connects, disconnects) }
 }
 
+private actor BlockingLifecycleAgent: AgentAdapter {
+    private(set) var connects = 0
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func connect() async throws {
+        connects += 1
+        if !released {
+            await withCheckedContinuation { waiters.append($0) }
+        }
+    }
+    func disconnect() async {}
+    func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
+    func cancel(interactionID: InteractionID) async {}
+    func release() {
+        released = true
+        for waiter in waiters { waiter.resume() }
+        waiters.removeAll()
+    }
+    func connectCount() -> Int { connects }
+}
+
 private actor FailingDevice: DeviceAdapter {
     nonisolated let capabilities: CapabilitySet = []
     private(set) var disconnects = 0
@@ -126,6 +150,34 @@ final class RuntimeTests: XCTestCase {
         let counts = await agent.counts()
         XCTAssertEqual(counts.0, 2)
         XCTAssertEqual(counts.1, 2)
+    }
+
+    func testConcurrentStartOnlyConnectsOnce() async throws {
+        let device = MockDeviceAdapter()
+        let agent = BlockingLifecycleAgent()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
+
+        let first = Task { try await runtime.start() }
+        try? await Task.sleep(for: .milliseconds(10))
+        let second = Task { try await runtime.start() }
+        try? await Task.sleep(for: .milliseconds(10))
+
+        let connectCount = await agent.connectCount()
+        XCTAssertEqual(connectCount, 1)
+        await agent.release()
+        try await first.value
+        try await second.value
+        await runtime.stop()
+    }
+
+    func testFailedDeviceConnectAlsoRollsBackDevice() async {
+        let device = FailingDevice()
+        let agent = LifecycleAgent()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
+
+        do { try await runtime.start(); XCTFail("expected start failure") } catch {}
+        let deviceDisconnects = await device.disconnects
+        XCTAssertEqual(deviceDisconnects, 1)
     }
 
     func testStartIsIdempotent() async throws {
