@@ -101,7 +101,7 @@ public actor AgentWearLinkRuntime {
         await device.disconnect()
         await agent.disconnect()
 
-        lifecycleState = .stopped
+        finishStopping()
         await output(
             .failed(
                 nil,
@@ -119,6 +119,10 @@ public actor AgentWearLinkRuntime {
         await coordinator.cancelAll()
         await device.disconnect()
         await agent.disconnect()
+        finishStopping()
+    }
+
+    private func finishStopping() {
         lifecycleState = .stopped
         let waiters = stopWaiters
         stopWaiters.removeAll(keepingCapacity: false)
