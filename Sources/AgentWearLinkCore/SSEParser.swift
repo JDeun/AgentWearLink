@@ -22,6 +22,7 @@ public enum SSEParserError: Error, Sendable, Equatable {
 /// CRLF, LF and CR are accepted; one leading UTF-8 BOM is ignored.
 public struct SSEParser: Sendable {
     public let maximumBufferedBytes: Int
+    public private(set) var latestRetryMilliseconds: Int?
 
     private var lineBuffer = Data()
     private var skipLeadingLF = false
@@ -56,6 +57,18 @@ public struct SSEParser: Sendable {
                 lineBuffer.append(byte)
                 try validatePendingSize()
             }
+        }
+        return events
+    }
+
+    /// Finalizes parser state when the transport reaches EOF.
+    ///
+    /// SSE does not dispatch an unterminated data event at EOF, but a final
+    /// complete field line still updates stream-level state such as `retry`.
+    public mutating func finish() throws -> [ServerSentEvent] {
+        var events: [ServerSentEvent] = []
+        if !lineBuffer.isEmpty {
+            try processCurrentLine(into: &events)
         }
         return events
     }
@@ -107,6 +120,7 @@ public struct SSEParser: Sendable {
                value.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }),
                let retry = Int(value) {
                 currentRetry = retry
+                latestRetryMilliseconds = retry
             }
         default:
             break
@@ -129,6 +143,7 @@ public struct SSEParser: Sendable {
         currentEvent = nil
         dataLines.removeAll(keepingCapacity: false)
         currentRetry = nil
+        latestRetryMilliseconds = nil
         pendingEventBytes = 0
     }
 }
