@@ -12,6 +12,8 @@ public actor OpenClawRPCDispatcher {
         UUID: AsyncThrowingStream<OpenClawEventEnvelope, Error>.Continuation
     ] = [:]
     private var receiveTask: Task<Void, Never>?
+    private var requestTasks: [String: Task<Void, Never>] = [:]
+    private var generation: UInt64 = 0
     private var lastActivityMilliseconds: Int64?
     private let nowMilliseconds: @Sendable () -> Int64
     private let requestTimeout: Duration
@@ -45,6 +47,7 @@ public actor OpenClawRPCDispatcher {
 
     public func start() {
         guard receiveTask == nil else { return }
+        generation &+= 1
         lastActivityMilliseconds = nowMilliseconds()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
@@ -88,8 +91,11 @@ public actor OpenClawRPCDispatcher {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 responses[id] = continuation
-                Task {
+                let requestGeneration = generation
+                requestTasks[id] = Task {
+                    guard await self.canSend(id: id, generation: requestGeneration) else { return }
                     do {
+                        try Task.checkCancellation()
                         try await socket.send(text: text)
                     } catch {
                         await self.fail(id: id, error: error)
@@ -115,6 +121,9 @@ public actor OpenClawRPCDispatcher {
     }
 
     public func stop() async {
+        generation &+= 1
+        for task in requestTasks.values { task.cancel() }
+        requestTasks.removeAll(keepingCapacity: false)
         receiveTask?.cancel()
         receiveTask = nil
         lastActivityMilliseconds = nil
@@ -159,17 +168,23 @@ public actor OpenClawRPCDispatcher {
         receiveTask = nil
     }
 
+    private func canSend(id: String, generation expected: UInt64) -> Bool {
+        generation == expected && responses[id] != nil && !Task.isCancelled
+    }
+
     private func removeEventSubscriber(_ id: UUID) {
         eventContinuations[id] = nil
     }
 
     private func cancel(id: String) async {
+        requestTasks.removeValue(forKey: id)?.cancel()
         await registry.remove(id: id)
         responses.removeValue(forKey: id)?
             .resume(throwing: CancellationError())
     }
 
     private func fail(id: String, error: Error) async {
+        requestTasks.removeValue(forKey: id)?.cancel()
         await registry.remove(id: id)
         responses.removeValue(forKey: id)?.resume(throwing: error)
     }
