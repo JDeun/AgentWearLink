@@ -138,4 +138,50 @@ final class SSEParserTests: XCTestCase {
             )
         }
     }
+    func testRetryOnlyBlockUpdatesStreamStateWithoutDispatchingEvent() throws {
+        var parser = SSEParser()
+
+        let events = try parser.append(Data("retry: 1000\n\n".utf8))
+
+        XCTAssertTrue(events.isEmpty)
+        XCTAssertEqual(parser.latestRetryMilliseconds, 1000)
+    }
+
+    func testRetryWithDataUpdatesBothEventMetadataAndStreamState() throws {
+        var parser = SSEParser()
+
+        let events = try parser.append(Data("retry: 1500\ndata: ok\n\n".utf8))
+
+        XCTAssertEqual(events, [ServerSentEvent(data: "ok", retryMilliseconds: 1500)])
+        XCTAssertEqual(parser.latestRetryMilliseconds, 1500)
+    }
+
+    func testLatestValidRetryWinsAcrossBlocks() throws {
+        var parser = SSEParser()
+
+        XCTAssertTrue(try parser.append(Data("retry: 1000\n\n".utf8)).isEmpty)
+        XCTAssertTrue(try parser.append(Data("retry: 2500\n\n".utf8)).isEmpty)
+
+        XCTAssertEqual(parser.latestRetryMilliseconds, 2500)
+    }
+
+    func testInvalidRetryDoesNotOverwriteLatestValidRetry() throws {
+        var parser = SSEParser()
+
+        _ = try parser.append(Data("retry: 1000\n\n".utf8))
+        _ = try parser.append(Data("retry: -1\n\n".utf8))
+
+        XCTAssertEqual(parser.latestRetryMilliseconds, 1000)
+    }
+
+    func testRetryFieldAtEOFAppliesWithoutManufacturingEvent() throws {
+        var parser = SSEParser()
+
+        XCTAssertTrue(try parser.append(Data("retry: 3000".utf8)).isEmpty)
+        let events = try parser.finish()
+
+        XCTAssertTrue(events.isEmpty)
+        XCTAssertEqual(parser.latestRetryMilliseconds, 3000)
+    }
+
 }

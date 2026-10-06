@@ -22,6 +22,7 @@ public enum SSEParserError: Error, Sendable, Equatable {
 /// CRLF, LF and CR are accepted; one leading UTF-8 BOM is ignored.
 public struct SSEParser: Sendable {
     public let maximumBufferedBytes: Int
+    public private(set) var latestRetryMilliseconds: Int?
 
     private var lineBuffer = Data()
     private var skipLeadingLF = false
@@ -48,10 +49,10 @@ public struct SSEParser: Sendable {
 
             switch byte {
             case 0x0D:
-                try processCurrentLine(into: &events)
+                try processCurrentLine(into: &events, terminatorByteCount: 1)
                 skipLeadingLF = true
             case 0x0A:
-                try processCurrentLine(into: &events)
+                try processCurrentLine(into: &events, terminatorByteCount: 1)
             default:
                 lineBuffer.append(byte)
                 try validatePendingSize()
@@ -60,8 +61,23 @@ public struct SSEParser: Sendable {
         return events
     }
 
-    private mutating func processCurrentLine(into events: inout [ServerSentEvent]) throws {
-        let completedLineBytes = lineBuffer.count + 1
+    /// Finalizes parser state when the transport reaches EOF.
+    ///
+    /// SSE does not dispatch an unterminated data event at EOF, but a final
+    /// complete field line still updates stream-level state such as `retry`.
+    public mutating func finish() throws -> [ServerSentEvent] {
+        var events: [ServerSentEvent] = []
+        if !lineBuffer.isEmpty {
+            try processCurrentLine(into: &events, terminatorByteCount: 0)
+        }
+        return events
+    }
+
+    private mutating func processCurrentLine(
+        into events: inout [ServerSentEvent],
+        terminatorByteCount: Int
+    ) throws {
+        let completedLineBytes = lineBuffer.count + terminatorByteCount
         var line = String(decoding: lineBuffer, as: UTF8.self)
         lineBuffer.removeAll(keepingCapacity: true)
         pendingEventBytes += completedLineBytes
@@ -107,6 +123,7 @@ public struct SSEParser: Sendable {
                value.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }),
                let retry = Int(value) {
                 currentRetry = retry
+                latestRetryMilliseconds = retry
             }
         default:
             break
@@ -129,6 +146,7 @@ public struct SSEParser: Sendable {
         currentEvent = nil
         dataLines.removeAll(keepingCapacity: false)
         currentRetry = nil
+        latestRetryMilliseconds = nil
         pendingEventBytes = 0
     }
 }
