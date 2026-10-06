@@ -90,4 +90,47 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         XCTAssertNil(result.effectiveToken)
         XCTAssertTrue(result.usedBootstrapToken)
     }
+
+    func testPersistedHelloGrantIsReusedOnFreshConnect() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let identityStore = InMemoryOpenClawDeviceIdentityStore(identity: identity)
+        let credentialStore = InMemoryOpenClawDeviceCredentialStore()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(store: identityStore),
+            credentialStore: credentialStore
+        )
+
+        let first = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(bootstrapToken: "bootstrap"),
+            challenge: challenge
+        )
+
+        let helloData = Data(#"""
+        {
+          "type":"hello-ok",
+          "protocol":4,
+          "server":{"version":"2026.10","connId":"c1"},
+          "features":{"methods":[],"events":[]},
+          "auth":{"role":"operator","scopes":["operator.read"],"deviceToken":"approved-device-token"},
+          "policy":{"maxPayload":1024,"maxBufferedBytes":2048,"tickIntervalMs":15000}
+        }
+        """#.utf8)
+        let hello = try JSONDecoder().decode(OpenClawHelloOK.self, from: helloData)
+        try await assembler.persistHello(hello, assembled: first)
+
+        let reconnect = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write", "operator.admin"],
+            credentials: .init(bootstrapToken: "must-not-be-used"),
+            challenge: .init(nonce: "fresh-nonce", ts: 456)
+        )
+
+        XCTAssertEqual(reconnect.effectiveToken, "approved-device-token")
+        XCTAssertEqual(reconnect.params.scopes, ["operator.read"])
+        XCTAssertFalse(reconnect.usedBootstrapToken)
+        XCTAssertEqual(reconnect.params.device?.nonce, "fresh-nonce")
+    }
+
 }
