@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "AgentWearLinkMetaDATIntegration",
     platforms: [
-        .iOS(.v17),
+        .iOS("17.2"),
         .macOS(.v14)
     ],
     products: [
