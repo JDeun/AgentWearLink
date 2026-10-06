@@ -75,12 +75,16 @@ final class OpenClawDeviceIdentityTests: XCTestCase {
 
         try await store.save(credential)
 
-        XCTAssertEqual(
-            try await store.load(deviceID: "device", role: "operator"),
-            credential
+        let operatorCredential = try await store.load(
+            deviceID: "device",
+            role: "operator"
         )
-        XCTAssertNil(
-            try await store.load(deviceID: "device", role: "node")
+        let nodeCredential = try await store.load(
+            deviceID: "device",
+            role: "node"
         )
+
+        XCTAssertEqual(operatorCredential, credential)
+        XCTAssertNil(nodeCredential)
     }
 }

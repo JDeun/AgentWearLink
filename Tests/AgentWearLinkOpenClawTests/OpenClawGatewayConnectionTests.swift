@@ -61,7 +61,8 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
 
         XCTAssertEqual(result.protocolVersion, 4)
         XCTAssertEqual(result.server.connId, "c1")
-        XCTAssertEqual(await adaptive.sentCount(), 1)
+        let sentCount = await adaptive.sentCount()
+        XCTAssertEqual(sentCount, 1)
     }
 
     func testMissingChallengeClosesSocket() async {
@@ -82,7 +83,8 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertTrue(await socket.closed())
+        let didClose = await socket.closed()
+        XCTAssertTrue(didClose)
     }
 }
 

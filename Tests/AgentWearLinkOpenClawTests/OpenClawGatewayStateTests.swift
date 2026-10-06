@@ -12,7 +12,7 @@ final class OpenClawGatewayStateTests: XCTestCase {
           "features":{"methods":["health","agent"],"events":["agent"]},
           "auth":{"role":"operator","scopes":["operator.read","operator.write"]},
           "policy":{
-            "maxPayload":(maxPayload),
+            "maxPayload":\(maxPayload),
             "maxBufferedBytes":2048,
             "tickIntervalMs":15000,
             "attachments":{"maxBytes":1000,"maxImageBytes":500}
@@ -28,8 +28,10 @@ final class OpenClawGatewayStateTests: XCTestCase {
         await state.beginAuthentication()
         try await state.acceptHello(hello())
 
-        XCTAssertEqual(await state.connectionState, .ready)
-        XCTAssertEqual(await state.hello?.policy.maxPayload, 1024)
+        let connectionState = await state.connectionState
+        let maxPayload = await state.hello?.policy.maxPayload
+        XCTAssertEqual(connectionState, .ready)
+        XCTAssertEqual(maxPayload, 1024)
     }
 
     func testNegotiatedPayloadLimitIsEnforced() async throws {
@@ -76,10 +78,9 @@ final class OpenClawGatewayStateTests: XCTestCase {
         try await state.acceptHello(hello())
         await state.beginReconnect(attempt: 1)
 
-        XCTAssertNil(await state.hello)
-        XCTAssertEqual(
-            await state.connectionState,
-            .reconnecting(attempt: 1)
-        )
+        let hello = await state.hello
+        let connectionState = await state.connectionState
+        XCTAssertNil(hello)
+        XCTAssertEqual(connectionState, .reconnecting(attempt: 1))
     }
 }

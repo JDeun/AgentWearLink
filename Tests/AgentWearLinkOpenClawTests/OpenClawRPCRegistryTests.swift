@@ -8,8 +8,9 @@ final class OpenClawRPCRegistryTests: XCTestCase {
 
         let resolved = try await registry.resolve(id: "1")
 
+        let count = await registry.count
         XCTAssertEqual(resolved.method, "health")
-        XCTAssertEqual(await registry.count, 0)
+        XCTAssertEqual(count, 0)
     }
 
     func testDuplicateRequestIDIsRejected() async throws {
@@ -31,7 +32,8 @@ final class OpenClawRPCRegistryTests: XCTestCase {
 
         let drained = await registry.drainForDisconnect()
 
+        let count = await registry.count
         XCTAssertEqual(drained.count, 2)
-        XCTAssertEqual(await registry.count, 0)
+        XCTAssertEqual(count, 0)
     }
 }
