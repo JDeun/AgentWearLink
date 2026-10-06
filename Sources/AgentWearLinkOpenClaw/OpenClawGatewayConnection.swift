@@ -90,9 +90,13 @@ public actor OpenClawGatewayConnection {
                     throw OpenClawHandshakeError.pairingRequired(pairing)
                 }
 
+                let retryAfter = response.error?.retryAfterMs.flatMap {
+                    (0...300_000).contains($0) ? $0 : nil
+                }
                 throw AWLOpenClawError.gateway(
                     code: response.error?.code ?? "UNKNOWN",
-                    retryable: response.error?.retryable ?? false
+                    retryable: response.error?.retryable ?? false,
+                    retryAfterMilliseconds: retryAfter
                 )
             }
 
