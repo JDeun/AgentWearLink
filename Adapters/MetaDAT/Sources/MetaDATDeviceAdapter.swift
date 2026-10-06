@@ -61,7 +61,19 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             }
         }
 
-        let selector = AutoDeviceSelector(wearables: wearables)
+        let devices = wearables.devices.compactMap {
+            wearables.deviceForIdentifier($0)
+        }
+        guard let selectedDevice = devices.min(by: {
+            Self.deviceRank($0) < Self.deviceRank($1)
+        }) else {
+            throw AWLError.device("Meta DAT has no paired device eligible for session selection")
+        }
+        guard selectedDevice.compatibility() == .compatible else {
+            throw AWLError.device("Selected Meta DAT device is not SDK-compatible")
+        }
+
+        let selector = SpecificDeviceSelector(device: selectedDevice.identifier)
         let session = try wearables.createSession(deviceSelector: selector)
         deviceSession = session
 
@@ -102,6 +114,13 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             await tearDownSession()
             throw error
         }
+    }
+
+    private nonisolated static func deviceRank(_ device: Device) -> Int {
+        if device.linkState == .connected && device.donState == .donned { return 0 }
+        if device.linkState == .connected { return 1 }
+        if device.compatibility() == .compatible { return 2 }
+        return 3
     }
 
     private func waitUntilStarted(
