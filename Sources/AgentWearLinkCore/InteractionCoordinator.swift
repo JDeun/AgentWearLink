@@ -6,15 +6,21 @@ public actor InteractionCoordinator {
         let task: Task<Void, Never>
     }
 
+    public static let defaultMaximumInFlightInteractions = 8
+
     private let agent: any AgentAdapter
+    private let maximumInFlightInteractions: Int
     private var tasks: [InteractionID: TaskEntry] = [:]
     private let output: @Sendable (InteractionEvent) async -> Void
 
     public init(
         agent: any AgentAdapter,
+        maximumInFlightInteractions: Int = 8,
         output: @escaping @Sendable (InteractionEvent) async -> Void
     ) {
+        precondition(maximumInFlightInteractions > 0)
         self.agent = agent
+        self.maximumInFlightInteractions = maximumInFlightInteractions
         self.output = output
     }
 
@@ -47,6 +53,16 @@ public actor InteractionCoordinator {
     private func submit(_ request: AgentRequest) async {
         let id = request.interactionID
         guard tasks[id] == nil else { return }
+
+        guard tasks.count < maximumInFlightInteractions else {
+            await output(
+                .failed(
+                    id,
+                    .overloaded("maximum in-flight interaction capacity reached")
+                )
+            )
+            return
+        }
 
         let generation = UUID()
         let task = Task { [agent, output] in
@@ -99,6 +115,10 @@ public actor InteractionCoordinator {
         }
 
         tasks[id] = TaskEntry(generation: generation, task: task)
+    }
+
+    func inFlightInteractionCount() -> Int {
+        tasks.count
     }
 
     private func finish(_ id: InteractionID, generation: UUID) {
