@@ -103,11 +103,13 @@ final class RuntimeTests: XCTestCase {
         let id = InteractionID()
         let expected = InteractionEvent.text(id, "new-subscriber")
 
-        XCTAssertNil(await first.next())
+        let firstResult = await first.next()
+        XCTAssertNil(firstResult)
 
         await device.emit(expected)
 
-        XCTAssertEqual(await second.next(), expected)
+        let secondResult = await second.next()
+        XCTAssertEqual(secondResult, expected)
         await device.disconnect()
     }
 
