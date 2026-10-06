@@ -105,6 +105,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
     private nonisolated let eventSource = MetaDATInteractionEventSource()
     private var eventTask: Task<Void, Never>?
     private var invocationTask: Task<Void, Never>?
+    private var snapshotInFlight = false
 
     public nonisolated var capabilities: CapabilitySet { mappedCapabilities }
 
@@ -167,14 +168,22 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
         guard let snapshotSession = session as? any MetaDATSnapshotSession else {
             throw AWLError.capabilityUnavailable("Meta DAT camera snapshot bridge is unavailable")
         }
+        guard !snapshotInFlight else {
+            throw AWLError.device("Meta DAT snapshot capture is already in progress")
+        }
+
+        snapshotInFlight = true
+        defer { snapshotInFlight = false }
 
         let snapshot = try await snapshotSession.captureSnapshotData()
+        try Task.checkCancellation()
         return try ImageAttachment(data: snapshot.data, format: snapshot.format)
     }
 
     public func disconnect() async {
         eventTask?.cancel()
         invocationTask?.cancel()
+        snapshotInFlight = false
         eventTask = nil
         invocationTask = nil
         await session.disconnect()
