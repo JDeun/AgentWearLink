@@ -1,4 +1,4 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
@@ -58,5 +58,8 @@ let package = Package(
             ],
             path: "UITests"
         )
-    ]
+    ],
+    // The vendor SDK requires a Swift 6-capable package manager, while the
+    // integration sources remain in Swift 5 language mode during migration.
+    swiftLanguageModes: [.v5]
 )

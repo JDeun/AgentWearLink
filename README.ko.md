@@ -61,12 +61,20 @@ MockDeviceKit app-hosted 통합은 별도 CI gate로 검증 중입니다. 실제
 
 ## 빠른 시작
 
-개발 기준 Swift 5.10+, macOS 14+가 필요하며 레퍼런스 iOS host 기준은 iOS 17+입니다.
+vendor-neutral 루트 패키지는 Swift 5.10+, macOS 14+를 지원합니다. 구체적인 `Adapters/MetaDAT` 통합은 고정된 Meta DAT 1.0.0 의존성이 Swift 6 package manifest를 사용하므로 **Swift 6.0+ 툴체인**이 필요합니다. 다만 AWL Meta 통합 소스는 마이그레이션 동안 의도적으로 Swift 5 language mode를 유지하며, 레퍼런스 iOS host는 iOS 17.2+를 대상으로 합니다.
 
 ```bash
 git clone https://github.com/JDeun/AgentWearLink.git
 cd AgentWearLink
 swift test
+```
+
+Meta DAT 통합을 개발할 때는 adapter를 resolve/build하기 전에 Swift 6 툴체인인지 확인합니다. 이는 툴체인/manifest 요구사항이며 AWL Meta 소스가 이미 Swift 6 language mode로 전환되었다는 뜻은 아닙니다.
+
+```bash
+swift --version
+cd Adapters/MetaDAT
+swift package resolve
 ```
 
 실제 OpenClaw 연결은 먼저 [읽기 전용 probe](docs/openclaw-probe.md)로 연결·인증·pairing을 확인하고, 실제 agent run을 발생시키는 P0-B 검증은 [mutating text probe](docs/openclaw-chat-probe.md)를 사용합니다.

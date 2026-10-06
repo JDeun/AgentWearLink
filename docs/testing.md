@@ -22,11 +22,13 @@ Run from the repository root:
 swift test
 ```
 
+The root package's toolchain contract is independent from concrete vendor adapters.
+
 ## 2. Pinned integration compile gates
 
 Concrete vendor code is compiled against the exact dependency it claims to support.
 
-For Meta DAT:
+For Meta DAT, use a Swift 6.0+ toolchain for `Adapters/MetaDAT`; this is intentionally stricter than the vendor-neutral root package. The package manifest explicitly keeps AWL's Meta targets in Swift 5 language mode until source migration is handled separately:
 
 ```bash
 cd Adapters/MetaDAT
@@ -80,7 +82,7 @@ A hardware-dependent feature remains unvalidated until this layer passes, even w
 
 ## CI interpretation
 
-The root job protects vendor-neutral contracts. The Meta integration job protects pinned SDK compilation and the app-hosted simulator contract as it becomes available. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
+The root job protects vendor-neutral contracts. The Meta integration job uses its own vendor-compatible Apple toolchain and protects pinned SDK compilation plus the app-hosted simulator contract as it becomes available. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
 
 ## Test-data policy
 

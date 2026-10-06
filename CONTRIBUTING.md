@@ -18,7 +18,9 @@ Run vendor-neutral contracts from the repository root:
 swift test
 ```
 
-For Meta DAT integration work, also resolve/build the pinned package under `Adapters/MetaDAT`. App-hosted MockDeviceKit changes must pass the dedicated iOS simulator/XCUITest gate. See `docs/testing.md` for the evidence hierarchy.
+The root package keeps its Swift 5.10+ compatibility contract. Meta DAT integration is intentionally separate: `Adapters/MetaDAT/Package.swift` requires a Swift 6.0+ toolchain to parse the pinned vendor dependency, while AWL's Meta targets currently stay in Swift 5 language mode. Do not raise the root Core minimum—or silently opt the adapter sources into Swift 6 mode—merely to satisfy the reference vendor package.
+
+For Meta DAT integration work, verify `swift --version`, then resolve/build the pinned package under `Adapters/MetaDAT`. App-hosted MockDeviceKit changes must pass the dedicated iOS simulator/XCUITest gate. See `docs/testing.md` for the evidence hierarchy.
 
 New deterministic behavior should include regression coverage. Hardware-only behavior should include reproducible validation steps and the device/OS/SDK/runtime versions used.
 
@@ -27,7 +29,6 @@ New deterministic behavior should include regression coverage. Hardware-only beh
 Keep each PR focused. Explain the invariant being changed, failure mode addressed, and what remains hardware- or deployment-dependent.
 
 For mutating OpenClaw validation, use the explicit chat probe only after the read-only probe succeeds. Do not automatically retry an interaction whose delivery status is uncertain.
-
 
 ## Work tracking
 
