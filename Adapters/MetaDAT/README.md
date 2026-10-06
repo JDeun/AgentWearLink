@@ -47,7 +47,10 @@ changes cannot destabilize deterministic Core CI:
 ```bash
 cd Adapters/MetaDAT
 swift package resolve
-swift build
+xcodebuild \
+  -scheme AgentWearLinkMetaDATIntegration \
+  -destination 'generic/platform=iOS Simulator' \
+  build
 ```
 
 For a release-quality iOS check, build this package/target with the repository's
