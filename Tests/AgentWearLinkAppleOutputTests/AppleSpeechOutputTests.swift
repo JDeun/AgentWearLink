@@ -51,4 +51,63 @@ final class AppleSpeechOutputTests: XCTestCase {
         let values = await spy.values()
         XCTAssertTrue(values.0.isEmpty)
     }
+
+    func testLateDeltaAndDuplicateCompletionAreIgnoredAfterCompletion() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(synthesizer: spy)
+        let id = InteractionID()
+
+        await output.consume(.textDelta(id, "first"))
+        await output.consume(.completed(id))
+        await output.consume(.textDelta(id, "late"))
+        await output.consume(.completed(id))
+
+        let values = await spy.values()
+        XCTAssertEqual(values.0, ["first"])
+        XCTAssertEqual(values.1, 0)
+    }
+
+    func testFailureAfterCompletionDoesNotStopCompletedSpeech() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(synthesizer: spy)
+        let id = InteractionID()
+
+        await output.consume(.textDelta(id, "finished"))
+        await output.consume(.completed(id))
+        await output.consume(.failed(id, .agent("late failure")))
+
+        let values = await spy.values()
+        XCTAssertEqual(values.0, ["finished"])
+        XCTAssertEqual(values.1, 0)
+    }
+
+    func testFreshInteractionAfterCompletionReplacesPriorSpeech() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(synthesizer: spy)
+        let first = InteractionID()
+        let second = InteractionID()
+
+        await output.consume(.textDelta(first, "first"))
+        await output.consume(.completed(first))
+        await output.consume(.textDelta(second, "second"))
+        await output.consume(.completed(second))
+
+        let values = await spy.values()
+        XCTAssertEqual(values.0, ["first", "second"])
+        XCTAssertEqual(values.1, 1)
+    }
+
+    func testInterruptCanStillStopSpeechAfterCompletion() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(synthesizer: spy)
+        let id = InteractionID()
+
+        await output.consume(.textDelta(id, "spoken"))
+        await output.consume(.completed(id))
+        await output.interrupt(interactionID: id)
+
+        let values = await spy.values()
+        XCTAssertEqual(values.0, ["spoken"])
+        XCTAssertEqual(values.1, 1)
+    }
 }
