@@ -88,8 +88,8 @@ public struct OpenClawConnectParams: Encodable, Sendable {
     }
 }
 
-public struct OpenClawResponseEnvelope: Decodable, Sendable {
-    public struct GatewayError: Decodable, Error, Sendable {
+public struct OpenClawResponseEnvelope: Decodable, Sendable, Equatable {
+    public struct GatewayError: Decodable, Error, Sendable, Equatable {
         public let code: String
         public let message: String
         public let retryable: Bool?
@@ -104,7 +104,7 @@ public struct OpenClawResponseEnvelope: Decodable, Sendable {
     public let error: GatewayError?
 }
 
-public struct OpenClawEventEnvelope: Decodable, Sendable {
+public struct OpenClawEventEnvelope: Decodable, Sendable, Equatable {
     public let type: String
     public let event: String
     public let payload: JSONValue?
