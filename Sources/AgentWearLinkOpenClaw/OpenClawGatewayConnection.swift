@@ -87,6 +87,7 @@ public actor OpenClawGatewayConnection {
             guard response.ok else {
                 if let error = response.error,
                    let pairing = OpenClawPairingRequired(error: error) {
+                    try? await assembler.invalidateStoredCredentialIfUsed(assembled)
                     throw OpenClawHandshakeError.pairingRequired(pairing)
                 }
 
