@@ -18,4 +18,33 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         let current = await lifecycle.currentPhase
         XCTAssertEqual(current, .background)
     }
+    func testForegroundReadinessRequiresFreshReacquisitionAfterBackground() async {
+        let readiness = MetaDATForegroundReadiness()
+
+        await readiness.handle(.background)
+        XCTAssertEqual(await readiness.state, .stale)
+
+        await readiness.handle(.foreground)
+        XCTAssertEqual(await readiness.state, .reacquiring)
+
+        // Duplicate foreground callbacks must not manufacture a fresh state.
+        await readiness.handle(.foreground)
+        XCTAssertEqual(await readiness.state, .reacquiring)
+
+        await readiness.markReacquired()
+        XCTAssertEqual(await readiness.state, .fresh)
+
+        // Repeated completion is idempotent and cannot replay prior work.
+        await readiness.markReacquired()
+        XCTAssertEqual(await readiness.state, .fresh)
+    }
+
+    func testForegroundWithoutBackgroundDoesNotTriggerReacquisition() async {
+        let readiness = MetaDATForegroundReadiness()
+
+        await readiness.handle(.foreground)
+
+        XCTAssertEqual(await readiness.state, .fresh)
+    }
+
 }
