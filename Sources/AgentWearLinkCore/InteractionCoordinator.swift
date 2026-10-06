@@ -55,6 +55,11 @@ public actor InteractionCoordinator {
 
                 responseLoop: for try await response in responses {
                     guard !Task.isCancelled else { break }
+                    guard response.interactionID == id else {
+                        await agent.cancel(interactionID: id)
+                        await output(.failed(id, .agent("response interaction ID mismatch")))
+                        break responseLoop
+                    }
 
                     switch response {
                     case let .textDelta(responseID, text):
