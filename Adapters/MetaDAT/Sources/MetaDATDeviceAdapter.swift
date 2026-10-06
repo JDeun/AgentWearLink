@@ -57,14 +57,14 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             for await state in wearables.registrationStateStream() {
                 guard !Task.isCancelled else { break }
                 guard case .registered = state else {
-                    await self?.handleRegistrationLoss()
+                    self?.handleRegistrationLoss()
                     break
                 }
             }
         }
 
         let devices = wearables.devices.compactMap {
-            wearables.deviceForIdentifier($0)
+            self.wearables.deviceForIdentifier($0)
         }
         guard let selectedDevice = devices.min(by: {
             Self.deviceRank($0) < Self.deviceRank($1)
@@ -95,7 +95,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         errorTask = Task { [weak self] in
             for await error in errorStream {
                 guard !Task.isCancelled else { break }
-                await self?.emitDeviceError(error.localizedDescription)
+                self?.emitDeviceError(error.localizedDescription)
             }
         }
 
