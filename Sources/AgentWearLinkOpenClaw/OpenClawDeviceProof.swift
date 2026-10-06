@@ -1,5 +1,14 @@
 import Foundation
 
+private extension Data {
+    var base64URLEncodedString: String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}
+
 public struct OpenClawDeviceProof: Encodable, Sendable, Equatable {
     public let id: String
     public let publicKey: String
@@ -11,10 +20,10 @@ public struct OpenClawDeviceProof: Encodable, Sendable, Equatable {
 public struct OpenClawDeviceProofBuilder: Sendable {
     public init() {}
 
-    /// Canonical AWL v3 device-auth payload.
+    /// Mirrors OpenClaw buildDeviceAuthPayloadV3 field order exactly.
     ///
-    /// Keep this builder isolated: if OpenClaw changes its canonical payload,
-    /// only the protocol adapter and its golden-vector tests should change.
+    /// Scope order is intentionally preserved. The signed token must be the
+    /// same effective token used by the connect auth selection.
     public func buildPayloadV3(
         deviceID: String,
         clientID: String,
@@ -33,12 +42,12 @@ public struct OpenClawDeviceProofBuilder: Sendable {
             clientID,
             clientMode,
             role,
-            scopes.sorted().joined(separator: ","),
+            scopes.joined(separator: ","),
+            String(signedAt),
             token ?? "",
             nonce,
-            String(signedAt),
-            platform,
-            deviceFamily
+            platform.trimmingCharacters(in: .whitespacesAndNewlines),
+            deviceFamily.trimmingCharacters(in: .whitespacesAndNewlines)
         ]
         return Data(fields.joined(separator: "|").utf8)
     }
@@ -75,8 +84,8 @@ public struct OpenClawDeviceProofBuilder: Sendable {
 
         return OpenClawDeviceProof(
             id: id,
-            publicKey: try identity.publicKeyRaw.base64EncodedString(),
-            signature: signature.base64EncodedString(),
+            publicKey: try identity.publicKeyRaw.base64URLEncodedString,
+            signature: signature.base64URLEncodedString,
             signedAt: challenge.ts,
             nonce: challenge.nonce
         )
