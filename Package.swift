@@ -10,10 +10,15 @@ let package = Package(
     products: [
         .library(name: "AgentWearLinkCore", targets: ["AgentWearLinkCore"]),
         .library(name: "AgentWearLinkOpenClaw", targets: ["AgentWearLinkOpenClaw"]),
+        .library(name: "AgentWearLinkMetaDAT", targets: ["AgentWearLinkMetaDAT"]),
         .executable(name: "awl-openclaw-probe", targets: ["AgentWearLinkOpenClawProbe"])
     ],
     targets: [
         .target(name: "AgentWearLinkCore"),
+        .target(
+            name: "AgentWearLinkMetaDAT",
+            dependencies: ["AgentWearLinkCore"]
+        ),
         .target(
             name: "AgentWearLinkOpenClaw",
             dependencies: ["AgentWearLinkCore"]
@@ -21,6 +26,10 @@ let package = Package(
         .executableTarget(
             name: "AgentWearLinkOpenClawProbe",
             dependencies: ["AgentWearLinkOpenClaw"]
+        ),
+        .testTarget(
+            name: "AgentWearLinkMetaDATTests",
+            dependencies: ["AgentWearLinkMetaDAT", "AgentWearLinkCore"]
         ),
         .testTarget(
             name: "AgentWearLinkCoreTests",
