@@ -10,15 +10,21 @@ public actor OpenClawRPCDispatcher {
     private var responses: [String: CheckedContinuation<OpenClawResponseEnvelope, Error>] = [:]
     private var eventContinuation: AsyncThrowingStream<OpenClawEventEnvelope, Error>.Continuation?
     private var receiveTask: Task<Void, Never>?
+    private var lastActivityMilliseconds: Int64?
+    private let nowMilliseconds: @Sendable () -> Int64
 
     public init(
         socket: any OpenClawWebSocket,
         state: OpenClawGatewayState,
-        registry: OpenClawRPCRegistry = .init()
+        registry: OpenClawRPCRegistry = .init(),
+        nowMilliseconds: @escaping @Sendable () -> Int64 = {
+            Int64(Date().timeIntervalSince1970 * 1_000)
+        }
     ) {
         self.socket = socket
         self.state = state
         self.registry = registry
+        self.nowMilliseconds = nowMilliseconds
     }
 
     public func events() -> AsyncThrowingStream<OpenClawEventEnvelope, Error> {
@@ -29,9 +35,26 @@ public actor OpenClawRPCDispatcher {
 
     public func start() {
         guard receiveTask == nil else { return }
+        lastActivityMilliseconds = nowMilliseconds()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
         }
+    }
+
+    public var isRunning: Bool {
+        receiveTask != nil
+    }
+
+    public func isStale(
+        timeoutMilliseconds: Int,
+        now explicitNow: Int64? = nil
+    ) -> Bool {
+        guard timeoutMilliseconds > 0,
+              let lastActivityMilliseconds else {
+            return false
+        }
+        let now = explicitNow ?? nowMilliseconds()
+        return now - lastActivityMilliseconds > Int64(timeoutMilliseconds)
     }
 
     public func request<Params: Encodable & Sendable>(
@@ -71,6 +94,7 @@ public actor OpenClawRPCDispatcher {
     public func stop() async {
         receiveTask?.cancel()
         receiveTask = nil
+        lastActivityMilliseconds = nil
         await failAll(AWLOpenClawError.disconnected)
         eventContinuation?.finish()
         eventContinuation = nil
@@ -80,6 +104,7 @@ public actor OpenClawRPCDispatcher {
         do {
             while !Task.isCancelled {
                 let text = try await socket.receive()
+                lastActivityMilliseconds = nowMilliseconds()
                 let frame = try router.decode(Data(text.utf8))
 
                 switch frame {
@@ -101,6 +126,7 @@ public actor OpenClawRPCDispatcher {
             eventContinuation?.finish(throwing: error)
             eventContinuation = nil
         }
+        receiveTask = nil
     }
 
     private func cancel(id: String) async {
