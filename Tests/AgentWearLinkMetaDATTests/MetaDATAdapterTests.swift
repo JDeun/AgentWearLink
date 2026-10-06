@@ -207,6 +207,78 @@ final class MetaDATAdapterTests: XCTestCase {
 
         await adapter.disconnect()
     }
+
+
+    func testFailedConnectFinishesOnlyItsPublicSubscriptionAndCanRetry() async throws {
+        let session = RestartableMetaSession(connectFailures: 1)
+        let adapter = MetaDATAdapter(session: session)
+
+        let failedStream = adapter.events()
+        var failedIterator = failedStream.makeAsyncIterator()
+
+        do {
+            try await adapter.connect()
+            XCTFail("Expected first connect to fail")
+        } catch {}
+
+        let failedResult = await failedIterator.next()
+        XCTAssertNil(failedResult)
+
+        let retryStream = adapter.events()
+        var retryIterator = retryStream.makeAsyncIterator()
+        try await adapter.connect()
+
+        let id = UUID()
+        session.emit(.sessionStarted(id))
+
+        let retryEvent = await retryIterator.next()
+        XCTAssertEqual(
+            retryEvent,
+            .sessionStarted(InteractionID(rawValue: id))
+        )
+
+        await adapter.disconnect()
+
+        let counts = session.counts()
+        XCTAssertEqual(counts.connects, 2)
+        XCTAssertEqual(counts.disconnects, 2)
+    }
+
+    func testDisconnectCannotFinishReplacementSubscriptionInstalledWhileSuspended() async throws {
+        let session = BlockingDisconnectMetaSession()
+        let adapter = MetaDATAdapter(session: session)
+
+        let firstStream = adapter.events()
+        var firstIterator = firstStream.makeAsyncIterator()
+        try await adapter.connect()
+
+        let disconnect = Task { await adapter.disconnect() }
+        await session.waitUntilDisconnectStarts()
+
+        let replacementStream = adapter.events()
+        var replacementIterator = replacementStream.makeAsyncIterator()
+
+        // Replacing a subscriber terminates the old stream immediately.
+        let firstResult = await firstIterator.next()
+        XCTAssertNil(firstResult)
+
+        session.releaseDisconnect()
+        await disconnect.value
+
+        // The disconnect captured the old generation before it suspended, so
+        // the replacement must remain usable for the next connection.
+        try await adapter.connect()
+        let id = UUID()
+        session.emit(.sessionStarted(id))
+
+        let replacementEvent = await replacementIterator.next()
+        XCTAssertEqual(
+            replacementEvent,
+            .sessionStarted(InteractionID(rawValue: id))
+        )
+
+        await adapter.disconnect()
+    }
 }
 
 private actor StubSession: MetaDATSession {
@@ -325,6 +397,144 @@ private actor VoiceStubSession: MetaDATSession, MetaDATVoiceInvocationSource {
         invocationStream
     }
     func emitInvocation() { invocationContinuation.yield(invocation) }
+}
+
+private final class RestartableMetaSession: MetaDATSession, @unchecked Sendable {
+    let capabilities: MetaDATCapabilities = []
+
+    private let lock = NSLock()
+    private var continuation: AsyncStream<MetaDATEvent>.Continuation?
+    private var remainingConnectFailures: Int
+    private var connectCount = 0
+    private var disconnectCount = 0
+
+    init(connectFailures: Int = 0) {
+        self.remainingConnectFailures = connectFailures
+    }
+
+    func events() -> AsyncStream<MetaDATEvent> {
+        let pair = AsyncStream<MetaDATEvent>.makeStream()
+        let previous = lock.withLock { () -> AsyncStream<MetaDATEvent>.Continuation? in
+            let previous = continuation
+            continuation = pair.continuation
+            return previous
+        }
+        previous?.finish()
+        return pair.stream
+    }
+
+    func connect() async throws {
+        let shouldFail = lock.withLock { () -> Bool in
+            connectCount += 1
+            guard remainingConnectFailures > 0 else { return false }
+            remainingConnectFailures -= 1
+            return true
+        }
+        if shouldFail {
+            throw AWLError.device("connect failed")
+        }
+    }
+
+    func disconnect() async {
+        let active = lock.withLock { () -> AsyncStream<MetaDATEvent>.Continuation? in
+            disconnectCount += 1
+            let active = continuation
+            continuation = nil
+            return active
+        }
+        active?.finish()
+    }
+
+    func emit(_ event: MetaDATEvent) {
+        let active = lock.withLock { continuation }
+        active?.yield(event)
+    }
+
+    func counts() -> (connects: Int, disconnects: Int) {
+        lock.withLock { (connectCount, disconnectCount) }
+    }
+}
+
+private final class BlockingDisconnectMetaSession: MetaDATSession, @unchecked Sendable {
+    let capabilities: MetaDATCapabilities = []
+
+    private let lock = NSLock()
+    private var continuation: AsyncStream<MetaDATEvent>.Continuation?
+    private var disconnectStarted = false
+    private var disconnectReleased = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func events() -> AsyncStream<MetaDATEvent> {
+        let pair = AsyncStream<MetaDATEvent>.makeStream()
+        let previous = lock.withLock { () -> AsyncStream<MetaDATEvent>.Continuation? in
+            let previous = continuation
+            continuation = pair.continuation
+            return previous
+        }
+        previous?.finish()
+        return pair.stream
+    }
+
+    func connect() async throws {}
+
+    func disconnect() async {
+        let startWaiters = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            disconnectStarted = true
+            let waiters = self.startWaiters
+            self.startWaiters.removeAll()
+            return waiters
+        }
+        for waiter in startWaiters { waiter.resume() }
+
+        let shouldWait = lock.withLock { !disconnectReleased }
+        if shouldWait {
+            await withCheckedContinuation { waiter in
+                let resumeImmediately = lock.withLock { () -> Bool in
+                    if disconnectReleased { return true }
+                    releaseWaiters.append(waiter)
+                    return false
+                }
+                if resumeImmediately { waiter.resume() }
+            }
+        }
+
+        let active = lock.withLock { () -> AsyncStream<MetaDATEvent>.Continuation? in
+            let active = continuation
+            continuation = nil
+            return active
+        }
+        active?.finish()
+    }
+
+    func waitUntilDisconnectStarts() async {
+        let alreadyStarted = lock.withLock { disconnectStarted }
+        if alreadyStarted { return }
+
+        await withCheckedContinuation { waiter in
+            let resumeImmediately = lock.withLock { () -> Bool in
+                if disconnectStarted { return true }
+                startWaiters.append(waiter)
+                return false
+            }
+            if resumeImmediately { waiter.resume() }
+        }
+    }
+
+    func releaseDisconnect() {
+        let waiters = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            disconnectReleased = true
+            let waiters = releaseWaiters
+            releaseWaiters.removeAll()
+            return waiters
+        }
+        for waiter in waiters { waiter.resume() }
+    }
+
+    func emit(_ event: MetaDATEvent) {
+        let active = lock.withLock { continuation }
+        active?.yield(event)
+    }
 }
 
 private actor BlockingSnapshotSession: MetaDATSnapshotSession {
