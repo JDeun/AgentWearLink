@@ -74,7 +74,7 @@ jobs:
           xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
           xcrun simctl bootstatus "${AWL_IOS_SIMULATOR_UDID}" -b
       - name: Run MockDeviceKit server rendezvous UI test
-        timeout-minutes: 5
+        timeout-minutes: 2
         working-directory: Adapters/MetaDAT/TestApp
         run: |
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation test
