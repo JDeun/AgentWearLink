@@ -105,6 +105,7 @@ public actor OpenClawGatewayConnection {
             }
 
             let hello = try decodeHello(payload)
+            try OpenClawGatewayState.validateHello(hello)
             try await assembler.persistHello(hello, assembled: assembled)
             try await state.acceptHello(hello)
             return hello

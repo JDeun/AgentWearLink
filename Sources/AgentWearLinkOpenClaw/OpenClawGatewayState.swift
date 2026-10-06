@@ -17,12 +17,15 @@ public actor OpenClawGatewayState {
         connectionState = .authenticating
     }
 
-    public func acceptHello(_ hello: OpenClawHelloOK) throws {
+    public static func validateHello(_ hello: OpenClawHelloOK) throws {
         guard hello.type == "hello-ok",
               hello.protocolVersion == OpenClawProtocol.currentVersion else {
             throw AWLOpenClawError.protocolMismatch
         }
+    }
 
+    public func acceptHello(_ hello: OpenClawHelloOK) throws {
+        try Self.validateHello(hello)
         self.hello = hello
         self.connectionState = .ready
     }
