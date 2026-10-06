@@ -34,3 +34,23 @@ Use Meta's `MWDATMockDevice` package to exercise the **normal DAT session path**
 ## Next implementation gate
 
 Build the official CameraAccess sample and its MockDeviceKit path first. Then copy only validated session/capability mappings into the concrete iOS bridge behind `MetaDATAdapter`.
+
+
+## Pinned integration compile gate
+
+The reference integration package in this directory pins Meta Wearables DAT to
+**1.0.0**, matching Meta's current CameraAccess sample project.
+
+Resolve/build the integration package separately from the root package so vendor SDK
+changes cannot destabilize deterministic Core CI:
+
+```bash
+cd Adapters/MetaDAT
+swift package resolve
+swift build
+```
+
+For a release-quality iOS check, build this package/target with the repository's
+documented Xcode toolchain and an iOS destination. The root `swift test` remains
+vendor-independent and must not be interpreted as proof that concrete MWDAT sources
+compile.
