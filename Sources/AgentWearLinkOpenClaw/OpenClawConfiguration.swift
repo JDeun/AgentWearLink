@@ -1,6 +1,6 @@
 import Foundation
 
-public struct OpenClawConfiguration: Sendable, Equatable {
+public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     public let baseURL: URL
     public let bearerToken: String
     public let model: String
@@ -33,4 +33,9 @@ public struct OpenClawConfiguration: Sendable, Equatable {
         self.timeout = timeout
         self.maximumEventBytes = maximumEventBytes
     }
+    public var description: String {
+        "OpenClawConfiguration(baseURL: \\(baseURL), bearerToken: <redacted>, model: \\(model), conversationID: \\(conversationID), sessionKey: \\(sessionKey ?? "nil"), messageChannel: \\(messageChannel ?? "nil"), timeout: \\(timeout), maximumEventBytes: \\(maximumEventBytes))"
+    }
+
+    public var debugDescription: String { description }
 }
