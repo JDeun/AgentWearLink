@@ -51,9 +51,18 @@ private struct OpenClawKeychain {
         var item = base
         attributes.forEach { item[$0.key] = $0.value }
         let add = SecItemAdd(item as CFDictionary, nil)
-        guard add == errSecSuccess else {
-            throw OpenClawKeychainError.unexpectedStatus(add)
+        if add == errSecSuccess { return }
+        if add == errSecDuplicateItem {
+            let retry = SecItemUpdate(
+                base as CFDictionary,
+                attributes as CFDictionary
+            )
+            guard retry == errSecSuccess else {
+                throw OpenClawKeychainError.unexpectedStatus(retry)
+            }
+            return
         }
+        throw OpenClawKeychainError.unexpectedStatus(add)
     }
 
     func delete(account: String) throws {
