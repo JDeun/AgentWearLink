@@ -18,6 +18,22 @@ private actor VisionStubDevice: SnapshotCapturingDevice {
     func captures() -> Int { captureCount }
 }
 
+private actor EmptyVisionStubDevice: SnapshotCapturingDevice {
+    nonisolated let capabilities: CapabilitySet = [.cameraSnapshot]
+    private(set) var captureCount = 0
+
+    func connect() async throws {}
+    func disconnect() async {}
+    nonisolated func events() -> AsyncStream<InteractionEvent> { AsyncStream { $0.finish() } }
+
+    func captureSnapshot(interactionID: InteractionID) async throws -> ImageAttachment {
+        captureCount += 1
+        return try ImageAttachment(data: Data(), format: .jpeg)
+    }
+
+    func captures() -> Int { captureCount }
+}
+
 private actor VisionStubAgent: VisionAgentAdapter {
     nonisolated let supportsVisionInput: Bool
     private(set) var requestCount = 0
@@ -75,6 +91,24 @@ final class VisionCoordinatorTests: XCTestCase {
         let captures = await device.captures()
         let requests = await agent.requests()
         XCTAssertEqual(captures, 0)
+        XCTAssertEqual(requests, 0)
+    }
+
+    func testEmptyCapturedImageFailsBeforeAgentRequest() async {
+        let device = EmptyVisionStubDevice()
+        let agent = VisionStubAgent()
+        let coordinator = VisionCoordinator(device: device, agent: agent)
+
+        do {
+            _ = try await coordinator.responses(interactionID: InteractionID(), prompt: "what is this?")
+            XCTFail("expected empty-image failure")
+        } catch {
+            XCTAssertEqual(error as? AWLError, .capabilityUnavailable("image payload is empty"))
+        }
+
+        let captures = await device.captures()
+        let requests = await agent.requests()
+        XCTAssertEqual(captures, 1)
         XCTAssertEqual(requests, 0)
     }
 
