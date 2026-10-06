@@ -103,7 +103,11 @@ public struct SSEParser: Sendable {
         case "data":
             dataLines.append(value)
         case "retry":
-            currentRetry = Int(value)
+            if !value.isEmpty,
+               value.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }),
+               let retry = Int(value) {
+                currentRetry = retry
+            }
         default:
             break
         }
