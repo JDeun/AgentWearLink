@@ -10,14 +10,18 @@ public actor OpenClawAgentRunClient {
 
     public func submit(
         message: String,
+        agentID: String? = nil,
         sessionKey: String?,
+        deliver: Bool? = nil,
         idempotencyKey: String
     ) async throws -> OpenClawAgentAccepted {
         let response = try await dispatcher.request(
             method: "agent",
             params: OpenClawAgentParams(
                 message: message,
+                agentId: agentID,
                 sessionKey: sessionKey,
+                deliver: deliver,
                 idempotencyKey: idempotencyKey
             )
         )
