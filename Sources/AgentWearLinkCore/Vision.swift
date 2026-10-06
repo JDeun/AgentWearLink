@@ -35,7 +35,7 @@ public struct ImageAttachment: Sendable, Equatable {
     }
 }
 
-public struct VisionRequest: Sendable, Equatable {
+public struct VisionRequest: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     public let interactionID: InteractionID
     public let prompt: String
     public let image: ImageAttachment
@@ -45,6 +45,12 @@ public struct VisionRequest: Sendable, Equatable {
         self.prompt = prompt
         self.image = image
     }
+
+    public var description: String {
+        "VisionRequest(interactionID: \(interactionID.rawValue.uuidString), promptBytes: \(prompt.utf8.count), imageFormat: \(image.format.rawValue), imageBytes: \(image.data.count))"
+    }
+
+    public var debugDescription: String { description }
 }
 
 /// Optional device-side extension for explicit still-image capture.
