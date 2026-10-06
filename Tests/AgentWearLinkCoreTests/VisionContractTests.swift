@@ -18,7 +18,17 @@ final class VisionContractTests: XCTestCase {
 
     func testImageAttachmentRejectsNonPositiveLimit() {
         XCTAssertThrowsError(
-            try ImageAttachment(data: Data(), format: .png, maximumBytes: 0)
-        )
+            try ImageAttachment(data: Data([1]), format: .png, maximumBytes: 0)
+        ) { error in
+            XCTAssertEqual(error as? AWLError, .capabilityUnavailable("image payload exceeds configured limit"))
+        }
+    }
+
+    func testImageAttachmentRejectsEmptyPayload() {
+        XCTAssertThrowsError(
+            try ImageAttachment(data: Data(), format: .png)
+        ) { error in
+            XCTAssertEqual(error as? AWLError, .capabilityUnavailable("image payload is empty"))
+        }
     }
 }
