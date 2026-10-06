@@ -90,4 +90,26 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         XCTAssertNil(result.effectiveToken)
         XCTAssertTrue(result.usedBootstrapToken)
     }
+
+    func testSensitiveCredentialDescriptionsAreRedacted() throws {
+        let sentinel = "AWL-SENTINEL-SECRET"
+        let credentials = OpenClawConnectCredentials(
+            token: sentinel,
+            password: sentinel,
+            explicitDeviceToken: sentinel,
+            bootstrapToken: sentinel
+        )
+        XCTAssertFalse(String(describing: credentials).contains(sentinel))
+        XCTAssertFalse(String(reflecting: credentials).contains(sentinel))
+
+        let credential = OpenClawDeviceCredential(
+            deviceID: "device",
+            role: "operator",
+            scopes: ["operator.read"],
+            token: sentinel
+        )
+        XCTAssertFalse(String(describing: credential).contains(sentinel))
+        XCTAssertFalse(String(reflecting: credential).contains(sentinel))
+        XCTAssertTrue(String(describing: credential).contains("<redacted>"))
+    }
 }
