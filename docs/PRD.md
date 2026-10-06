@@ -1,127 +1,304 @@
 # AgentWearLink Product Requirements Document
 
-**Version:** 0.1  
-**Status:** Draft for implementation  
-**Date:** 2026-10-06
+**Version:** 0.2  
+**Status:** Implementation source of truth  
+**Date:** 2026-10-06  
+**Repository:** AgentWearLink
+
+> This document is the canonical product/scope handoff for continuing work in a new session. Read it together with `docs/architecture.md`, ADRs, open GitHub issues, and the current code before changing architecture.
 
 ## 1. Product definition
 
 AgentWearLink (AWL) is an open interoperability layer between wearable devices and AI agent runtimes.
 
-It converts vendor-specific wearable capabilities into normalized interaction events and connects them to replaceable agent adapters. The project is not an AI agent itself.
+It converts vendor-specific wearable capabilities into normalized interactions and connects them to replaceable agent/runtime adapters. AWL is not an AI agent, model router, memory system, or chat service.
 
-## 2. Problem
+**Tagline:** Connect any wearable to any AI agent.
 
-Wearable AI integrations tend to couple four concerns:
+## 2. Reference deployment
 
-1. device vendor SDKs,
-2. speech/vision transport,
-3. a specific model provider,
-4. agent orchestration.
+The architecture is device-agnostic and agent-agnostic. The first implementation is deliberately narrow:
 
-This makes changing either the wearable or the agent runtime expensive. AWL introduces explicit boundaries between the device and agent sides.
+- Wearable: Ray-Ban Meta
+- Device SDK: Meta Wearables Device Access Toolkit (DAT)
+- Companion: iPhone
+- Agent runtime: OpenClaw on a Mac mini
+- Private network: Tailscale
+- Preferred Gateway exposure: Tailscale Serve/WSS to an OpenClaw Gateway bound to loopback
+- Visible conversation/log surface in the owner's deployment: Telegram through OpenClaw
+- Initial TTS: iOS native speech synthesis
+- Vision: explicit/event-driven snapshots only
 
-## 3. Goals
+Neither Meta, Ray-Ban, OpenClaw, Tailscale, Telegram, nor a TTS vendor may become an AWL Core dependency.
 
-- Define a small capability-based DeviceAdapter contract.
-- Define an AgentAdapter contract supporting request/response streaming.
-- Normalize text, audio, image, invocation, lifecycle, and error events.
-- Keep model routing, memory, RAG, and tools outside the core.
-- Validate the design against real hardware and a real agent.
-- Support secure authenticated transports and robust reconnect semantics.
+## 3. Problem
 
-## 4. Non-goals
+Wearable AI integrations commonly couple:
 
-The core will not implement:
+1. vendor SDK/device lifecycle,
+2. media and invocation behavior,
+3. network transport,
+4. a specific model/provider,
+5. agent orchestration and memory,
+6. a specific chat/logging surface.
 
-- an LLM router,
-- persistent agent memory,
-- RAG,
-- MCP/tool orchestration,
-- a replacement chat application,
-- continuous camera surveillance,
-- speculative integrations that cannot be tested.
+That coupling makes either side difficult to replace. AWL defines stable boundaries and lets the device and agent runtime evolve independently.
 
-## 5. First reference implementation
+## 4. Architecture invariants
 
-### Device side
+```text
+Wearable
+   │
+DeviceAdapter
+   │
+AgentWearLinkCore
+   │
+AgentAdapter
+   │
+runtime-specific adapter
+   │
+transport
+   │
+AI agent runtime
+```
 
-Ray-Ban Meta via Meta Wearables DAT on iOS.
+The following are invariants:
 
-### Agent side
+- Vendor SDK types do not leak into Core.
+- Runtime-specific types do not leak into Core.
+- Device events and agent request/response contracts remain distinct.
+- Core does not decide which LLM/model/tool/memory to use.
+- Reconnect restores transport state; it never silently replays uncertain mutating requests.
+- Media queues are bounded.
+- Unsupported capabilities are not advertised.
+- Continuous camera capture is out of scope.
+- Generic abstractions are expanded only when a real second implementation proves the need.
 
-OpenClaw.
+## 5. Current package boundaries
 
-### MVP interaction
+- `AgentWearLinkCore`: capabilities, normalized interactions, coordinator/runtime, generic transport primitives and deterministic mocks.
+- `AgentWearLinkOpenClaw`: OpenClaw-specific HTTP/native Gateway protocol integration.
+- `Adapters/MetaDAT`: Meta DAT registration/session/device integration scaffold.
 
-1. User initiates an interaction.
-2. Wearable speech/audio is normalized by the device adapter.
-3. The event is sent to the connected agent adapter.
-4. The agent runtime performs its existing model/tool/memory work.
-5. Streaming output returns to the companion.
-6. Text is rendered and optionally spoken through device audio.
-7. Vision is captured only for an explicit vision interaction.
-
-The user's OpenClaw deployment may mirror/log the interaction to Telegram, but Telegram is not an AWL core dependency.
+Future device/runtime adapters should remain outside Core.
 
 ## 6. Functional requirements
 
-### FR-1 Device capabilities
-A device adapter must expose supported input/output capabilities without forcing unsupported features.
+### FR-1 Capability discovery
 
-### FR-2 Sessions
-The core must represent interaction start, active, interruption, completion, disconnect, reconnect, and failure.
+A DeviceAdapter exposes only implemented and currently available capabilities.
 
-### FR-3 Events
-The core must support normalized text and lifecycle events first, with audio/image payloads added behind capability checks.
+Current capability vocabulary includes text input, speech input, raw audio input, camera snapshot, speaker output, text output, and voice invocation.
 
-### FR-4 Agent transport
-An agent adapter must accept normalized requests and expose incremental responses where supported.
+### FR-2 Interaction lifecycle
 
-### FR-5 Output
-Responses must be routable to text and speech/audio output without requiring a specific TTS vendor.
+AWL must represent stable interaction IDs, start, text/invocation, interruption, completion, cancellation and typed failure.
 
-### FR-6 Vision
-Image capture must be explicit/event-driven by default.
+### FR-3 Agent boundary
 
-### FR-7 Failure semantics
-Authentication, transport, capability, timeout, device, and agent failures must be distinguishable.
+Agent requests/responses are distinct from wearable events. Incremental output is supported where the runtime provides it.
 
-## 7. Non-functional requirements
+### FR-4 Runtime lifecycle
 
-- No credentials in source control.
-- Secrets stored using platform secure storage.
-- No public unauthenticated agent gateway.
-- Bounded buffers for streaming media.
-- Cancellation/backpressure for long-running streams.
-- Deterministic session ownership.
-- Useful diagnostics without logging secrets or raw private media by default.
-- Core contracts should not expose Meta/OpenClaw-specific types.
+Runtime start/stop must be deterministic and idempotent. Cancellation must propagate across the boundary. Completed tasks must not be retained.
 
-## 8. Delivery gates
+### FR-5 Transport
 
-### P0-A — Hardware validation
-Build an official DAT sample on a physical iPhone and validate glasses connection, camera, microphone/audio, disconnect/reconnect.
+Supported transport architecture includes buffered HTTP, SSE primitives, WebSocket, and future local IPC. Transport and agent semantics remain separate.
+
+### FR-6 OpenClaw
+
+Two integration paths are allowed:
+
+1. HTTP Chat Completions compatibility path.
+2. Native Gateway WebSocket path — preferred for session-aware, low-latency integration.
+
+Native Gateway work must follow the current official protocol rather than guessed wire formats.
+
+### FR-7 Tailscale deployment
+
+Tailscale is an endpoint/security profile, not an SDK dependency.
+
+Preferred owner topology:
+
+```text
+iPhone / AWL
+    │
+Tailscale tailnet
+    │
+WSS / Tailscale Serve
+    │
+Mac mini loopback
+    │
+OpenClaw Gateway :18789
+```
+
+AWL must tolerate Wi-Fi/cellular transitions, Tailnet re-establishment, Gateway restart, and Mac sleep/restart.
+
+### FR-8 OpenClaw device identity
+
+A remote mobile client must support OpenClaw's current device identity/pairing model:
+
+- persistent Ed25519 device identity,
+- wait for `connect.challenge`,
+- bind the server nonce/timestamp into the signed device proof,
+- persist issued device token and approved grant securely,
+- handle pairing-required as an explicit state,
+- require fresh authenticated connect after approval,
+- re-read negotiated policy on every reconnect.
+
+Private Tailnet reachability does not replace device authorization.
+
+### FR-9 Speech/audio
+
+The first implementation should prefer Meta DAT speech/ASR when viable and iOS native TTS for response speech. Raw audio transport is added only with explicit ownership, cancellation, buffer and retention rules.
+
+### FR-10 Vision
+
+Camera access is event-driven. An image is captured only for an explicit vision interaction and only sent when the target agent path supports image input.
+
+### FR-11 Existing agent semantics
+
+AWL must use the existing OpenClaw agent/session semantics. It must not create a parallel intelligence layer.
+
+Telegram may remain a canonical visible history/delivery surface in the owner's deployment, but AWL does not call Telegram directly.
+
+## 7. Security and privacy requirements
+
+- No credentials or device private keys in source control.
+- iOS secrets/device identity stored in Keychain/Secure Enclave-compatible platform storage where practical.
+- Prefer private WSS/TLS paths.
+- Honor negotiated Gateway payload/buffer/attachment limits.
+- Never log authentication frames, tokens, private keys or raw private media.
+- Pairing/scope upgrades require explicit handling.
+- Request minimum necessary OpenClaw scopes.
+- A disconnected/reconnected socket does not imply an application request may be replayed.
+- Media retention defaults to none.
+
+## 8. Reliability requirements
+
+Must test:
+
+- duplicate request suppression,
+- cancellation races,
+- task cleanup,
+- device reconnect,
+- agent/Gateway reconnect,
+- Wi-Fi ↔ cellular transition,
+- Tailnet tunnel re-establishment,
+- late responses after cancellation,
+- non-monotonic/stale Gateway events,
+- bounded producer queues,
+- TTS interruption,
+- background/foreground transitions,
+- Gateway policy changes after reconnect,
+- pairing/token rotation/revocation.
+
+## 9. Test layers
+
+### Layer 1 — deterministic Core CI
+
+No network/vendor SDK. AWL mocks validate lifecycle and contracts.
+
+### Layer 2 — integration
+
+- Meta Mock Device Kit ↔ Meta adapter
+- local/mock HTTP/SSE/WebSocket ↔ transports
+- development OpenClaw Gateway ↔ OpenClaw adapter
+
+### Layer 3 — physical E2E
+
+Ray-Ban Meta + physical iPhone + Mac mini/OpenClaw over the intended Tailnet.
+
+Hardware-dependent features are not considered complete from mocks alone.
+
+## 10. Delivery gates
+
+### P0-A — Meta DAT physical validation
+
+Validate official DAT sample on physical iPhone/Ray-Ban Meta: registration, connect, camera, speech/audio where exposed, disconnect/reconnect, OS/SDK/firmware versions.
 
 ### P0-B — Text E2E
-AWL core contracts + OpenClaw adapter; manual app trigger; streaming text response.
+
+Manual companion trigger → AWL → existing OpenClaw session → incremental text response over the real Tailnet.
 
 ### P0-C — Audio E2E
-Wearable audio/speech → agent → TTS/audio output.
+
+Wearable speech/audio → existing agent → streaming response → iOS TTS/device audio.
 
 ### P0-D — Hands-free invocation
-Validate DAT voice invocation including lock-screen/background behavior.
+
+Validate DAT/Hey Meta invocation, Korean behavior, lock-screen/background behavior and coexistence with Meta AI.
 
 ### P1 — Event-driven vision
-Explicit camera snapshot → multimodal-capable agent path.
 
-### P2 — Reliability
-Recovery, network transitions, interruption, bounded queues, observability, privacy/security hardening.
+Explicit vision intent → snapshot → capability check → multimodal agent path.
 
-## 9. Success criteria
+### P2 — Reliability/security
 
-The first reference implementation succeeds when a locked/pocketed iPhone can support a repeatable wearable interaction with the existing agent runtime, return an audible response, and preserve the agent's existing conversation/tool semantics without creating a second AI agent.
+Network transitions, pairing, token rotation/revocation, reconnect, interruption, bounded queues, observability and privacy hardening.
 
-## 10. Extension criteria
+## 11. Success criteria
 
-A second device or agent implementation should be addable without modifying the opposite adapter. Generic abstractions will only be expanded when a concrete second implementation demonstrates the need.
+The first reference implementation succeeds when:
+
+1. the iPhone can remain locked/in a pocket during normal interaction,
+2. the user initiates interaction from Ray-Ban Meta,
+3. the existing OpenClaw runtime on the Mac mini handles the request,
+4. the connection works through the intended private Tailnet deployment,
+5. the response is returned audibly through the wearable path,
+6. existing OpenClaw model/tool/memory/session behavior is preserved,
+7. the interaction can remain visible in the existing Telegram workflow without Telegram becoming an AWL dependency,
+8. explicit vision requests work without continuous capture.
+
+## 12. Non-goals
+
+AWL Core will not implement:
+
+- LLM/model routing,
+- persistent agent memory,
+- RAG,
+- MCP/tool orchestration,
+- Telegram business logic,
+- continuous surveillance,
+- a replacement for OpenClaw/Hermes/etc.,
+- speculative device/runtime adapters that cannot be tested.
+
+## 13. Continuation checklist
+
+When resuming work in another session:
+
+1. Read this PRD.
+2. Read `docs/architecture.md` and ADRs.
+3. Inspect current `main`, open issues and open PRs.
+4. Do not assume old OpenClaw or Meta DAT API shapes; verify current official docs.
+5. Run/inspect CI before merging.
+6. Preserve Core/vendor/runtime boundaries.
+7. Continue the earliest unblocked delivery gate.
+8. Record material architectural changes in this PRD and/or a new ADR.
+
+## 14. Current implementation snapshot — 2026-10-06
+
+Implemented or scaffolded:
+
+- capability/event/request/response contracts,
+- interaction coordinator and runtime,
+- deterministic mock device/agent harness,
+- bounded streaming primitives and SSE parser,
+- generic buffered HTTP transport,
+- OpenClaw Chat Completions adapter,
+- OpenClaw native Gateway protocol v4 frame models,
+- Gateway challenge/connect handshake,
+- hello-ok negotiated policy state,
+- RPC correlation registry,
+- Tailnet endpoint/reconnect model,
+- Meta DAT registration/session scaffold.
+
+Next implementation priorities:
+
+1. persistent OpenClaw device identity and pairing/token storage,
+2. long-lived Gateway receive/RPC dispatcher,
+3. streamed agent event mapping and cancellation,
+4. Meta DAT concrete capability mapping,
+5. real Tailnet/OpenClaw integration test,
+6. physical Ray-Ban/iPhone validation.
