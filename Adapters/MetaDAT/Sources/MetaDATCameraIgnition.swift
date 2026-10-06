@@ -15,8 +15,16 @@ public actor MetaDATCameraIgnition {
     }
 
     public func observe(_ streamState: StreamState) {
-        guard state == .starting else { return }
-        if streamState == .streaming { state = .streaming }
+        switch streamState {
+        case .streaming:
+            state = .streaming
+        case .stopped:
+            state = .idle
+        case .starting, .waitingForDevice, .stopping, .paused:
+            break
+        @unknown default:
+            break
+        }
     }
 
     public func stop(_ stream: Stream) {
