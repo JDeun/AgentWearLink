@@ -7,6 +7,7 @@ public enum OpenClawInboundFrame: Sendable, Equatable {
 
 public enum OpenClawFrameError: Error, Sendable, Equatable {
     case oversizedPreAuthFrame(actual: Int, maximum: Int)
+    case oversizedInboundFrame(actual: Int, maximum: Int)
     case malformedFrame
     case unsupportedFrameType(String)
 }
@@ -14,6 +15,8 @@ public enum OpenClawFrameError: Error, Sendable, Equatable {
 /// Validates the pre-auth ceiling and decodes only the outer frame family.
 /// Runtime-specific payload decoding happens after routing.
 public struct OpenClawFrameRouter: Sendable {
+    public static let defaultInboundMaximumBytes = 25 * 1024 * 1024
+
     public init() {}
 
     public func decodePreAuth(_ data: Data) throws -> OpenClawInboundFrame {
@@ -26,7 +29,18 @@ public struct OpenClawFrameRouter: Sendable {
         return try decode(data)
     }
 
-    public func decode(_ data: Data) throws -> OpenClawInboundFrame {
+    public func decode(
+        _ data: Data,
+        maximumBytes: Int = Self.defaultInboundMaximumBytes
+    ) throws -> OpenClawInboundFrame {
+        precondition(maximumBytes > 0)
+        guard data.count <= maximumBytes else {
+            throw OpenClawFrameError.oversizedInboundFrame(
+                actual: data.count,
+                maximum: maximumBytes
+            )
+        }
+
         guard
             let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let type = object["type"] as? String
