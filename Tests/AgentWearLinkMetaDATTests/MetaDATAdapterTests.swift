@@ -23,9 +23,12 @@ final class MetaDATAdapterTests: XCTestCase {
         await session.emit(.sessionEnded(id))
 
         var iterator = stream.makeAsyncIterator()
-        XCTAssertEqual(await iterator.next(), .sessionStarted(InteractionID(rawValue: id)))
-        XCTAssertEqual(await iterator.next(), .text(InteractionID(rawValue: id), "hello"))
-        XCTAssertEqual(await iterator.next(), .sessionEnded(InteractionID(rawValue: id)))
+        let started = await iterator.next()
+        let transcript = await iterator.next()
+        let ended = await iterator.next()
+        XCTAssertEqual(started, .sessionStarted(InteractionID(rawValue: id)))
+        XCTAssertEqual(transcript, .text(InteractionID(rawValue: id), "hello"))
+        XCTAssertEqual(ended, .sessionEnded(InteractionID(rawValue: id)))
         await adapter.disconnect()
     }
 }
