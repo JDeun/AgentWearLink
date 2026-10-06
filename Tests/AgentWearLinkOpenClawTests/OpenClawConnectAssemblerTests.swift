@@ -91,6 +91,49 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         XCTAssertTrue(result.usedBootstrapToken)
     }
 
+    func testCanonicalClientIdentityMatchesSignedV3Tuple() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: InMemoryOpenClawDeviceCredentialStore()
+        )
+
+        let result = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(token: "shared"),
+            challenge: challenge
+        )
+
+        XCTAssertEqual(result.params.client.id, "gateway-client")
+        XCTAssertEqual(result.params.client.mode, "backend")
+        XCTAssertEqual(result.params.client.platform, "ios")
+        XCTAssertEqual(result.params.client.deviceFamily, "iphone")
+
+        let proof = try XCTUnwrap(result.params.device)
+        let payload = OpenClawDeviceProofBuilder().buildPayloadV3(
+            deviceID: try identity.deviceID,
+            clientID: result.params.client.id,
+            clientMode: result.params.client.mode,
+            role: result.params.role,
+            scopes: result.params.scopes,
+            token: result.effectiveToken,
+            nonce: proof.nonce,
+            signedAt: proof.signedAt,
+            platform: result.params.client.platform,
+            deviceFamily: result.params.client.deviceFamily
+        )
+        let expectedSignature = try identity.sign(payload)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+
+        XCTAssertEqual(proof.signature, expectedSignature)
+    }
+
     func testSensitiveCredentialDescriptionsAreRedacted() throws {
         let sentinel = "AWL-SENTINEL-SECRET"
         let credentials = OpenClawConnectCredentials(
