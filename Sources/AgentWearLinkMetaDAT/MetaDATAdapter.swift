@@ -80,18 +80,25 @@ public actor MetaDATAdapter: DeviceAdapter {
 
     public func connect() async throws {
         guard eventTask == nil else { return }
-        do {
-            try await session.connect()
-        } catch {
-            throw AWLError.device(String(describing: error))
-        }
 
+        // Subscribe before connect. A concrete DAT host may synchronously emit
+        // lifecycle/failure events while establishing the device session.
         let stream = session.events()
-        eventTask = Task { [weak self] in
+        let forwardingTask = Task { [weak self] in
             for await event in stream {
                 guard !Task.isCancelled else { break }
                 await self?.forward(event)
             }
+        }
+        eventTask = forwardingTask
+
+        do {
+            try await session.connect()
+        } catch {
+            forwardingTask.cancel()
+            eventTask = nil
+            await session.disconnect()
+            throw AWLError.device(String(describing: error))
         }
     }
 
