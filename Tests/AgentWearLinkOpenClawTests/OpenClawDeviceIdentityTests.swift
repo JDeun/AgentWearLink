@@ -26,7 +26,8 @@ final class OpenClawDeviceIdentityTests: XCTestCase {
 
         XCTAssertEqual(a, b)
         XCTAssertEqual(try a.deviceID, try b.deviceID)
-        XCTAssertEqual(try await store.load(), a)
+        let persisted = try await store.load()
+        XCTAssertEqual(persisted, a)
     }
 
     func testV3PayloadMatchesCanonicalFieldOrder() throws {
