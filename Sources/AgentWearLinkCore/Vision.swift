@@ -48,5 +48,8 @@ public protocol SnapshotCapturingDevice: DeviceAdapter {
 
 /// Optional agent-side extension for image-aware requests.
 public protocol VisionAgentAdapter: AgentAdapter {
+    /// Runtime-negotiated support. Implementations must return false when the
+    /// selected endpoint/model cannot accept image input.
+    var supportsVisionInput: Bool { get }
     func responses(for request: VisionRequest) async -> AsyncThrowingStream<AgentResponse, Error>
 }

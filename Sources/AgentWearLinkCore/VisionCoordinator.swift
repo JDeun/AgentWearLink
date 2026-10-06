@@ -20,6 +20,9 @@ public struct VisionCoordinator: Sendable {
         guard device.capabilities.contains(.cameraSnapshot) else {
             throw AWLError.capabilityUnavailable("device does not support camera snapshots")
         }
+        guard agent.supportsVisionInput else {
+            throw AWLError.capabilityUnavailable("agent does not support image input")
+        }
 
         let image = try await device.captureSnapshot(interactionID: interactionID)
         return await agent.responses(
