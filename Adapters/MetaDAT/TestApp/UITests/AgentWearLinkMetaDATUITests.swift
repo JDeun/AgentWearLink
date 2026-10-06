@@ -22,14 +22,20 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         let serverReady = await client.waitForServer(timeout: 15)
         XCTAssertTrue(serverReady)
 
-        let deviceID = try XCTUnwrap(await client.pairDevice())
-        XCTAssertTrue(await client.powerOn(deviceId: deviceID))
-        XCTAssertTrue(await client.unfold(deviceId: deviceID))
-        XCTAssertTrue(await client.don(deviceId: deviceID))
-        XCTAssertNotNil(
-            await client.getDeviceState(),
-            "Mock server must expose the paired device state"
-        )
-        XCTAssertTrue(await client.unpairDevice(deviceId: deviceID))
+        let paired = await client.pairDevice()
+        let deviceID = try XCTUnwrap(paired)
+
+        let poweredOn = await client.powerOn(deviceId: deviceID)
+        XCTAssertTrue(poweredOn)
+        let unfolded = await client.unfold(deviceId: deviceID)
+        XCTAssertTrue(unfolded)
+        let donned = await client.don(deviceId: deviceID)
+        XCTAssertTrue(donned)
+
+        let deviceState = await client.getDeviceState()
+        XCTAssertNotNil(deviceState, "Mock server must expose the paired device state")
+
+        let unpaired = await client.unpairDevice(deviceId: deviceID)
+        XCTAssertTrue(unpaired)
     }
 }
