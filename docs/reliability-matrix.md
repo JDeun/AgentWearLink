@@ -7,7 +7,7 @@ Meta Wearables DAT, physical glasses, or a live OpenClaw deployment.
 | --- | --- | --- |
 | Device disconnect | Runtime cancels active interactions on stop; connect-time events subscribed before connect (#63) | Disconnect/reconnect Ray-Ban during interaction |
 | Agent reconnect | Supervisor reconnect tests; no silent request replay | Restart Mac mini OpenClaw Gateway during request |
-| Network transition | Transport errors remain typed | Move iPhone Wi-Fi ↔ cellular/Tailnet |
+| Network transition | Representative reconnect transitions are deterministic-tested; non-ready transport cannot send and uncertain work is not replayed | Move iPhone Wi-Fi ↔ cellular/Tailnet and record recovery |
 | Duplicate request | Coordinator suppresses active duplicate ID; inactive terminal events do not emit aborts (#65) | Repeat invocation during active response |
 | Late terminal data | Deltas after terminal response are ignored | Interrupt TTS while stream is finishing |
 | Cross-session response | Mismatched response ID cancels run and fails original interaction | N/A |
@@ -15,8 +15,8 @@ Meta Wearables DAT, physical glasses, or a live OpenClaw deployment.
 | Media bounds | Image attachment enforces configured byte limit | Oversized DAT snapshot handling |
 | Camera privacy | Vision requires explicit snapshot call and capability | Verify no capture before explicit interaction |
 | Media retention | Core values are in-memory only; no persistence API | Inspect iOS host caches/logs |
-| Credentials | No credentials in source-controlled configuration | Verify Keychain/env deployment configuration |
-| Background state | N/A | Lock/pocket iPhone and exercise invocation |
+| Credentials | Secret-sentinel regression plus redacted OpenClaw configuration diagnostics | Verify Keychain credential reuse/rotation/revocation in deployment |
+| Background state | Meta code-side invalidation/fresh-readiness policy is deterministic-tested | Lock/pocket physical iPhone and exercise invocation/recovery |
 | TTS interruption | Apple output replacement/interrupt tests; bounded pending speech (#61) | Interrupt spoken response repeatedly |
 
 ## Replay rule
@@ -33,7 +33,7 @@ OpenClaw version, Tailnet path, observed latency, and the exact reproduction ste
 
 ## Current validation split
 
-The deterministic rows above are expected to remain green in CI. Deployment-only
+The deterministic rows above are expected to remain green in CI. Meta DAT additionally has a pinned SDK compile gate and an app-hosted MockDeviceKit simulator/XCUITest gate; neither substitutes for the physical column. Deployment-only
 validation is tracked separately so code completion is not confused with hardware
 evidence:
 
