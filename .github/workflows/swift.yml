@@ -69,10 +69,20 @@ jobs:
         run: |
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
       - name: Boot selected iPhone Simulator
-        timeout-minutes: 3
+        timeout-minutes: 2
         run: |
           xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
-          xcrun simctl bootstatus "${AWL_IOS_SIMULATOR_UDID}" -b
+          for attempt in {1..60}; do
+            state="$(xcrun simctl list devices | grep "${AWL_IOS_SIMULATOR_UDID}" || true)"
+            if echo "$state" | grep -q "(Booted)"; then
+              echo "Simulator reports Booted after ${attempt}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Simulator did not reach Booted state within 60 seconds" >&2
+          xcrun simctl list devices >&2
+          exit 1
       - name: Build MockDeviceKit UI test bundle
         timeout-minutes: 8
         working-directory: Adapters/MetaDAT/TestApp
