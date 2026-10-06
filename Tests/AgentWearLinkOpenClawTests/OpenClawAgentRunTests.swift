@@ -112,13 +112,14 @@ final class OpenClawAgentRunTests: XCTestCase {
             #"{"type":"event","event":"agent","seq":3,"payload":{"runId":"run-1","stream":"assistant","seq":2,"data":{"delta":"lo"}}}"#
         ])
         await state.beginConnect()
-        await state.markReady(
+        try await state.acceptHello(
             OpenClawHelloOK(
-                protocol: 4,
+                type: "hello-ok",
+                protocolVersion: 4,
                 server: .init(version: "test", connId: "c1"),
                 features: .init(methods: [], events: ["agent"]),
                 auth: .init(role: "operator", scopes: ["operator.read"], deviceToken: nil),
-                policy: .init(maxPayload: 1024, maxBufferedBytes: 2048, tickIntervalMs: 15000)
+                policy: .init(maxPayload: 1024, maxBufferedBytes: 2048, tickIntervalMs: 15000, attachments: nil)
             )
         )
         let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
