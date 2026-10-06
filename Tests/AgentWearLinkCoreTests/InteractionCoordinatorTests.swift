@@ -51,6 +51,18 @@ final class InteractionCoordinatorTests: XCTestCase {
         XCTAssertEqual(requestCount, 1)
     }
 
+    func testInactiveTerminalEventDoesNotAbortAgent() async {
+        let agent = StubAgent()
+        let coordinator = InteractionCoordinator(agent: agent) { _ in }
+        let id = InteractionID()
+
+        await coordinator.handle(.sessionEnded(id))
+        await coordinator.handle(.interrupted(id))
+
+        let cancellations = await agent.cancellations()
+        XCTAssertTrue(cancellations.isEmpty)
+    }
+
     func testInterruptionCancelsAgentInteraction() async {
         let agent = StubAgent()
         let recorded = RecordedEvents()
