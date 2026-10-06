@@ -28,6 +28,34 @@ private final class ConnectEmittingDevice: DeviceAdapter, @unchecked Sendable {
     func events() -> AsyncStream<InteractionEvent> { stream }
 }
 
+
+
+private actor LifecycleAgent: AgentAdapter {
+    private(set) var connects = 0
+    private(set) var disconnects = 0
+    let failConnect: Bool
+
+    init(failConnect: Bool = false) { self.failConnect = failConnect }
+    func connect() async throws {
+        connects += 1
+        if failConnect { throw AWLError.agent("connect failed") }
+    }
+    func disconnect() async { disconnects += 1 }
+    func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
+    func cancel(interactionID: InteractionID) async {}
+    func counts() -> (Int, Int) { (connects, disconnects) }
+}
+
+private actor FailingDevice: DeviceAdapter {
+    nonisolated let capabilities: CapabilitySet = []
+    private(set) var disconnects = 0
+    func connect() async throws { throw AWLError.device("connect failed") }
+    func disconnect() async { disconnects += 1 }
+    nonisolated func events() -> AsyncStream<InteractionEvent> { AsyncStream { _ in } }
+}
+
 final class RuntimeTests: XCTestCase {
     func testMockDeviceToMockAgentRoundTrip() async throws {
         let device = MockDeviceAdapter()
@@ -68,6 +96,36 @@ final class RuntimeTests: XCTestCase {
         let events = await recorder.events
         XCTAssertTrue(events.contains(.text(device.emittedID, "echo: during-connect")))
         await runtime.stop()
+    }
+
+    func testDeviceConnectFailureRollsBackAgentConnection() async {
+        let device = FailingDevice()
+        let agent = LifecycleAgent()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
+
+        do {
+            try await runtime.start()
+            XCTFail("expected start failure")
+        } catch {}
+
+        let counts = await agent.counts()
+        XCTAssertEqual(counts.0, 1)
+        XCTAssertEqual(counts.1, 1)
+    }
+
+    func testRuntimeCanRestartAfterStop() async throws {
+        let device = MockDeviceAdapter()
+        let agent = LifecycleAgent()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
+
+        try await runtime.start()
+        await runtime.stop()
+        try await runtime.start()
+        await runtime.stop()
+
+        let counts = await agent.counts()
+        XCTAssertEqual(counts.0, 2)
+        XCTAssertEqual(counts.1, 2)
     }
 
     func testStartIsIdempotent() async throws {
