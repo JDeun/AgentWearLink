@@ -16,11 +16,18 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         XCTAssertTrue(hostState.waitForExistence(timeout: 10))
         let ready = NSPredicate(format: "label == %@", "host-ready")
         let readyExpectation = XCTNSPredicateExpectation(predicate: ready, object: hostState)
-        XCTAssertEqual(XCTWaiter.wait(for: [readyExpectation], timeout: 15), .completed)
+        guard XCTWaiter.wait(for: [readyExpectation], timeout: 15) == .completed else {
+            XCTFail("Meta DAT test host did not become ready; state=\(hostState.label)")
+            app.terminate()
+            return
+        }
 
         let client = MockDeviceTestClient(portFilePath: portFile)
-        let serverReady = await client.waitForServer(timeout: 15)
-        XCTAssertTrue(serverReady)
+        guard await client.waitForServer(timeout: 15) else {
+            XCTFail("MockDeviceKit server did not publish its rendezvous port")
+            app.terminate()
+            return
+        }
 
         let paired = await client.pairDevice()
         let deviceID = try XCTUnwrap(paired)
