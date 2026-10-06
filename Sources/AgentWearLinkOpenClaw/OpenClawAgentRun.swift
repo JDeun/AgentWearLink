@@ -2,16 +2,22 @@ import Foundation
 
 public struct OpenClawAgentParams: Encodable, Sendable {
     public let message: String
+    public let agentId: String?
     public let sessionKey: String?
+    public let deliver: Bool?
     public let idempotencyKey: String
 
     public init(
         message: String,
+        agentId: String? = nil,
         sessionKey: String? = nil,
+        deliver: Bool? = nil,
         idempotencyKey: String
     ) {
         self.message = message
+        self.agentId = agentId
         self.sessionKey = sessionKey
+        self.deliver = deliver
         self.idempotencyKey = idempotencyKey
     }
 }
