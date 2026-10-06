@@ -33,7 +33,8 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
     }
 
     func testPairAndDriveRayBanMetaReadyState() async throws {
-        let id = try XCTUnwrap(await client.pairDevice())
+        let pairedID = await client.pairDevice()
+        let id = try XCTUnwrap(pairedID)
         pairedDeviceID = id
         let poweredOn = await client.powerOn(deviceId: id)
         XCTAssertTrue(poweredOn)
