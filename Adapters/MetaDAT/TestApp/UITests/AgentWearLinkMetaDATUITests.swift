@@ -6,11 +6,13 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
     private var pairedDeviceID: String?
     private var portFile: String!
 
+    private var app: XCUIApplication!
+
     override func setUp() async throws {
         continueAfterFailure = false
         portFile = NSTemporaryDirectory() + "awl-mwdat-\(UUID().uuidString).port"
 
-        let app = XCUIApplication()
+        app = XCUIApplication()
         app.launchArguments = ["--awl-meta-ui-testing"]
         app.launchEnvironment["MWDAT_TEST_SERVER_PORT_FILE"] = portFile
         app.launch()
@@ -18,8 +20,6 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["awl-meta-host-state"].waitForExistence(timeout: 10))
 
         client = MockDeviceTestClient(portFilePath: portFile)
-        let serverReady = await client.waitForServer(timeout: 15)
-        XCTAssertTrue(serverReady)
     }
 
     override func tearDown() async throws {
@@ -32,7 +32,19 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         }
     }
 
+    func testHostLaunches() {
+        XCTAssertTrue(app.staticTexts["awl-meta-host-state"].exists)
+    }
+
+    func testMockDeviceServerRendezvous() async {
+        let serverReady = await client.waitForServer(timeout: 15)
+        XCTAssertTrue(serverReady)
+    }
+
     func testPairAndDriveRayBanMetaReadyState() async throws {
+        let serverReady = await client.waitForServer(timeout: 15)
+        XCTAssertTrue(serverReady)
+
         let pairedID = await client.pairDevice()
         let id = try XCTUnwrap(pairedID)
         pairedDeviceID = id
