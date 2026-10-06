@@ -240,3 +240,40 @@ extension InteractionCoordinatorTests {
         XCTAssertTrue(events.contains(.failed(id, .timeout)))
     }
 }
+
+
+private actor WrongIDAgent: AgentAdapter {
+    func connect() async throws {}
+    func disconnect() async {}
+    func cancel(interactionID: InteractionID) async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        let other = InteractionID()
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.textDelta(other, "cross-talk"))
+            continuation.yield(.completed(other))
+            continuation.finish()
+        }
+    }
+}
+
+extension InteractionCoordinatorTests {
+    func testAgentCannotCrossTalkIntoAnotherInteractionID() async throws {
+        let agent = WrongIDAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let events = await recorded.values
+        XCTAssertFalse(events.contains { event in
+            event.interactionID != nil && event.interactionID != id
+        })
+    }
+}
