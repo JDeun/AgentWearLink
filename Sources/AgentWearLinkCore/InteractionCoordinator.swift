@@ -61,14 +61,20 @@ public actor InteractionCoordinator {
             } catch {
                 await output(.failed(id, .agent(String(describing: error))))
             }
+
+            await self.finish(id)
         }
 
         tasks[id] = task
     }
 
-    public func cancel(_ id: InteractionID) async {
-        tasks[id]?.cancel()
+    private func finish(_ id: InteractionID) {
         tasks[id] = nil
+    }
+
+    public func cancel(_ id: InteractionID) async {
+        let task = tasks.removeValue(forKey: id)
+        task?.cancel()
         await agent.cancel(interactionID: id)
     }
 
