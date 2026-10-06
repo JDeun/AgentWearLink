@@ -38,16 +38,27 @@ public actor OpenClawAgentRunClient {
         return try decodePayload(response, as: OpenClawAgentWaitResult.self)
     }
 
-    public func cancel(runID: String) async throws {
+    public func cancel(
+        runID: String,
+        sessionKey: String,
+        agentID: String? = nil
+    ) async throws {
         let response = try await dispatcher.request(
-            method: "sessions.abort",
-            params: OpenClawSessionAbortParams(runId: runID)
-        )
-        guard response.ok else {
-            throw AWLOpenClawError.gateway(
-                code: response.error?.code ?? "UNKNOWN",
-                retryable: response.error?.retryable ?? false
+            method: "chat.abort",
+            params: OpenClawChatAbortParams(
+                sessionKey: sessionKey,
+                runId: runID,
+                agentId: agentID
             )
+        )
+        let result = try decodePayload(
+            response,
+            as: OpenClawChatAbortResult.self
+        )
+
+        guard result.aborted,
+              result.runIds == nil || result.runIds?.contains(runID) == true else {
+            throw OpenClawAgentRunError.abortNotConfirmed(runID)
         }
     }
 
@@ -120,4 +131,5 @@ public actor OpenClawAgentRunClient {
 
 public enum OpenClawAgentRunError: Error, Sendable, Equatable {
     case missingPayload
+    case abortNotConfirmed(String)
 }

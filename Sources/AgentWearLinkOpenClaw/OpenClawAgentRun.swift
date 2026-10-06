@@ -19,6 +19,9 @@ public struct OpenClawAgentParams: Encodable, Sendable {
 public struct OpenClawAgentAccepted: Decodable, Sendable, Equatable {
     public let runId: String
     public let acceptedAt: Int64
+    public let status: String?
+    public let sessionKey: String?
+    public let agentId: String?
 }
 
 public struct OpenClawAgentWaitParams: Encodable, Sendable {
@@ -44,12 +47,25 @@ public struct OpenClawAgentWaitResult: Decodable, Sendable, Equatable {
     public let terminalReceipt: JSONValue?
 }
 
-public struct OpenClawSessionAbortParams: Encodable, Sendable {
+public struct OpenClawChatAbortParams: Encodable, Sendable {
+    public let sessionKey: String
     public let runId: String
+    public let agentId: String?
 
-    public init(runId: String) {
+    public init(
+        sessionKey: String,
+        runId: String,
+        agentId: String? = nil
+    ) {
+        self.sessionKey = sessionKey
         self.runId = runId
+        self.agentId = agentId
     }
+}
+
+public struct OpenClawChatAbortResult: Decodable, Sendable, Equatable {
+    public let aborted: Bool
+    public let runIds: [String]?
 }
 
 public struct OpenClawAgentEvent: Decodable, Sendable, Equatable {

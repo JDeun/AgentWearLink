@@ -42,13 +42,53 @@ final class OpenClawAgentRunTests: XCTestCase {
         XCTAssertNil(result.endedAt)
     }
 
-    func testSessionAbortTargetsExactRunOnly() throws {
-        let params = OpenClawSessionAbortParams(runId: "run-1")
+    func testAcceptedRunKeepsResolvedSessionContext() throws {
+        let data = Data(#"""
+        {
+          "runId":"run-1",
+          "acceptedAt":123,
+          "status":"accepted",
+          "sessionKey":"agent:main:main",
+          "agentId":"main"
+        }
+        """#.utf8)
+
+        let accepted = try JSONDecoder().decode(
+            OpenClawAgentAccepted.self,
+            from: data
+        )
+
+        XCTAssertEqual(accepted.runId, "run-1")
+        XCTAssertEqual(accepted.sessionKey, "agent:main:main")
+        XCTAssertEqual(accepted.agentId, "main")
+    }
+
+    func testChatAbortTargetsExactRunAndSession() throws {
+        let params = OpenClawChatAbortParams(
+            sessionKey: "agent:main:main",
+            runId: "run-1",
+            agentId: "main"
+        )
         let data = try JSONEncoder().encode(params)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
         XCTAssertEqual(json?["runId"] as? String, "run-1")
-        XCTAssertNil(json?["key"])
+        XCTAssertEqual(json?["sessionKey"] as? String, "agent:main:main")
+        XCTAssertEqual(json?["agentId"] as? String, "main")
         XCTAssertNil(json?["clearQueued"])
+    }
+
+    func testAbortConfirmationMayOmitRunIds() throws {
+        let data = Data(#"""
+        {"aborted":true}
+        """#.utf8)
+
+        let result = try JSONDecoder().decode(
+            OpenClawChatAbortResult.self,
+            from: data
+        )
+
+        XCTAssertTrue(result.aborted)
+        XCTAssertNil(result.runIds)
     }
 }
