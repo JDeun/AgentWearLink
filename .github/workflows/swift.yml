@@ -73,11 +73,16 @@ jobs:
         run: |
           xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
           xcrun simctl bootstatus "${AWL_IOS_SIMULATOR_UDID}" -b
+      - name: Build MockDeviceKit UI test bundle
+        timeout-minutes: 8
+        working-directory: Adapters/MetaDAT/TestApp
+        run: |
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing build-for-testing
       - name: Run MockDeviceKit server rendezvous UI test
         timeout-minutes: 2
         working-directory: Adapters/MetaDAT/TestApp
         run: |
-          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing test
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing test-without-building
       - name: Explain behavioral test boundary
         run: |
           echo "Meta DAT package target and behavioral host are compile-gated here."
