@@ -1,0 +1,22 @@
+name: AgentWearLinkMetaDATTestHost
+options:
+  bundleIdPrefix: dev.agentwearlink
+  deploymentTarget:
+    iOS: "17.2"
+packages:
+  MetaIntegration:
+    path: ..
+targets:
+  AgentWearLinkMetaDATTestHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: MetaIntegration
+        product: AgentWearLinkMetaDATIntegration
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.MetaDATTestHost
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO

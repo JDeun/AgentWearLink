@@ -53,6 +53,15 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
+      - name: Generate minimal Meta DAT iOS app host
+        working-directory: Adapters/MetaDAT/TestApp
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen generate
+      - name: Compile minimal Meta DAT iOS app host
+        working-directory: Adapters/MetaDAT/TestApp
+        run: |
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATTestHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
       - name: Explain behavioral test boundary
         run: |
           echo "Meta DAT package target and behavioral host are compile-gated here."
