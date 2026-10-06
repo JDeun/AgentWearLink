@@ -1,4 +1,5 @@
 import Foundation
+import AgentWearLinkCore
 
 /// Pure policy between SDK transcription and normalized AWL interaction events.
 /// SDK subscription/lifecycle stays in #141; duplicate-final suppression stays in #143.
