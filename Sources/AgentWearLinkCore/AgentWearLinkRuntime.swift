@@ -64,6 +64,7 @@ public actor AgentWearLinkRuntime {
         forwardingTask = Task { [coordinator] in
             for await event in events {
                 guard !Task.isCancelled else { break }
+                guard await self.shouldForward(generation: generation) else { break }
                 await coordinator.handle(event)
             }
 
@@ -72,6 +73,10 @@ public actor AgentWearLinkRuntime {
                 wasCancelled: Task.isCancelled
             )
         }
+    }
+
+    private func shouldForward(generation: UInt64) -> Bool {
+        lifecycleState == .running && lifecycleGeneration == generation
     }
 
     private func forwardingDidEnd(
