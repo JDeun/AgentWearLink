@@ -12,7 +12,7 @@ public final class MetaDATFirstFrameReadiness: @unchecked Sendable {
 
     public init() {}
 
-    public func observe(_ stream: Stream, onReady: @escaping @Sendable () -> Void) {
+    public func observe(_ stream: MWDATCamera.Stream, onReady: @escaping @Sendable () -> Void) {
         stream.videoFramePublisher.listen { [weak self] _ in
             guard let self else { return }
             let becameReady = self.lock.withLock { () -> Bool in
