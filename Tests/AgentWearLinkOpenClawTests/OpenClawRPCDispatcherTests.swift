@@ -92,6 +92,35 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         await dispatcher.stop()
     }
 
+
+    func testRequestDeadlineFailsAndCleansRegistry() async throws {
+        let socket = DispatcherSocket()
+        let registry = OpenClawRPCRegistry()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(),
+            registry: registry,
+            requestTimeout: .milliseconds(20)
+        )
+        await dispatcher.start()
+
+        do {
+            _ = try await dispatcher.request(
+                method: "health",
+                params: EmptyParams()
+            )
+            XCTFail("Expected RPC deadline")
+        } catch let error as OpenClawRPCDispatcherError {
+            XCTAssertEqual(error, .deadlineExceeded)
+        }
+
+        let count = await registry.count
+        XCTAssertEqual(count, 0)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+
     func testLivenessUsesTwoIntervalThresholdWithoutHotLooping() async throws {
         let socket = DispatcherSocket()
         let dispatcher = OpenClawRPCDispatcher(
