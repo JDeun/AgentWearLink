@@ -5,6 +5,13 @@ public protocol OpenClawWebSocket: Sendable {
     func send(text: String) async throws
     func receive() async throws -> String
     func close() async
+    func close(code: Int, reason: String?) async
+}
+
+public extension OpenClawWebSocket {
+    func close(code: Int, reason: String?) async {
+        await close()
+    }
 }
 
 public actor URLSessionOpenClawWebSocket: OpenClawWebSocket {
@@ -48,5 +55,14 @@ public actor URLSessionOpenClawWebSocket: OpenClawWebSocket {
     public func close() async {
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
+    }
+
+    public func close(code: Int, reason: String?) async {
+        guard let task else { return }
+        let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: code)
+            ?? .goingAway
+        let reasonData = reason?.data(using: .utf8)
+        task.cancel(with: closeCode, reason: reasonData)
+        self.task = nil
     }
 }
