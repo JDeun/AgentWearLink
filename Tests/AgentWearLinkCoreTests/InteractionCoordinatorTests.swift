@@ -275,5 +275,6 @@ extension InteractionCoordinatorTests {
         XCTAssertFalse(events.contains { event in
             event.interactionID != nil && event.interactionID != id
         })
+        XCTAssertTrue(events.contains(.failed(id, .agent("response interaction ID mismatch"))))
     }
 }
