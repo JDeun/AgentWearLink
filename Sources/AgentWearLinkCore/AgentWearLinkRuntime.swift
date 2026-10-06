@@ -23,6 +23,11 @@ public actor AgentWearLinkRuntime {
         guard forwardingTask == nil else { return }
 
         try await agent.connect()
+
+        // Install the device stream before connect so adapters can buffer
+        // lifecycle events emitted synchronously during connection.
+        let events = device.events()
+
         do {
             try await device.connect()
         } catch {
@@ -30,7 +35,6 @@ public actor AgentWearLinkRuntime {
             throw error
         }
 
-        let events = device.events()
         forwardingTask = Task { [coordinator] in
             for await event in events {
                 guard !Task.isCancelled else { break }
