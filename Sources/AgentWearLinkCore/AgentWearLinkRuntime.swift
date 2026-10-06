@@ -67,10 +67,11 @@ public actor AgentWearLinkRuntime {
         }
 
         lifecycleState = .running
+        await coordinator.activate(runtimeGeneration: generation)
         forwardingTask = Task { [coordinator] in
             for await event in events {
                 guard !Task.isCancelled else { break }
-                await coordinator.handle(event)
+                await coordinator.handle(event, runtimeGeneration: generation)
             }
 
             await self.forwardingDidEnd(
@@ -97,7 +98,7 @@ public actor AgentWearLinkRuntime {
         lifecycleGeneration &+= 1
         forwardingTask = nil
 
-        await coordinator.cancelAll()
+        await coordinator.deactivate(runtimeGeneration: generation)
         await device.disconnect()
         await agent.disconnect()
 
@@ -116,7 +117,8 @@ public actor AgentWearLinkRuntime {
         lifecycleGeneration &+= 1
         forwardingTask?.cancel()
         forwardingTask = nil
-        await coordinator.cancelAll()
+        let activeGeneration = lifecycleGeneration &- 1
+        await coordinator.deactivate(runtimeGeneration: activeGeneration)
         await device.disconnect()
         await agent.disconnect()
         finishStopping()
