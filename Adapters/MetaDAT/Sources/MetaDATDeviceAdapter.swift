@@ -17,6 +17,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var stateTask: Task<Void, Never>?
     private var errorTask: Task<Void, Never>?
     private var registrationTask: Task<Void, Never>?
+    private var deviceMonitorTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<InteractionEvent>.Continuation?
     private var stopping = false
     private let connectTimeout: Duration
@@ -73,7 +74,12 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             throw AWLError.device("Selected Meta DAT device is not SDK-compatible")
         }
 
-        let selector = SpecificDeviceSelector(device: selectedDevice.identifier)
+        let selectedIdentifier = selectedDevice.identifier
+        deviceMonitorTask = Task { [weak self] in
+            await self?.monitorSelectedDevice(selectedIdentifier)
+        }
+
+        let selector = SpecificDeviceSelector(device: selectedIdentifier)
         let session = try wearables.createSession(deviceSelector: selector)
         deviceSession = session
 
@@ -114,6 +120,33 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             await tearDownSession()
             throw error
         }
+    }
+
+    private func monitorSelectedDevice(_ selectedIdentifier: DeviceIdentifier) async {
+        for await identifiers in wearables.devicesStream() {
+            guard !Task.isCancelled else { break }
+            guard identifiers.contains(selectedIdentifier),
+                  let device = wearables.deviceForIdentifier(selectedIdentifier) else {
+                handleSelectedDeviceUnavailable(
+                    "Selected Meta DAT device is no longer paired/available"
+                )
+                return
+            }
+
+            let compatibility = device.compatibility()
+            guard compatibility == .compatible else {
+                handleSelectedDeviceUnavailable(
+                    "Selected Meta DAT device became incompatible: \(compatibility)"
+                )
+                return
+            }
+        }
+    }
+
+    private func handleSelectedDeviceUnavailable(_ message: String) {
+        guard !stopping, deviceSession != nil else { return }
+        eventContinuation?.yield(.failed(nil, .device(message)))
+        tearDownSession()
     }
 
     private nonisolated static func deviceRank(_ device: Device) -> Int {
@@ -189,9 +222,11 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         stateTask?.cancel()
         errorTask?.cancel()
         registrationTask?.cancel()
+        deviceMonitorTask?.cancel()
         stateTask = nil
         errorTask = nil
         registrationTask = nil
+        deviceMonitorTask = nil
 
         deviceSession?.stop()
         deviceSession = nil
