@@ -34,7 +34,6 @@ public struct MetaDATRegistration {
             return false
         }
 
-        _ = try await wearables.handleUrl(url)
-        return true
+        return try await wearables.handleUrl(url)
     }
 }
