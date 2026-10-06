@@ -28,7 +28,8 @@ let package = Package(
                 .product(name: "AgentWearLinkMetaDAT", package: "AgentWearLink"),
                 .product(name: "MWDATCore", package: "meta-wearables-dat-ios"),
                 .product(name: "MWDATCamera", package: "meta-wearables-dat-ios"),
-                 .product(name: "MWDATMockDevice", package: "meta-wearables-dat-ios")
+                .product(name: "MWDATSpeech", package: "meta-wearables-dat-ios"),
+                .product(name: "MWDATMockDevice", package: "meta-wearables-dat-ios")
             ],
             path: "Sources"
         ),
