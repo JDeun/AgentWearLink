@@ -22,6 +22,7 @@ private actor StubAgent: AgentAdapter {
         requestCount += 1
         return AsyncThrowingStream { continuation in
             continuation.yield(.textDelta(request.interactionID, "response"))
+            continuation.yield(.completed(request.interactionID))
             continuation.finish()
         }
     }
@@ -189,6 +190,87 @@ private actor TypedFailureAgent: AgentAdapter {
     }
 }
 
+private actor EmptyStreamAgent: AgentAdapter {
+    func connect() async throws {}
+    func disconnect() async {}
+    func cancel(interactionID: InteractionID) async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+}
+
+private actor DeltaThenEOFStreamAgent: AgentAdapter {
+    func connect() async throws {}
+    func disconnect() async {}
+    func cancel(interactionID: InteractionID) async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.textDelta(request.interactionID, "partial"))
+            continuation.finish()
+        }
+    }
+}
+
+private actor ExplicitFailureResponseAgent: AgentAdapter {
+    func connect() async throws {}
+    func disconnect() async {}
+    func cancel(interactionID: InteractionID) async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(
+                .failed(request.interactionID, .agent("explicit failure"))
+            )
+            continuation.finish()
+        }
+    }
+}
+
+private actor PendingUntilCancelledAgent: AgentAdapter {
+    private var responseStarted = false
+    private var continuation: AsyncThrowingStream<AgentResponse, Error>.Continuation?
+    private(set) var cancelled: [InteractionID] = []
+
+    func connect() async throws {}
+    func disconnect() async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        responseStarted = true
+        var captured: AsyncThrowingStream<AgentResponse, Error>.Continuation?
+        let stream = AsyncThrowingStream<AgentResponse, Error> { continuation in
+            captured = continuation
+        }
+        continuation = captured
+        return stream
+    }
+
+    func cancel(interactionID: InteractionID) async {
+        cancelled.append(interactionID)
+        continuation?.finish()
+        continuation = nil
+    }
+
+    func waitUntilResponseStarts() async {
+        while !responseStarted {
+            await Task.yield()
+        }
+    }
+
+    func cancellations() -> [InteractionID] { cancelled }
+}
+
 extension InteractionCoordinatorTests {
     func testCancelledOldGenerationCannotRemoveReplacementTask() async throws {
         let agent = DelayedFirstAgent()
@@ -235,6 +317,11 @@ extension InteractionCoordinatorTests {
         let events = await recorded.values
         XCTAssertTrue(events.contains(.sessionEnded(id)))
         XCTAssertFalse(events.contains(.text(id, "late")))
+        XCTAssertFalse(
+            events.contains(
+                .failed(id, .agent("response stream ended without terminal response"))
+            )
+        )
     }
 
     func testTypedAgentErrorIsPreserved() async throws {
@@ -250,6 +337,80 @@ extension InteractionCoordinatorTests {
 
         let events = await recorded.values
         XCTAssertTrue(events.contains(.failed(id, .timeout)))
+    }
+
+
+    func testEmptyAgentStreamFailsInsteadOfSilentlyEnding() async throws {
+        let agent = EmptyStreamAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let events = await recorded.values
+        XCTAssertEqual(
+            events,
+            [.failed(id, .agent("response stream ended without terminal response"))]
+        )
+    }
+
+    func testDeltaThenEOFFailsExactlyOnceAfterPreservingDelta() async throws {
+        let agent = DeltaThenEOFStreamAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let events = await recorded.values
+        XCTAssertEqual(
+            events,
+            [
+                .text(id, "partial"),
+                .failed(id, .agent("response stream ended without terminal response")),
+            ]
+        )
+    }
+
+    func testExplicitFailureResponseDoesNotAlsoEmitEOFFailure() async throws {
+        let agent = ExplicitFailureResponseAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let events = await recorded.values
+        XCTAssertEqual(events, [.failed(id, .agent("explicit failure"))])
+    }
+
+    func testCancellationDrivenTerminationDoesNotEmitEOFFailure() async throws {
+        let agent = PendingUntilCancelledAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        await agent.waitUntilResponseStarts()
+        await coordinator.handle(.interrupted(id))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let events = await recorded.values
+        XCTAssertEqual(events, [.interrupted(id)])
+        let cancellations = await agent.cancellations()
+        XCTAssertEqual(cancellations, [id])
     }
 }
 
@@ -290,6 +451,16 @@ extension InteractionCoordinatorTests {
             event.interactionID != nil && event.interactionID != id
         })
         XCTAssertTrue(events.contains(.failed(id, .agent("response interaction ID mismatch"))))
+        XCTAssertFalse(
+            events.contains(
+                .failed(id, .agent("response stream ended without terminal response"))
+            )
+        )
+        let failures = events.filter { event in
+            if case .failed = event { return true }
+            return false
+        }
+        XCTAssertEqual(failures.count, 1)
         let cancellations = await agent.cancellations()
         XCTAssertEqual(cancellations, [id])
     }
