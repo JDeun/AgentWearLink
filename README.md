@@ -45,12 +45,12 @@ Meta DAT, OpenClaw, Tailscale, Telegram, and Apple TTS are reference integration
 - OpenClaw device identity, challenge proof, pairing, RPC dispatch, streaming agent runs, cancellation, and reconnect supervision
 - read-only OpenClaw health probe
 - explicit mutating OpenClaw text E2E probe
-- Meta DAT adapter boundary/scaffold
+- pinned Meta DAT 1.0.0 integration with registration/device lifecycle, camera, Speech, Voice Invocation, live capability, and lifecycle policies
 - bounded explicit vision contracts with pre-capture agent capability checks
 - Apple host output package with native `AVSpeechSynthesizer` bridge
 - deterministic reliability regression suite
 
-Physical DAT, audio routing, hands-free invocation, and live vision validation remain hardware gates.
+MockDeviceKit app-hosted integration is being CI-gated separately. Real Bluetooth, camera sensor timing/photo transfer, wearable audio routing, locked/pocketed invocation, mobile Tailnet transitions, and live vision remain physical/deployment gates.
 
 ## Packages
 
