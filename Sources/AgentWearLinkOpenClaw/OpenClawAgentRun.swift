@@ -38,6 +38,10 @@ public struct OpenClawAgentWaitResult: Decodable, Sendable, Equatable {
     public let endedAt: Int64?
     public let error: String?
     public let stopReason: String?
+    public let timeoutPhase: String?
+    public let providerStarted: Bool?
+    public let terminalReply: JSONValue?
+    public let terminalReceipt: JSONValue?
 }
 
 public struct OpenClawSessionAbortParams: Encodable, Sendable {
