@@ -12,7 +12,7 @@ final class OpenClawGatewayStateTests: XCTestCase {
           "features":{"methods":["health","agent"],"events":["agent"]},
           "auth":{"role":"operator","scopes":["operator.read","operator.write"]},
           "policy":{
-            "maxPayload":(maxPayload),
+            "maxPayload":\(maxPayload),
             "maxBufferedBytes":2048,
             "tickIntervalMs":15000,
             "attachments":{"maxBytes":1000,"maxImageBytes":500}
