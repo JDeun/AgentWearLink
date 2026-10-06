@@ -49,8 +49,10 @@ final class VisionCoordinatorTests: XCTestCase {
             XCTAssertEqual(error as? AWLError, .capabilityUnavailable("device does not support camera snapshots"))
         }
 
-        XCTAssertEqual(await device.captures(), 0)
-        XCTAssertEqual(await agent.requests(), 0)
+        let captures = await device.captures()
+        let requests = await agent.requests()
+        XCTAssertEqual(captures, 0)
+        XCTAssertEqual(requests, 0)
     }
 
     func testExplicitRequestCapturesExactlyOnce() async throws {
@@ -60,7 +62,9 @@ final class VisionCoordinatorTests: XCTestCase {
 
         _ = try await coordinator.responses(interactionID: InteractionID(), prompt: "what is this?")
 
-        XCTAssertEqual(await device.captures(), 1)
-        XCTAssertEqual(await agent.requests(), 1)
+        let captures = await device.captures()
+        let requests = await agent.requests()
+        XCTAssertEqual(captures, 1)
+        XCTAssertEqual(requests, 1)
     }
 }
