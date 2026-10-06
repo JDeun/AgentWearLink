@@ -4,7 +4,7 @@ This document records the SDK assumptions for the first AgentWearLink device ada
 
 ## Current baseline
 
-As of 2026-10-06, Meta documents Wearables Device Access Toolkit 1.0 as the stable supported release. The public iOS SDK is distributed through Swift Package Manager.
+As of 2026-10-06, Meta's public iOS repository describes Wearables Device Access Toolkit as a **developer preview** distributed through Swift Package Manager. Do not describe the overall SDK as a stable production release; pin and record the exact package version used for validation.
 
 The current public sample uses:
 
