@@ -14,11 +14,26 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable, CustomString
     ) {
         precondition(timeout.isFinite && timeout > 0)
         precondition(maximumResponseBytes > 0)
+        precondition(
+            bearerToken == nil || Self.isCredentialSafe(endpoint),
+            "Bearer credentials require HTTPS or an explicit loopback HTTP endpoint"
+        )
         self.endpoint = endpoint
         self.bearerToken = bearerToken
         self.timeout = timeout
         self.maximumResponseBytes = maximumResponseBytes
     }
+    private static func isCredentialSafe(_ endpoint: URL) -> Bool {
+        if endpoint.scheme?.lowercased() == "https" { return true }
+        guard endpoint.scheme?.lowercased() == "http",
+              let host = endpoint.host?.lowercased() else {
+            return false
+        }
+        return host == "localhost" ||
+            host == "127.0.0.1" ||
+            host == "::1"
+    }
+
     public var description: String {
         "HTTPAgentTransportConfiguration(" +
         "endpoint: \(endpoint), " +
