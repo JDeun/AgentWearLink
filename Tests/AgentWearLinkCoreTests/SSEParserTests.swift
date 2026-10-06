@@ -105,4 +105,37 @@ final class SSEParserTests: XCTestCase {
 
         XCTAssertTrue(events.isEmpty)
     }
+
+    func testAcceptsRetryContainingOnlyASCIIDigits() throws {
+        var parser = SSEParser()
+
+        let events = try parser.append(Data("retry: 1000\ndata: ok\n\n".utf8))
+
+        XCTAssertEqual(events, [ServerSentEvent(data: "ok", retryMilliseconds: 1000)])
+    }
+
+    func testIgnoresInvalidRetryFields() throws {
+        let invalidValues = [
+            "-1",
+            "+1",
+            "1.5",
+            "abc",
+            "",
+            "１２３",
+            String(repeating: "9", count: 128)
+        ]
+
+        for value in invalidValues {
+            var parser = SSEParser()
+            let events = try parser.append(
+                Data("retry: \(value)\ndata: ok\n\n".utf8)
+            )
+
+            XCTAssertEqual(
+                events,
+                [ServerSentEvent(data: "ok")],
+                "Expected retry value '\(value)' to be ignored"
+            )
+        }
+    }
 }
