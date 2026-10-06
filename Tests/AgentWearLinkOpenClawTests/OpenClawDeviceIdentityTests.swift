@@ -14,6 +14,22 @@ final class OpenClawDeviceIdentityTests: XCTestCase {
         XCTAssertEqual(try first.deviceID, try second.deviceID)
     }
 
+
+    func testTwoManagersSharingStoreConvergeOnOneIdentity() async throws {
+        let store = InMemoryOpenClawDeviceIdentityStore()
+        let firstManager = OpenClawDeviceIdentityManager(store: store)
+        let secondManager = OpenClawDeviceIdentityManager(store: store)
+
+        async let first = firstManager.loadOrCreate()
+        async let second = secondManager.loadOrCreate()
+        let (a, b) = try await (first, second)
+
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(try a.deviceID, try b.deviceID)
+        let persisted = try await store.load()
+        XCTAssertEqual(persisted, a)
+    }
+
     func testV3PayloadMatchesCanonicalFieldOrder() throws {
         let builder = OpenClawDeviceProofBuilder()
         let data = builder.buildPayloadV3(
