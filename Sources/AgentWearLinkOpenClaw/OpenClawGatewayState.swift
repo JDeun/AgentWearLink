@@ -29,8 +29,13 @@ public actor OpenClawGatewayState {
 
     public func observeSequence(_ sequence: Int?) throws {
         guard let sequence else { return }
-        if let lastSequence, sequence <= lastSequence {
-            throw AWLOpenClawError.nonMonotonicSequence
+        if let lastSequence {
+            guard sequence == lastSequence + 1 else {
+                throw AWLOpenClawError.sequenceGap(
+                    expected: lastSequence + 1,
+                    actual: sequence
+                )
+            }
         }
         lastSequence = sequence
     }
@@ -63,7 +68,7 @@ public actor OpenClawGatewayState {
 public enum AWLOpenClawError: Error, Sendable, Equatable {
     case notReady
     case protocolMismatch
-    case nonMonotonicSequence
+    case sequenceGap(expected: Int, actual: Int)
     case payloadTooLarge(actual: Int, maximum: Int)
     case gateway(code: String, retryable: Bool)
     case disconnected
