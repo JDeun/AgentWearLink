@@ -9,9 +9,11 @@ public enum MetaDATApplicationPhase: Sendable, Equatable {
 
 public actor MetaDATApplicationLifecycle {
     private var continuation: AsyncStream<MetaDATApplicationPhase>.Continuation?
-    public private(set) var currentPhase: MetaDATApplicationPhase = .foreground
+    public private(set) var currentPhase: MetaDATApplicationPhase
 
-    public init() {}
+    public init(initialPhase: MetaDATApplicationPhase) {
+        self.currentPhase = initialPhase
+    }
 
     public nonisolated func phases() -> AsyncStream<MetaDATApplicationPhase> {
         AsyncStream { continuation in
