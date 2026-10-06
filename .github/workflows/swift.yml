@@ -68,7 +68,13 @@ jobs:
         working-directory: Adapters/MetaDAT/TestApp
         run: |
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
+      - name: Boot selected iPhone Simulator
+        timeout-minutes: 3
+        run: |
+          xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
+          xcrun simctl bootstatus "${AWL_IOS_SIMULATOR_UDID}" -b
       - name: Run MockDeviceKit server rendezvous UI test
+        timeout-minutes: 5
         working-directory: Adapters/MetaDAT/TestApp
         run: |
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation test
