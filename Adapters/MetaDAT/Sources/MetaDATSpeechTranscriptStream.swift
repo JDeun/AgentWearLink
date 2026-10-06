@@ -1,4 +1,5 @@
 import Foundation
+import MWDATCore
 import MWDATSpeech
 
 public struct MetaDATTranscript: Sendable, Equatable {
@@ -16,14 +17,13 @@ public struct MetaDATTranscript: Sendable, Equatable {
 /// Owns only the SDK transcription subscription. Attachment/start/stop remain
 /// separate slices so transcript policy cannot accidentally own session lifecycle.
 public final class MetaDATSpeechTranscriptStream: @unchecked Sendable {
-    private var token: (any AnyListenerToken)?
-    private let lock = NSLock()
+    private let tokens = ListenerTokenBag()
 
     public init() {}
 
     public func stream(from speech: Speech) -> AsyncStream<MetaDATTranscript> {
         AsyncStream { continuation in
-            let listener = speech.transcriptionPublisher.listen { result in
+            speech.transcriptionPublisher.listen { result in
                 continuation.yield(
                     MetaDATTranscript(
                         text: result.text,
@@ -31,15 +31,9 @@ public final class MetaDATSpeechTranscriptStream: @unchecked Sendable {
                         confidence: result.confidence >= 0 ? result.confidence : nil
                     )
                 )
-            }
-            lock.withLock { token = listener }
-            continuation.onTermination = { [weak self] _ in
-                guard let self else { return }
-                let token = self.lock.withLock { () -> (any AnyListenerToken)? in
-                    defer { self.token = nil }
-                    return self.token
-                }
-                if let token { Task { await token.cancel() } }
+            }.store(in: tokens)
+            continuation.onTermination = { [tokens] _ in
+                Task { await tokens.cancelAll() }
             }
         }
     }
