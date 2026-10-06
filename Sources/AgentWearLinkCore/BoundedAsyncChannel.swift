@@ -4,11 +4,15 @@ import Foundation
 ///
 /// When full, the oldest buffered value is dropped. Media transports may use
 /// stricter policies; text/control streams should choose capacity deliberately.
+///
+/// Suspended consumers are cancellation-aware: cancelling a task waiting in
+/// `next()` removes and resumes its continuation instead of retaining it.
 public actor BoundedAsyncChannel<Element: Sendable> {
     public let capacity: Int
 
     private var buffer: [Element] = []
-    private var waiters: [CheckedContinuation<Element?, Never>] = []
+    private var waiters: [UUID: CheckedContinuation<Element?, Never>] = [:]
+    private var waiterOrder: [UUID] = []
     private var finished = false
 
     public init(capacity: Int) {
@@ -19,8 +23,7 @@ public actor BoundedAsyncChannel<Element: Sendable> {
     public func send(_ value: Element) {
         guard !finished else { return }
 
-        if !waiters.isEmpty {
-            let waiter = waiters.removeFirst()
+        if let waiter = takeNextWaiter() {
             waiter.resume(returning: value)
             return
         }
@@ -35,10 +38,21 @@ public actor BoundedAsyncChannel<Element: Sendable> {
         if !buffer.isEmpty {
             return buffer.removeFirst()
         }
-        if finished { return nil }
+        if finished || Task.isCancelled {
+            return nil
+        }
 
-        return await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        let waiterID = UUID()
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                waiters[waiterID] = continuation
+                waiterOrder.append(waiterID)
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(waiterID)
+            }
         }
     }
 
@@ -46,10 +60,29 @@ public actor BoundedAsyncChannel<Element: Sendable> {
         guard !finished else { return }
         finished = true
         buffer.removeAll(keepingCapacity: false)
-        let pending = waiters
+
+        let pending = waiterOrder.compactMap { waiters[$0] }
         waiters.removeAll(keepingCapacity: false)
+        waiterOrder.removeAll(keepingCapacity: false)
+
         for waiter in pending {
             waiter.resume(returning: nil)
         }
+    }
+
+    private func takeNextWaiter() -> CheckedContinuation<Element?, Never>? {
+        while !waiterOrder.isEmpty {
+            let id = waiterOrder.removeFirst()
+            if let waiter = waiters.removeValue(forKey: id) {
+                return waiter
+            }
+        }
+        return nil
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let waiter = waiters.removeValue(forKey: id) else { return }
+        waiterOrder.removeAll { $0 == id }
+        waiter.resume(returning: nil)
     }
 }

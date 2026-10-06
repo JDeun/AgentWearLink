@@ -2,11 +2,11 @@ import XCTest
 @testable import AgentWearLinkCore
 
 final class SSEParserTests: XCTestCase {
-    func testParsesEventAcrossChunks() {
+    func testParsesEventAcrossChunks() throws {
         var parser = SSEParser()
 
-        XCTAssertTrue(parser.append(Data("event: delta\ndata: hel".utf8)).isEmpty)
-        let events = parser.append(Data("lo\n\n".utf8))
+        XCTAssertTrue(try parser.append(Data("event: delta\ndata: hel".utf8)).isEmpty)
+        let events = try parser.append(Data("lo\n\n".utf8))
 
         XCTAssertEqual(
             events,
@@ -14,34 +14,34 @@ final class SSEParserTests: XCTestCase {
         )
     }
 
-    func testJoinsMultipleDataLines() {
+    func testJoinsMultipleDataLines() throws {
         var parser = SSEParser()
-        let events = parser.append(Data("data: first\ndata: second\n\n".utf8))
+        let events = try parser.append(Data("data: first\ndata: second\n\n".utf8))
 
         XCTAssertEqual(events.first?.data, "first\nsecond")
     }
 
-    func testIgnoresCommentsAndUnknownFields() {
+    func testIgnoresCommentsAndUnknownFields() throws {
         var parser = SSEParser()
-        let events = parser.append(
+        let events = try parser.append(
             Data(": keepalive\nunknown: x\ndata: ok\n\n".utf8)
         )
 
         XCTAssertEqual(events, [ServerSentEvent(data: "ok")])
     }
 
-    func testPersistsLastEventIDAcrossEvents() {
+    func testPersistsLastEventIDAcrossEvents() throws {
         var parser = SSEParser()
-        let events = parser.append(
+        let events = try parser.append(
             Data("id: 42\ndata: a\n\ndata: b\n\n".utf8)
         )
 
         XCTAssertEqual(events.map(\.id), ["42", "42"])
     }
 
-    func testAcceptsBareCRLineEndings() {
+    func testAcceptsBareCRLineEndings() throws {
         var parser = SSEParser()
-        let events = parser.append(Data("event: delta\rdata: hello\r\r".utf8))
+        let events = try parser.append(Data("event: delta\rdata: hello\r\r".utf8))
 
         XCTAssertEqual(
             events,
@@ -49,13 +49,13 @@ final class SSEParserTests: XCTestCase {
         )
     }
 
-    func testCRLFSplitAcrossChunksDoesNotCreateExtraBlankLine() {
+    func testCRLFSplitAcrossChunksDoesNotCreateExtraBlankLine() throws {
         var parser = SSEParser()
 
         XCTAssertTrue(
-            parser.append(Data("data: one\r".utf8)).isEmpty
+            try parser.append(Data("data: one\r".utf8)).isEmpty
         )
-        let events = parser.append(Data("\n\r\ndata: two\n\n".utf8))
+        let events = try parser.append(Data("\n\r\ndata: two\n\n".utf8))
 
         XCTAssertEqual(
             events,
@@ -66,42 +66,42 @@ final class SSEParserTests: XCTestCase {
         )
     }
 
-    func testMultibyteUTF8MaySpanNetworkChunks() {
+    func testMultibyteUTF8MaySpanNetworkChunks() throws {
         var parser = SSEParser()
         let bytes = Array("data: 안녕\n\n".utf8)
         let split = bytes.count - 4
 
-        XCTAssertTrue(parser.append(Data(bytes[..<split])).isEmpty)
-        let events = parser.append(Data(bytes[split...]))
+        XCTAssertTrue(try parser.append(Data(bytes[..<split])).isEmpty)
+        let events = try parser.append(Data(bytes[split...]))
 
         XCTAssertEqual(events, [ServerSentEvent(data: "안녕")])
     }
 
-    func testLeadingUTF8BOMIsIgnored() {
+    func testLeadingUTF8BOMIsIgnored() throws {
         var parser = SSEParser()
         var data = Data([0xEF, 0xBB, 0xBF])
         data.append(Data("data: hello\n\n".utf8))
 
-        let events = parser.append(data)
+        let events = try parser.append(data)
 
         XCTAssertEqual(events, [ServerSentEvent(data: "hello")])
     }
 
-    func testInvalidUTF8UsesReplacementDecodingInsteadOfDroppingLine() {
+    func testInvalidUTF8UsesReplacementDecodingInsteadOfDroppingLine() throws {
         var parser = SSEParser()
         var data = Data("data: ".utf8)
         data.append(0xFF)
         data.append(Data("\n\n".utf8))
 
-        let events = parser.append(data)
+        let events = try parser.append(data)
 
         XCTAssertEqual(events, [ServerSentEvent(data: "\u{FFFD}")])
     }
 
-    func testIncompleteEventIsNotDispatchedWithoutBlankLine() {
+    func testIncompleteEventIsNotDispatchedWithoutBlankLine() throws {
         var parser = SSEParser()
 
-        let events = parser.append(Data("data: partial".utf8))
+        let events = try parser.append(Data("data: partial".utf8))
 
         XCTAssertTrue(events.isEmpty)
     }
