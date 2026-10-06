@@ -7,6 +7,12 @@ let package = Package(
         .iOS(.v17),
         .macOS(.v14)
     ],
+    products: [
+        .library(
+            name: "AgentWearLinkMetaDATIntegration",
+            targets: ["AgentWearLinkMetaDATIntegration"]
+        )
+    ],
     dependencies: [
         .package(path: "../.."),
         .package(
