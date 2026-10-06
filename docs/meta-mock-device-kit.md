@@ -20,13 +20,13 @@ import MWDATMockDevice
 let kit = MockDeviceKit.shared
 kit.enable()
 
-let glasses = try kit.pairGlasses(model: .rayBanMeta)
-glasses.powerOn()
-glasses.unfold()
-glasses.don()
+// Illustrative only. Exact pair/state-control signatures are version-specific.
+// Use the API exposed by the pinned DAT package and Meta's matching sample.
+let kit = MockDeviceKit.shared
+kit.enable()
 ```
 
-A mock device becomes discoverable through the normal Wearables device flow after the required simulated state transitions. Tear tests down with `MockDeviceKit.shared.disable()`.
+A mock device becomes discoverable through the normal Wearables device flow after the required simulated state transitions. Treat concrete pairing/state-control calls as version-specific; verify them against the pinned SDK and matching sample before copying code. Tear tests down with `MockDeviceKit.shared.disable()`.
 
 ## What can be simulated
 
