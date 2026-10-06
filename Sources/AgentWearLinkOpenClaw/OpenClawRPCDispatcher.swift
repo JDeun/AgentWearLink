@@ -75,7 +75,7 @@ public actor OpenClawRPCDispatcher {
             throw AWLOpenClawError.notReady
         }
 
-        if let textParams = params as? OpenClawAgentRequestParams {
+        if let textParams = params as? OpenClawAgentParams {
             try await state.validateOutboundFrameSize(textParams.message.utf8.count)
         }
 
