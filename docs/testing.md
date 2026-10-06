@@ -1,43 +1,87 @@
 # Testing strategy
 
-AgentWearLink has three distinct test layers.
+AgentWearLink separates evidence by what a test can actually prove. A green lower layer never upgrades a hardware- or deployment-dependent claim.
 
-## 1. Core deterministic tests
+## 1. Deterministic Core/runtime tests
 
-No vendor SDK and no network.
-
-Use `MockDeviceAdapter` and `MockAgentAdapter` to validate:
-
-- session lifecycle
-- duplicate suppression
-- cancellation
-- event/request mapping
-- deterministic shutdown
-- failure propagation
-
-These tests should run in CI.
-
-## 2. Vendor/runtime integration tests
+No physical wearable and no live deployment are required.
 
 Examples:
 
-- Meta Mock Device Kit ↔ MetaDATAdapter
-- test HTTP/SSE/WebSocket server ↔ agent transport
-- OpenClaw development gateway ↔ OpenClawAdapter
+- session lifecycle and duplicate suppression
+- cancellation and late-result rejection
+- bounded stream/media behavior
+- event/request mapping
+- OpenClaw protocol framing, RPC correlation, and reconnect state machines
+- credential/configuration diagnostic redaction
+- Meta helper policies such as final-transcript filtering, capture generations, readiness, and bounded backoff
 
-These validate protocol mappings but do not replace physical-device tests.
+Run from the repository root:
 
-## 3. Physical E2E tests
+```bash
+swift test
+```
 
-Ray-Ban Meta + iPhone + target agent runtime.
+## 2. Pinned integration compile gates
 
-Required for:
+Concrete vendor code is compiled against the exact dependency it claims to support.
+
+For Meta DAT:
+
+```bash
+cd Adapters/MetaDAT
+swift package resolve
+xcodebuild \
+  -scheme AgentWearLinkMetaDATIntegration \
+  -destination 'generic/platform=iOS Simulator' \
+  -skipPackagePluginValidation \
+  build
+```
+
+This catches SDK/API drift. It does not prove runtime behavior.
+
+## 3. Simulator/vendor behavioral integration
+
+Meta's MockDeviceKit runs in an iOS host process and is driven through `MWDATMockDeviceTestClient`. The behavioral contract covers server rendezvous, mock pairing/state transitions, and normal DAT wiring.
+
+This layer can prove that the pinned vendor SDK and AWL integration cooperate in supported simulator conditions. It cannot prove Bluetooth, real sensor timing, firmware behavior, physical audio routing, lock-screen/background execution, or mobile Tailnet behavior.
+
+See [meta-mock-device-kit.md](meta-mock-device-kit.md).
+
+## 4. Deployment E2E
+
+A real agent deployment is exercised without treating the wearable hardware as proven.
+
+The reference P0-B topology is:
+
+```text
+iPhone / AWL → Tailscale → Mac mini → OpenClaw Gateway
+```
+
+Required evidence includes authentication/pairing, persistent credential reuse, one real agent turn, incremental output, existing-session semantics, and no silent replay after uncertain delivery.
+
+See [p0b-openclaw-validation.md](p0b-openclaw-validation.md).
+
+## 5. Physical E2E
+
+Ray-Ban Meta + physical iPhone + target runtime.
+
+Required for claims involving:
 
 - Bluetooth/device lifecycle
-- microphone/audio routing
-- camera behavior
-- Hey Meta invocation
-- lock-screen/background behavior
-- latency and interruption UX
+- real camera sensor wake, shutter timing, and photo transfer
+- microphone/speaker routing
+- Hey Meta / Voice Invocation behavior
+- locked/pocketed/background execution
+- Wi-Fi/cellular/Tailnet transitions on the phone
+- end-user latency and interruption UX
 
-A feature that depends on physical hardware must not be declared fully validated from layer 1 or 2 alone.
+A hardware-dependent feature remains unvalidated until this layer passes, even when all earlier layers are green.
+
+## CI interpretation
+
+The root job protects vendor-neutral contracts. The Meta integration job protects pinned SDK compilation and the app-hosted simulator contract as it becomes available. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
+
+## Test-data policy
+
+Use synthetic text, credentials, and media fixtures. Do not put real tokens, private keys, personal conversations, or private wearable media into fixtures, logs, CI artifacts, or public issues.
