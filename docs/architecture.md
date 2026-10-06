@@ -1,0 +1,118 @@
+# Architecture
+
+## Boundary
+
+AgentWearLink is an I/O interoperability layer, not an agent runtime.
+
+```text
+Device SDK
+   │
+DeviceAdapter
+   │
+   ▼
+┌────────────────────────────┐
+│ AgentWearLink Core         │
+│                            │
+│ CapabilitySet              │
+│ InteractionEvent           │
+│ Session                    │
+│ Cancellation / Backpressure│
+│ Failure model              │
+└─────────────┬──────────────┘
+              │
+         AgentAdapter
+              │
+              ▼
+        Agent Runtime
+```
+
+## Core contracts
+
+### DeviceAdapter
+
+Responsibilities:
+
+- connect/disconnect device session
+- advertise capabilities
+- emit normalized input/lifecycle events
+- accept supported output commands
+- hide vendor SDK types from the core
+
+### AgentAdapter
+
+Responsibilities:
+
+- authenticate/connect to an agent runtime
+- map normalized AWL requests to runtime requests
+- stream normalized responses
+- expose cancellation/failure semantics
+- hide runtime-specific protocol types from the core
+
+## Capability model
+
+Initial capability vocabulary:
+
+- textInput
+- speechInput
+- rawAudioInput
+- cameraSnapshot
+- speakerOutput
+- textOutput
+- voiceInvocation
+
+Capabilities are negotiated, not assumed.
+
+## Event model
+
+Initial events:
+
+- sessionStarted
+- sessionEnded
+- text
+- invocation
+- interruption
+- error
+
+Binary audio/image events will be introduced only with explicit ownership, size limits, cancellation, and backpressure rules.
+
+## Session invariants
+
+- One interaction has one stable ID.
+- Cancellation is idempotent.
+- Late responses from a cancelled interaction are ignored.
+- Device reconnect does not silently create duplicate agent requests.
+- Agent reconnect does not silently replay mutating requests.
+- Media buffers are bounded.
+
+## Reference adapters
+
+```text
+Meta Wearables DAT
+      │
+ MetaDATAdapter
+      │
+    AWL Core
+      │
+ OpenClawAdapter
+      │
+   OpenClaw
+```
+
+Meta DAT and OpenClaw types must not leak into AWL Core.
+
+## Telegram
+
+Telegram may remain the user's canonical visible conversation log through OpenClaw. AWL does not directly depend on Telegram. Logging/channel synchronization belongs to the agent-side integration.
+
+## Security
+
+- credentials: platform secure storage
+- transport: TLS/private network + authentication
+- logs: redact credentials and sensitive payloads
+- camera: explicit capture
+- microphone/media: no persistence by default
+- gateway: never assume trusted public network
+
+## Evolution rule
+
+Do not generalize an interface because a hypothetical future integration might need it. Generalize when a concrete adapter proves the requirement.
