@@ -8,7 +8,7 @@ This directory is the implementation and validation documentation for AgentWearL
 | --- | --- |
 | [PRD.md](PRD.md) | Canonical product and implementation requirements |
 | [architecture.md](architecture.md) | Package boundaries and system architecture |
-| [testing.md](testing.md) | Test strategy and validation layers |
+| [testing.md](testing.md) | Test strategy, CI gates, simulator evidence, and physical validation layers |
 | [reliability-matrix.md](reliability-matrix.md) | Deterministic vs physical reliability checks |
 
 ## Device integration
@@ -16,7 +16,7 @@ This directory is the implementation and validation documentation for AgentWearL
 - [meta-dat-ios.md](meta-dat-ios.md) — Meta DAT iOS integration
 - [meta-dat-known-issues.md](meta-dat-known-issues.md) — known DAT constraints and validation notes
 - [meta-dat-validation.md](meta-dat-validation.md) — P0-A physical DAT validation runbook
-- [meta-mock-device-kit.md](meta-mock-device-kit.md) — MockDeviceKit setup, capabilities, limitations, and AWL test architecture
+- [meta-mock-device-kit.md](meta-mock-device-kit.md) — pinned MockDeviceKit app-host/client contract, capabilities, evidence boundary, and AWL test architecture
 - [meta-dat-bridge.md](meta-dat-bridge.md) — official DAT session/camera API patterns mapped to the concrete AWL host bridge
 - [meta-dat-audit.md](meta-dat-audit.md) — cross-audit findings against Meta CameraAccess, DisplayAccess, and BirdSpotter
 - [meta-dat-capabilities.md](meta-dat-capabilities.md) — verified speech, raw-audio, voice-invocation, camera, registration, and device-selection contract
@@ -41,3 +41,15 @@ This directory is the implementation and validation documentation for AgentWearL
 ## Source of truth
 
 When documents disagree, [PRD.md](PRD.md) is the implementation source of truth. Code and tests determine current implemented behavior; GitHub issues track validation work that remains open.
+
+## Evidence vocabulary
+
+Documentation uses these terms deliberately:
+
+- **deterministic** — no live vendor service, network, or physical hardware is required;
+- **compile-gated** — the concrete vendor/runtime integration is compiled against its pinned dependency;
+- **simulator/vendor integration proof** — the real vendor SDK runs through its supported simulator/mock harness;
+- **deployment E2E** — the real network/runtime topology is exercised;
+- **physical validation** — a physical wearable and phone exercise hardware-dependent behavior.
+
+A lower layer must never be presented as proof of a higher layer.
