@@ -33,6 +33,10 @@ let package = Package(
             dependencies: ["AgentWearLinkOpenClaw"]
         ),
         .testTarget(
+            name: "AgentWearLinkAppleOutputTests",
+            dependencies: ["AgentWearLinkAppleOutput", "AgentWearLinkCore"]
+        ),
+        .testTarget(
             name: "AgentWearLinkMetaDATTests",
             dependencies: ["AgentWearLinkMetaDAT", "AgentWearLinkCore"]
         ),
