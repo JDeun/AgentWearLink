@@ -19,20 +19,31 @@ public struct ServerSentEvent: Sendable, Equatable {
     }
 }
 
+public enum SSEParserError: Error, Sendable, Equatable {
+    case pendingEventTooLarge(actual: Int, maximum: Int)
+}
+
 /// Incremental UTF-8 SSE parser.
 ///
 /// The parser is transport-only: it does not interpret agent-specific event
-/// names or JSON payloads.
+/// names or JSON payloads. Pending partial/event data is strictly bounded so a
+/// peer cannot grow memory indefinitely by withholding an SSE event terminator.
 public struct SSEParser: Sendable {
+    public let maximumBufferedBytes: Int
+
     private var buffer = Data()
     private var currentID: String?
     private var currentEvent: String?
     private var dataLines: [String] = []
     private var currentRetry: Int?
+    private var pendingEventBytes = 0
 
-    public init() {}
+    public init(maximumBufferedBytes: Int = 1_048_576) {
+        precondition(maximumBufferedBytes > 0)
+        self.maximumBufferedBytes = maximumBufferedBytes
+    }
 
-    public mutating func append(_ bytes: Data) -> [ServerSentEvent] {
+    public mutating func append(_ bytes: Data) throws -> [ServerSentEvent] {
         buffer.append(bytes)
         var events: [ServerSentEvent] = []
 
@@ -59,12 +70,20 @@ public struct SSEParser: Sendable {
                 currentEvent = nil
                 dataLines.removeAll(keepingCapacity: true)
                 currentRetry = nil
+                pendingEventBytes = 0
                 continue
             }
 
+            pendingEventBytes += lineData.count + 1
+            try validatePendingSize(bufferBytes: buffer.count)
+
             if line.hasPrefix(":") { continue }
 
-            let pieces = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            let pieces = line.split(
+                separator: ":",
+                maxSplits: 1,
+                omittingEmptySubsequences: false
+            )
             let field = String(pieces[0])
             var value = pieces.count > 1 ? String(pieces[1]) : ""
             if value.first == " " { value.removeFirst() }
@@ -83,6 +102,27 @@ public struct SSEParser: Sendable {
             }
         }
 
+        try validatePendingSize(bufferBytes: buffer.count)
         return events
+    }
+
+    private mutating func validatePendingSize(bufferBytes: Int) throws {
+        let actual = pendingEventBytes + bufferBytes
+        guard actual <= maximumBufferedBytes else {
+            resetAfterLimitViolation()
+            throw SSEParserError.pendingEventTooLarge(
+                actual: actual,
+                maximum: maximumBufferedBytes
+            )
+        }
+    }
+
+    private mutating func resetAfterLimitViolation() {
+        buffer.removeAll(keepingCapacity: false)
+        currentID = nil
+        currentEvent = nil
+        dataLines.removeAll(keepingCapacity: false)
+        currentRetry = nil
+        pendingEventBytes = 0
     }
 }
