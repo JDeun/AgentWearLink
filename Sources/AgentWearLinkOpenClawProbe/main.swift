@@ -1,5 +1,6 @@
 import AgentWearLinkOpenClaw
 import Foundation
+import Darwin
 
 @main
 struct AgentWearLinkOpenClawProbe {
@@ -104,7 +105,7 @@ struct AgentWearLinkOpenClawProbe {
 
     private static func fail(_ message: String, code: Int32) -> Never {
         FileHandle.standardError.write(Data((message + "\n").utf8))
-        Foundation.exit(code)
+        Darwin.exit(code)
     }
 }
 
