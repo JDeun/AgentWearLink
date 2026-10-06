@@ -70,6 +70,6 @@ public enum AWLOpenClawError: Error, Sendable, Equatable {
     case protocolMismatch
     case sequenceGap(expected: Int, actual: Int)
     case payloadTooLarge(actual: Int, maximum: Int)
-    case gateway(code: String, retryable: Bool)
+    case gateway(code: String, retryable: Bool, retryAfterMilliseconds: Int? = nil)
     case disconnected
 }
