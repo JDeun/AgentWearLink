@@ -71,4 +71,30 @@ final class OpenClawPrivacyRegressionTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(secret)")
         XCTAssertFalse(String(describing: request).contains(secret))
     }
+
+    func testDeviceIdentityDescriptionRedactsPrivateKey() throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let secret = identity.privateKeyRaw.base64EncodedString()
+
+        XCTAssertFalse(String(describing: identity).contains(secret))
+        XCTAssertFalse(String(reflecting: identity).contains(secret))
+        XCTAssertTrue(String(describing: identity).contains("<redacted>"))
+    }
+
+    func testConnectAuthDescriptionRedactsAllCredentialKinds() {
+        let secrets = ["TOKEN_SENTINEL", "PASSWORD_SENTINEL", "BOOTSTRAP_SENTINEL"]
+        let auth = OpenClawConnectParams.Auth(
+            token: secrets[0],
+            password: secrets[1],
+            bootstrapToken: secrets[2]
+        )
+
+        for rendered in [String(describing: auth), String(reflecting: auth)] {
+            for secret in secrets {
+                XCTAssertFalse(rendered.contains(secret))
+            }
+            XCTAssertTrue(rendered.contains("<redacted>"))
+        }
+    }
+
 }
