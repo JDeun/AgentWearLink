@@ -14,6 +14,7 @@ public actor OpenClawGatewaySupervisor {
     private var watchdogTask: Task<Void, Never>?
     private var stopped = true
     private var tickIntervalMilliseconds = 30_000
+    public private(set) var transportGeneration: UInt64 = 0
 
     public init(
         connection: OpenClawGatewayConnection,
@@ -40,6 +41,7 @@ public actor OpenClawGatewaySupervisor {
     public func start() async throws {
         guard stopped else { return }
         stopped = false
+        transportGeneration &+= 1
 
         do {
             let hello = try await connection.connect(
@@ -59,6 +61,7 @@ public actor OpenClawGatewaySupervisor {
 
     public func stop() async {
         stopped = true
+        transportGeneration &+= 1
         watchdogTask?.cancel()
         watchdogTask = nil
         await dispatcher.stop()
@@ -104,6 +107,10 @@ public actor OpenClawGatewaySupervisor {
         closeCode: Int,
         closeReason: String
     ) async {
+        // A reconnect advances transport identity only. In-flight RPC/agent work is
+        // intentionally not retained or replayed by the supervisor: its outcome is
+        // uncertain once the old transport is retired.
+        transportGeneration &+= 1
         await socket.close(code: closeCode, reason: closeReason)
         await dispatcher.stop()
 
