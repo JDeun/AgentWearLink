@@ -22,6 +22,10 @@ public actor AgentWearLinkRuntime {
     public func start() async throws {
         guard forwardingTask == nil else { return }
 
+        // Subscribe before connect so adapters that emit lifecycle events during
+        // connection cannot race the runtime and lose their first event.
+        let events = device.events()
+
         try await agent.connect()
         do {
             try await device.connect()
@@ -30,7 +34,6 @@ public actor AgentWearLinkRuntime {
             throw error
         }
 
-        let events = device.events()
         forwardingTask = Task { [coordinator] in
             for await event in events {
                 guard !Task.isCancelled else { break }
