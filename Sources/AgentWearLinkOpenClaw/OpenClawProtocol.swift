@@ -42,10 +42,16 @@ public struct OpenClawConnectParams: Encodable, Sendable {
     public struct Auth: Encodable, Sendable {
         public let token: String?
         public let password: String?
+        public let bootstrapToken: String?
 
-        public init(token: String? = nil, password: String? = nil) {
+        public init(
+            token: String? = nil,
+            password: String? = nil,
+            bootstrapToken: String? = nil
+        ) {
             self.token = token
             self.password = password
+            self.bootstrapToken = bootstrapToken
         }
     }
 
@@ -59,12 +65,14 @@ public struct OpenClawConnectParams: Encodable, Sendable {
     public let permissions: [String: Bool]
     public let auth: Auth?
     public let locale: String
+    public let device: OpenClawDeviceProof?
 
     public init(
         version: String,
         scopes: [String] = ["operator.read", "operator.write"],
         auth: Auth? = nil,
-        locale: String = "en-US"
+        locale: String = "en-US",
+        device: OpenClawDeviceProof? = nil
     ) {
         self.minProtocol = OpenClawProtocol.currentVersion
         self.maxProtocol = OpenClawProtocol.currentVersion
@@ -76,6 +84,7 @@ public struct OpenClawConnectParams: Encodable, Sendable {
         self.permissions = [:]
         self.auth = auth
         self.locale = locale
+        self.device = device
     }
 }
 
@@ -85,6 +94,7 @@ public struct OpenClawResponseEnvelope: Decodable, Sendable {
         public let message: String
         public let retryable: Bool?
         public let retryAfterMs: Int?
+        public let details: JSONValue?
     }
 
     public let type: String
