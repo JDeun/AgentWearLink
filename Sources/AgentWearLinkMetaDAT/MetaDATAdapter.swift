@@ -16,6 +16,23 @@ public protocol MetaDATSession: Sendable {
 /// Optional SDK-neutral still-camera surface implemented by a concrete DAT host.
 /// The host owns MWDATCamera types and returns copied bytes only after an
 /// explicit, user-authorized one-shot capture.
+/// Optional voice-invocation channel owned independently from DeviceSession.
+/// The concrete host must acknowledge Meta AI's invocation before yielding it
+/// here so slow agent work never holds the platform response handle open.
+public protocol MetaDATVoiceInvocationSource: Sendable {
+    func invocationEvents() -> AsyncStream<MetaDATInvocation>
+}
+
+public struct MetaDATInvocation: Sendable, Equatable {
+    public let id: UUID
+    public let phrase: String?
+
+    public init(id: UUID, phrase: String? = nil) {
+        self.id = id
+        self.phrase = phrase
+    }
+}
+
 public protocol MetaDATSnapshotSession: MetaDATSession {
     func captureSnapshotData() async throws -> MetaDATSnapshot
 }
@@ -87,6 +104,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
     private let mappedCapabilities: CapabilitySet
     private nonisolated let eventSource = MetaDATInteractionEventSource()
     private var eventTask: Task<Void, Never>?
+    private var invocationTask: Task<Void, Never>?
 
     public nonisolated var capabilities: CapabilitySet { mappedCapabilities }
 
@@ -109,10 +127,31 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
         }
         eventTask = forwardingTask
 
+        if mappedCapabilities.contains(.voiceInvocation) {
+            guard let source = session as? any MetaDATVoiceInvocationSource else {
+                forwardingTask.cancel()
+                eventTask = nil
+                throw AWLError.capabilityUnavailable(
+                    "Meta DAT voice invocation is advertised without a concrete invocation source"
+                )
+            }
+            let invocations = source.invocationEvents()
+            invocationTask = Task { [weak self] in
+                for await invocation in invocations {
+                    guard !Task.isCancelled else { break }
+                    await self?.forward(
+                        .invocation(invocation.id, invocation.phrase)
+                    )
+                }
+            }
+        }
+
         do {
             try await session.connect()
         } catch {
             forwardingTask.cancel()
+            invocationTask?.cancel()
+            invocationTask = nil
             eventTask = nil
             await session.disconnect()
             throw AWLError.device(String(describing: error))
@@ -135,7 +174,9 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
 
     public func disconnect() async {
         eventTask?.cancel()
+        invocationTask?.cancel()
         eventTask = nil
+        invocationTask = nil
         await session.disconnect()
         eventSource.finish()
     }
