@@ -98,3 +98,145 @@ final class InteractionCoordinatorTests: XCTestCase {
         XCTAssertTrue(events.contains(.text(id, "response")))
     }
 }
+
+
+private actor DelayedFirstAgent: AgentAdapter {
+    private(set) var requestCount = 0
+    private var firstGate: CheckedContinuation<Void, Never>?
+    private var continuations: [AsyncThrowingStream<AgentResponse, Error>.Continuation] = []
+
+    func connect() async throws {}
+    func disconnect() async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        requestCount += 1
+        let ordinal = requestCount
+
+        if ordinal == 1 {
+            await withCheckedContinuation { continuation in
+                firstGate = continuation
+            }
+        }
+
+        var captured: AsyncThrowingStream<AgentResponse, Error>.Continuation?
+        let stream = AsyncThrowingStream<AgentResponse, Error> { continuation in
+            captured = continuation
+        }
+        if let captured {
+            continuations.append(captured)
+        }
+        return stream
+    }
+
+    func cancel(interactionID: InteractionID) async {}
+
+    func requests() -> Int { requestCount }
+
+    func releaseFirst() {
+        firstGate?.resume()
+        firstGate = nil
+    }
+
+    func finishAll() {
+        for continuation in continuations {
+            continuation.finish()
+        }
+        continuations.removeAll()
+    }
+}
+
+private actor TerminalThenLateAgent: AgentAdapter {
+    func connect() async throws {}
+    func disconnect() async {}
+    func cancel(interactionID: InteractionID) async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.completed(request.interactionID))
+            continuation.yield(.textDelta(request.interactionID, "late"))
+            continuation.finish()
+        }
+    }
+}
+
+private actor TypedFailureAgent: AgentAdapter {
+    func connect() async throws {}
+    func disconnect() async {}
+    func cancel(interactionID: InteractionID) async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: AWLError.timeout)
+        }
+    }
+}
+
+extension InteractionCoordinatorTests {
+    func testCancelledOldGenerationCannotRemoveReplacementTask() async throws {
+        let agent = DelayedFirstAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "first"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        await coordinator.handle(.interrupted(id))
+        await coordinator.handle(.text(id, "second"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let afterReplacement = await agent.requests()
+        XCTAssertEqual(afterReplacement, 2)
+
+        await agent.releaseFirst()
+        try await Task.sleep(for: .milliseconds(20))
+
+        await coordinator.handle(.text(id, "third"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let finalCount = await agent.requests()
+        XCTAssertEqual(finalCount, 2)
+
+        await coordinator.cancelAll()
+        await agent.finishAll()
+    }
+
+    func testTerminalResponseStopsLateDeltas() async throws {
+        let agent = TerminalThenLateAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let events = await recorded.values
+        XCTAssertTrue(events.contains(.sessionEnded(id)))
+        XCTAssertFalse(events.contains(.text(id, "late")))
+    }
+
+    func testTypedAgentErrorIsPreserved() async throws {
+        let agent = TypedFailureAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await Task.sleep(for: .milliseconds(20))
+
+        let events = await recorded.values
+        XCTAssertTrue(events.contains(.failed(id, .timeout)))
+    }
+}

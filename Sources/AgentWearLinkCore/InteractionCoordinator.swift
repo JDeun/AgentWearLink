@@ -1,8 +1,13 @@
 import Foundation
 
 public actor InteractionCoordinator {
+    private struct TaskEntry {
+        let generation: UUID
+        let task: Task<Void, Never>
+    }
+
     private let agent: any AgentAdapter
-    private var tasks: [InteractionID: Task<Void, Never>] = [:]
+    private var tasks: [InteractionID: TaskEntry] = [:]
     private let output: @Sendable (InteractionEvent) async -> Void
 
     public init(
@@ -43,39 +48,49 @@ public actor InteractionCoordinator {
         let id = request.interactionID
         guard tasks[id] == nil else { return }
 
+        let generation = UUID()
         let task = Task { [agent, output] in
             do {
                 let responses = await agent.responses(for: request)
-                for try await response in responses {
+
+                responseLoop: for try await response in responses {
                     guard !Task.isCancelled else { break }
+
                     switch response {
                     case let .textDelta(responseID, text):
                         await output(.text(responseID, text))
+
                     case let .completed(responseID):
                         await output(.sessionEnded(responseID))
+                        break responseLoop
+
                     case let .failed(responseID, error):
                         await output(.failed(responseID, error))
+                        break responseLoop
                     }
                 }
             } catch is CancellationError {
                 // Lifecycle cancellation already carries the semantic event.
+            } catch let error as AWLError {
+                await output(.failed(id, error))
             } catch {
                 await output(.failed(id, .agent(String(describing: error))))
             }
 
-            await self.finish(id)
+            await self.finish(id, generation: generation)
         }
 
-        tasks[id] = task
+        tasks[id] = TaskEntry(generation: generation, task: task)
     }
 
-    private func finish(_ id: InteractionID) {
+    private func finish(_ id: InteractionID, generation: UUID) {
+        guard tasks[id]?.generation == generation else { return }
         tasks[id] = nil
     }
 
     public func cancel(_ id: InteractionID) async {
-        let task = tasks.removeValue(forKey: id)
-        task?.cancel()
+        let entry = tasks.removeValue(forKey: id)
+        entry?.task.cancel()
         await agent.cancel(interactionID: id)
     }
 
