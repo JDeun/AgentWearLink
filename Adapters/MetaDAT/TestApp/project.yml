@@ -6,6 +6,9 @@ options:
 packages:
   MetaIntegration:
     path: ..
+  MetaWearablesDAT:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    exactVersion: 1.0.0
 targets:
   AgentWearLinkMetaDATTestHost:
     type: application
@@ -27,7 +30,7 @@ targets:
       - path: UITests
     dependencies:
       - target: AgentWearLinkMetaDATTestHost
-      - package: MetaIntegration
+      - package: MetaWearablesDAT
         product: MWDATMockDeviceTestClient
     settings:
       base:
