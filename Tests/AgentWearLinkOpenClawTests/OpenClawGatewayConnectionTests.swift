@@ -87,6 +87,55 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
         let didClose = await socket.closed()
         XCTAssertTrue(didClose)
     }
+
+    func testGatewayErrorPreservesBoundedRetryAfterGuidance() async {
+        let socket = RejectingHandshakeSocket(retryAfterMs: 12_345)
+        let connection = OpenClawGatewayConnection(
+            socket: socket,
+            assembler: makeAssembler()
+        )
+
+        do {
+            _ = try await connection.connect(appVersion: "0.1.0")
+            XCTFail("Expected Gateway rejection")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(
+                error,
+                .gateway(
+                    code: "BUSY",
+                    retryable: true,
+                    retryAfterMilliseconds: 12_345
+                )
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testGatewayErrorDropsPathologicalRetryAfterGuidance() async {
+        let socket = RejectingHandshakeSocket(retryAfterMs: 300_001)
+        let connection = OpenClawGatewayConnection(
+            socket: socket,
+            assembler: makeAssembler()
+        )
+
+        do {
+            _ = try await connection.connect(appVersion: "0.1.0")
+            XCTFail("Expected Gateway rejection")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(
+                error,
+                .gateway(
+                    code: "BUSY",
+                    retryable: true,
+                    retryAfterMilliseconds: nil
+                )
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
 }
 
 private actor AdaptiveHandshakeSocket: OpenClawWebSocket {
@@ -130,4 +179,34 @@ private actor AdaptiveHandshakeSocket: OpenClawWebSocket {
 
     func close() async {}
     func sentCount() -> Int { sentFrames.count }
+}
+
+private actor RejectingHandshakeSocket: OpenClawWebSocket {
+    private let retryAfterMs: Int
+    private var sentFrames: [String] = []
+    private var receiveCount = 0
+
+    init(retryAfterMs: Int) { self.retryAfterMs = retryAfterMs }
+
+    func connect() async {}
+
+    func send(text: String) async throws { sentFrames.append(text) }
+
+    func receive() async throws -> String {
+        defer { receiveCount += 1 }
+        if receiveCount == 0 {
+            return #"{"type":"event","event":"connect.challenge","payload":{"nonce":"abc","ts":1737264000000}}"#
+        }
+        guard let sent = sentFrames.last,
+              let data = sent.data(using: .utf8),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = json["id"] as? String else {
+            throw OpenClawFrameError.malformedFrame
+        }
+        return """
+        {"type":"res","id":"\(id)","ok":false,"error":{"code":"BUSY","message":"busy","retryable":true,"retryAfterMs":\(retryAfterMs)}}
+        """
+    }
+
+    func close() async {}
 }
