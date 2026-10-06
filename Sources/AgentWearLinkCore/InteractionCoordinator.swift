@@ -9,6 +9,7 @@ public actor InteractionCoordinator {
     private let agent: any AgentAdapter
     private var tasks: [InteractionID: TaskEntry] = [:]
     private let output: @Sendable (InteractionEvent) async -> Void
+    private var activeRuntimeGeneration: UInt64?
 
     public init(
         agent: any AgentAdapter,
@@ -16,6 +17,21 @@ public actor InteractionCoordinator {
     ) {
         self.agent = agent
         self.output = output
+    }
+
+    public func activate(runtimeGeneration: UInt64) {
+        activeRuntimeGeneration = runtimeGeneration
+    }
+
+    public func deactivate(runtimeGeneration: UInt64) async {
+        guard activeRuntimeGeneration == runtimeGeneration else { return }
+        activeRuntimeGeneration = nil
+        await cancelAll()
+    }
+
+    public func handle(_ event: InteractionEvent, runtimeGeneration: UInt64) async {
+        guard activeRuntimeGeneration == runtimeGeneration else { return }
+        await handle(event)
     }
 
     public func handle(_ event: InteractionEvent) async {
