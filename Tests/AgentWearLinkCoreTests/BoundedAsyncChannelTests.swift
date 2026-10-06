@@ -55,7 +55,9 @@ final class BoundedAsyncChannelTests: XCTestCase {
         await channel.finish()
         await channel.send(3)
 
-        XCTAssertNil(await channel.next())
-        XCTAssertNil(await channel.next())
+        let firstAfterFinish = await channel.next()
+        let secondAfterFinish = await channel.next()
+        XCTAssertNil(firstAfterFinish)
+        XCTAssertNil(secondAfterFinish)
     }
 }
