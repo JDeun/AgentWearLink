@@ -53,8 +53,21 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
+      - name: Run app-hosted MockDeviceKit behavioral contract
+        working-directory: Adapters/MetaDAT
+        shell: bash
+        run: |
+          bash Scripts/launch-mock-host.sh
+          PORT_FILE="${RUNNER_TEMP}/awl-mwdat-port"
+          for _ in {1..30}; do
+            [[ -s "$PORT_FILE" ]] && break
+            sleep 1
+          done
+          test -s "$PORT_FILE"
+          MWDAT_TEST_SERVER_PORT_FILE="$PORT_FILE" \
+            swift test --filter MetaDATMockDeviceUITests
       - name: Explain behavioral test boundary
         run: |
           echo "Meta DAT package target and behavioral host are compile-gated here."
-          echo "Behavioral MockDeviceKit coverage runs in the app-hosted XCUITest harness (#122)."
-          echo "Package-hosted xctest is intentionally not used because MWDATCore requires linked-app runtime context."
+          echo "App-hosted MockDeviceKit pair/state/unpair behavior is exercised on iOS Simulator."
+          echo "This is simulator/vendor integration proof, not Bluetooth/background/physical-device proof."
