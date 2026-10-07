@@ -109,7 +109,7 @@ Tailscale and Telegram are deployment choices, not Core dependencies. Tailscale 
 ## Security
 
 - credentials: platform secure storage
-- transport: TLS/private network + authentication
+- transport: TLS/private network + authentication; bearer-token HTTP compatibility paths require HTTPS except explicit loopback development endpoints
 - logs: redact credentials and sensitive payloads
 - camera: explicit capture
 - microphone/media: no persistence by default
