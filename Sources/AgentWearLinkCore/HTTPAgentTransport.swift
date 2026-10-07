@@ -201,7 +201,13 @@ final class BoundedHTTPResponseLoader: NSObject, URLSessionDataDelegate, @unchec
         lock.unlock()
 
         completion(result)
-        session.finishTasksAndInvalidate()
+
+        // Each loader owns a dedicated one-request URLSession. Terminal
+        // completion must invalidate that session even if the task never
+        // reached resume() (for example, cancellation during setup). Waiting
+        // with finishTasksAndInvalidate() can retain a suspended task and its
+        // delegate indefinitely.
+        session.invalidateAndCancel()
     }
 }
 
