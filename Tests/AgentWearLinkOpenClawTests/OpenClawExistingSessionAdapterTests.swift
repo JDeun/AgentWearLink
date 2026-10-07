@@ -126,6 +126,15 @@ private actor ExistingSessionAdapterSocket: OpenClawWebSocket {
             enqueue(
                 #"{"type":"event","event":"agent","seq":1,"payload":{"runId":"run-other","stream":"assistant","seq":1,"data":{"delta":"ignore-me"}}}"#
             )
+
+
+        case "agent.wait":
+            let runID = params["runId"] as? String ?? ""
+            waitedRunIDs.append(runID)
+
+            // The production adapter installs the run-scoped update stream
+            // before issuing agent.wait. Emit target-run updates at that
+            // boundary so this fixture proves ordering without scheduler races.
             enqueue(
                 #"{"type":"event","event":"agent","seq":2,"payload":{"runId":"run-existing-session","stream":"assistant","seq":1,"data":{"delta":"partial"}}}"#
             )
@@ -135,9 +144,6 @@ private actor ExistingSessionAdapterSocket: OpenClawWebSocket {
                 )
             }
 
-        case "agent.wait":
-            let runID = params["runId"] as? String ?? ""
-            waitedRunIDs.append(runID)
             switch terminalMode {
             case .success:
                 enqueue(
