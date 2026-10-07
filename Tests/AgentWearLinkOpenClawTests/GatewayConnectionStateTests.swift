@@ -91,6 +91,14 @@ final class GatewayConnectionStateTests: XCTestCase {
         }
     }
 
+    func testHelloValidationKeepsUpstreamPolicyLimitsIndependent() throws {
+        let hello = try hello(
+            policy: #"{"maxPayload":4096,"maxBufferedBytes":1024,"tickIntervalMs":15000,"attachments":{"maxBytes":1000,"maxImageBytes":1001}}"#
+        )
+
+        XCTAssertNoThrow(try OpenClawGatewayState.validateHello(hello))
+    }
+
     func testHelloValidationAcceptsMaximumTickBoundary() throws {
         let hello = try hello(
             policy: "{\"maxPayload\":4096,\"maxBufferedBytes\":8192,\"tickIntervalMs\":\(OpenClawGatewayState.maximumTickIntervalMilliseconds)}"
