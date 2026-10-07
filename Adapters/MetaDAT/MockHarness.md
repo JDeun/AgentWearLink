@@ -8,7 +8,7 @@ process** because Meta's test server is hosted by `MockDeviceKit.shared` in the
 application, while an XCUITest process drives it through
 `MWDATMockDeviceTestClient`.
 
-Package-hosted `xcodebuild test` is intentionally not a behavioral gate: with the pinned SDK it can abort before test execution because `MWDATCore` expects linked-app runtime context. The package remains a compile gate; behavioral CI belongs to the app-hosted XCUITest target tracked by #122.
+Package-hosted `xcodebuild test` is intentionally not a behavioral gate: with the pinned SDK it can abort before test execution because `MWDATCore` expects linked-app runtime context. The package integration library remains a compile gate, but there is no SwiftPM behavioral host; behavioral CI belongs exclusively to the `TestApp/` app-hosted XCUITest target tracked by #122.
 
 ## Host contract
 
