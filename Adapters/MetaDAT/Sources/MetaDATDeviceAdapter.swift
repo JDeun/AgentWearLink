@@ -147,12 +147,11 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var registrationTask: Task<Void, Never>?
     private var deviceMonitorTask: Task<Void, Never>?
     private var selectedDeviceListenerTask: Task<Void, Never>?
-    private var eventContinuation: AsyncStream<InteractionEvent>.Continuation?
     private var generationFence = MetaDATSessionGenerationFence()
     private var connecting = false
     private var stopping = false
     private let connectTimeout: Duration
-    private nonisolated let eventBufferLimit: Int
+    private nonisolated let eventSource: MetaDATDeviceEventSource
 
     public init(
         wearables: any WearablesInterface = Wearables.shared,
