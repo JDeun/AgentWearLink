@@ -281,11 +281,10 @@ final class OpenClawAcceptedRunRecoveryTests: XCTestCase {
         let id = InteractionID()
 
         try await adapter.connect()
-        let stream = await adapter.responses(
-            for: AgentRequest(interactionID: id, text: "cancel me")
-        )
-
         let collector = Task { () -> [AgentResponse] in
+            let stream = await adapter.responses(
+                for: AgentRequest(interactionID: id, text: "cancel me")
+            )
             var values: [AgentResponse] = []
             do {
                 for try await response in stream {
