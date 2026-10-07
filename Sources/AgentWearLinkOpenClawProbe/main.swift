@@ -28,7 +28,8 @@ struct AgentWearLinkOpenClawProbe {
         let assembler = OpenClawConnectAssembler(
             identityManager: .init(store: identityStore),
             credentialStore: credentialStore,
-            gatewayNamespace: endpoint.credentialNamespace
+            gatewayNamespace: endpoint.credentialNamespace,
+            bootstrapHandoffPersistenceAllowed: endpoint.allowsBootstrapHandoffPersistence
         )
         let connection = OpenClawGatewayConnection(
             socket: socket,
