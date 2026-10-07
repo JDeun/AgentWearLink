@@ -3,6 +3,16 @@ import XCTest
 @testable import AgentWearLinkOpenClaw
 
 
+private struct SupervisorPairingResponse: Sendable {
+    let retryable: Bool
+    let waitForResolution: Bool
+    let pauseReconnect: Bool
+    let recommendedNextStep: String
+    let requestID: String
+    let deviceID: String
+    let retryAfterMilliseconds: Int?
+}
+
 private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var connectCalls = 0
     private var handshakeStep = 0
@@ -10,6 +20,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var receiveWaiter: CheckedContinuation<String, Error>?
     private var failNextReceive = false
     private var successfulConnectCalls: Set<Int> = [1]
+    private var pairingResponses: [Int: SupervisorPairingResponse] = [:]
     private var blockedConnectCall: Int?
     private var blockedConnectStarted = false
     private var blockedConnectRelease: CheckedContinuation<Void, Never>?
@@ -66,6 +77,27 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
                 """
             }
 
+            if let pairing = pairingResponses[connectCalls] {
+                let retryAfter = pairing.retryAfterMilliseconds.map {
+                    ",\"retryAfterMs\":\($0)"
+                } ?? ""
+                return """
+                {"type":"res","id":"\(id)","ok":false,"error":{
+                  "code":"NOT_PAIRED","message":"pairing required",
+                  "retryable":\(pairing.retryable)\(retryAfter),
+                  "details":{
+                    "code":"PAIRING_REQUIRED",
+                    "requestId":"\(pairing.requestID)",
+                    "deviceId":"\(pairing.deviceID)",
+                    "reason":"not-paired",
+                    "recommendedNextStep":"\(pairing.recommendedNextStep)",
+                    "waitForResolution":\(pairing.waitForResolution),
+                    "pauseReconnect":\(pairing.pauseReconnect)
+                  }
+                }}
+                """
+            }
+
             return """
             {"type":"res","id":"\(id)","ok":false,"error":{
               "code":"BUSY","message":"retry test","retryable":true
@@ -110,6 +142,26 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
 
     func makeNextHandshakeSucceed() {
         successfulConnectCalls.insert(connectCalls + 1)
+    }
+
+    func makeNextHandshakeRequirePairing(
+        retryable: Bool = true,
+        waitForResolution: Bool = true,
+        pauseReconnect: Bool = false,
+        recommendedNextStep: String = "wait_then_retry",
+        requestID: String = "pairing-request",
+        deviceID: String = "pairing-device",
+        retryAfterMilliseconds: Int? = nil
+    ) {
+        pairingResponses[connectCalls + 1] = SupervisorPairingResponse(
+            retryable: retryable,
+            waitForResolution: waitForResolution,
+            pauseReconnect: pauseReconnect,
+            recommendedNextStep: recommendedNextStep,
+            requestID: requestID,
+            deviceID: deviceID,
+            retryAfterMilliseconds: retryAfterMilliseconds
+        )
     }
 
     func blockNextConnect() {
