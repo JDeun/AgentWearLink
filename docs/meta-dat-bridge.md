@@ -92,3 +92,20 @@ Before merging concrete MWDAT imports into the reference host:
 - update this document when symbols/signatures differ
 
 This keeps the repository from freezing guessed or stale SDK signatures into the public adapter.
+
+## Foreground/background ownership on the concrete adapter
+
+Hosts may inject `MetaDATApplicationLifecycle` into
+`MetaDATDeviceAdapter(applicationLifecycle:)` and forward UIKit/SwiftUI
+foreground/background phase transitions. The vendor-linked adapter subscribes
+before session registration/start; the latest phase is replayed to close the
+preflight/subscription race. Background immediately retires the owning
+DeviceSession generation, invalidates pending camera/Speech operations,
+clears live capability bits and emits a terminal device failure so Core also
+retires active interactions. Foreground does **not** implicitly reconnect or
+replay an uncertain agent/photo request: the host must explicitly start a
+fresh runtime generation. Injection is optional to preserve test/reference
+compatibility, but a production UI must supply it to claim lifecycle coverage.
+
+Mock and CI tests cannot prove physical lock-screen or iOS suspension timing;
+those remain on #96/#116 and #1/#59.

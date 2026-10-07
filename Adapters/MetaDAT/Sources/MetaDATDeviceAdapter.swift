@@ -148,6 +148,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     private let wearables: any WearablesInterface
     private var deviceSession: DeviceSession?
+    private let applicationLifecycle: MetaDATApplicationLifecycle?
+    private var applicationPhaseTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
     private var errorTask: Task<Void, Never>?
     private var registrationTask: Task<Void, Never>?
@@ -172,12 +174,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         connectTimeout: Duration = .seconds(15),
         eventBufferLimit: Int = MetaDATDeviceAdapter.defaultEventBufferLimit,
         snapshotTimeout: Duration = .seconds(5),
-        maximumSnapshotBytes: Int = ImageAttachment.defaultMaximumBytes
+        maximumSnapshotBytes: Int = ImageAttachment.defaultMaximumBytes,
+        applicationLifecycle: MetaDATApplicationLifecycle? = nil
     ) {
         precondition(connectTimeout > .zero)
         precondition(eventBufferLimit > 0)
         self.wearables = wearables
         self.connectTimeout = connectTimeout
+        self.applicationLifecycle = applicationLifecycle
         self.eventSource = MetaDATDeviceEventSource(bufferLimit: eventBufferLimit)
         self.cameraSnapshotController = MetaDATCameraSnapshotController(
             timeout: snapshotTimeout,
@@ -192,6 +196,15 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public func connect() async throws {
         guard deviceSession == nil, !connecting else { return }
 
+        // Reject a cold start in the background. The subscribed phase stream
+        // below also replays its latest phase, closing the gap between this
+        // preflight and registration/session startup.
+        if let applicationLifecycle {
+            guard await applicationLifecycle.currentPhase == .foreground else {
+                throw AWLError.device("Meta DAT media cannot start while the app is backgrounded")
+            }
+        }
+
         liveCapabilities.update(
             sessionReady: false,
             speechReady: false,
@@ -203,6 +216,16 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         defer {
             if generationFence.owns(generation) {
                 connecting = false
+            }
+        }
+
+        if let applicationLifecycle {
+            let phases = applicationLifecycle.phases()
+            applicationPhaseTask = Task { [weak self] in
+                for await phase in phases {
+                    guard !Task.isCancelled else { break }
+                    await self?.handleApplicationPhase(phase, generation: generation)
+                }
             }
         }
 
@@ -600,6 +623,25 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         tearDownSession()
     }
 
+    private func handleApplicationPhase(
+        _ phase: MetaDATApplicationPhase,
+        generation: UInt64
+    ) {
+        guard generationFence.owns(generation), !stopping else { return }
+        guard phase == .background else { return }
+
+        // A backgrounded camera/Speech session cannot be reused safely. The
+        // generation fence rejects late photo bytes/transcripts; foreground
+        // recovery requires a *new explicit* connect, never request replay.
+        liveCapabilities.update(
+            sessionReady: false,
+            speechReady: false,
+            cameraReady: false
+        )
+        yieldEvent(.failed(nil, .device("Meta DAT media retired on app background")))
+        tearDownSession(expectedGeneration: generation)
+    }
+
     private func handleUnexpectedStop(generation: UInt64) {
         guard !stopping, generationFence.owns(generation) else { return }
         yieldEvent(
@@ -640,6 +682,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             cameraReady: false
         )
         cameraSnapshotController.invalidate()
+        applicationPhaseTask?.cancel()
+        applicationPhaseTask = nil
         stateTask?.cancel()
         errorTask?.cancel()
         registrationTask?.cancel()
