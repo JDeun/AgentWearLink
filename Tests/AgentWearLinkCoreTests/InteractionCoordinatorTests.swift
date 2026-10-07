@@ -810,12 +810,14 @@ extension InteractionCoordinatorTests {
         await coordinator.handle(.failed(nil, .device("session lost")))
         try await recorded.waitUntilCount(1)
 
-        XCTAssertEqual(await coordinator.inFlightInteractionCount(), 0)
+        let inFlightAfterFailure = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(inFlightAfterFailure, 0)
         let cancellations = await agent.cancellations()
         XCTAssertEqual(Set(cancellations), Set([first, second]))
         XCTAssertEqual(cancellations.count, 2)
+        let eventsAfterFailure = await recorded.values
         XCTAssertEqual(
-            await recorded.values,
+            eventsAfterFailure,
             [.failed(nil, .device("session lost"))]
         )
     }
@@ -834,10 +836,13 @@ extension InteractionCoordinatorTests {
         await coordinator.handle(.failed(nil, .transport("diagnostic")))
         try await recorded.waitUntilCount(1)
 
-        XCTAssertEqual(await coordinator.inFlightInteractionCount(), 1)
-        XCTAssertTrue(await agent.cancellations().isEmpty)
+        let inFlightAfterDiagnostic = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(inFlightAfterDiagnostic, 1)
+        let diagnosticCancellations = await agent.cancellations()
+        XCTAssertTrue(diagnosticCancellations.isEmpty)
+        let diagnosticEvents = await recorded.values
         XCTAssertEqual(
-            await recorded.values,
+            diagnosticEvents,
             [.failed(nil, .transport("diagnostic"))]
         )
 
