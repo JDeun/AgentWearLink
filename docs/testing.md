@@ -39,7 +39,16 @@ xcodebuild \
   -skipPackagePluginValidation \
   build
 
-# CI selects and boots an available iPhone Simulator, then runs:
+# For a Meta behavioral change CI reuses one test build:
+xcodebuild \
+  -scheme AgentWearLinkMetaDATIntegration \
+  -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
+  -skipPackagePluginValidation \
+  -parallel-testing-enabled NO \
+  -maximum-parallel-testing-workers 1 \
+  build-for-testing
+
+# After booting that simulator:
 xcodebuild \
   -scheme AgentWearLinkMetaDATIntegration \
   -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
@@ -47,14 +56,14 @@ xcodebuild \
   -parallel-testing-enabled NO \
   -maximum-parallel-testing-workers 1 \
   -only-testing:AgentWearLinkMetaDATIntegrationTests \
-  test
+  test-without-building
 ```
 
 CI separates the compatibility compile gate from the simulator behavioral gate. Any Core/package change that can affect the Meta adapter still resolves the pinned SDK, verifies its immutable revision, lists schemes, and compiles the concrete integration. Simulator boot and the deterministic package-hosted Meta integration/helper XCTest target run only when Meta adapter/test paths or the workflow itself change.
 
 The behavioral XCTest target covers lifecycle, readiness, camera-ignition, listener-generation, and mock-host contract regressions. The MockDeviceKit test that requires a linked-app Keychain context is intentionally skipped here and remains part of the app-hosted XCUITest layer below.
 
-This preserves SDK/API compatibility coverage for Core-only changes without paying the simulator behavioral-test cost on every Core PR. Meta implementation changes still receive the full deterministic behavioral gate. Neither path proves physical wearable behavior.
+This preserves SDK/API compatibility coverage for Core-only changes without paying the simulator behavioral-test cost on every Core PR. Meta implementation changes still receive the full deterministic behavioral gate, while `build-for-testing` / `test-without-building` avoids compiling that test bundle twice. Neither path proves physical wearable behavior.
 
 ## 3. Simulator/vendor behavioral integration
 
