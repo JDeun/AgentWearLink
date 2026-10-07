@@ -203,6 +203,52 @@ final class OpenClawAdapterTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    func testCompatibilityStreamFailsBeforeSuccessWhenResponseBufferOverflows() async throws {
+        let adapter = makeCompatibilityAdapter(
+            payload: [
+                deltaLine("one"),
+                deltaLine("two"),
+                deltaLine("three"),
+                "data: [DONE]"
+            ].joined(separator: "\n") + "\n",
+            responseBufferLimit: 2
+        )
+        let id = InteractionID()
+        let stream = await adapter.responses(
+            for: AgentRequest(interactionID: id, text: "hello")
+        )
+
+        try await waitUntilOpenClawTestCondition(
+            "compatibility response buffer overflow"
+        ) {
+            await adapter.responseBufferOverflowCount == 1
+        }
+
+        var iterator = stream.makeAsyncIterator()
+        let first = try await iterator.next()
+        let second = try await iterator.next()
+        XCTAssertEqual(first, .textDelta(id, "one"))
+        XCTAssertEqual(second, .textDelta(id, "two"))
+
+        do {
+            _ = try await iterator.next()
+            XCTFail("Expected compatibility response buffer overflow")
+        } catch let error as AWLError {
+            XCTAssertEqual(
+                error,
+                .overloaded("agent response stream buffer capacity exceeded")
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        try await waitUntilOpenClawTestCondition(
+            "compatibility overflow task cleanup"
+        ) {
+            await adapter.taskCount() == 0
+        }
+    }
+
     func testCompatibilityStreamRejectsEOFWithoutDone() async {
         let adapter = makeCompatibilityAdapter(
             payload: deltaLine("partial") + "\n"
@@ -273,7 +319,8 @@ final class OpenClawAdapterTests: XCTestCase {
 
     private func makeCompatibilityAdapter(
         payload: String,
-        statusCode: Int = 200
+        statusCode: Int = 200,
+        responseBufferLimit: Int = AgentResponse.defaultBufferLimit
     ) -> OpenClawChatCompletionsAdapter {
         OpenClawURLProtocolStub.handler = { request in
             let response = HTTPURLResponse(
@@ -297,7 +344,8 @@ final class OpenClawAdapterTests: XCTestCase {
                 bearerToken: "secret",
                 conversationID: "compat-test"
             ),
-            session: session
+            session: session,
+            responseBufferLimit: responseBufferLimit
         )
     }
 
