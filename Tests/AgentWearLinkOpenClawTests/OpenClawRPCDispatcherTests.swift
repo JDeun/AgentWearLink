@@ -201,22 +201,162 @@ private actor DelayedRetirementSocket: OpenClawWebSocket {
 }
 
 final class OpenClawRPCDispatcherTests: XCTestCase {
-    private func readyState() async throws -> OpenClawGatewayState {
+    private func readyState(
+        role: String = "operator",
+        scopes: [String] = ["operator.read"],
+        methods: [String] = ["health"]
+    ) async throws -> OpenClawGatewayState {
+        let scopesData = try JSONSerialization.data(withJSONObject: scopes)
+        let methodsData = try JSONSerialization.data(withJSONObject: methods)
+        guard let scopesJSON = String(data: scopesData, encoding: .utf8),
+              let methodsJSON = String(data: methodsData, encoding: .utf8) else {
+            throw OpenClawFrameError.malformedFrame
+        }
+
         let state = OpenClawGatewayState()
         let hello = try JSONDecoder().decode(
             OpenClawHelloOK.self,
-            from: Data(#"""
+            from: Data("""
             {
               "type":"hello-ok","protocol":4,
               "server":{"version":"x","connId":"c"},
-              "features":{"methods":["health"],"events":["tick"]},
-              "auth":{"role":"operator","scopes":["operator.read"]},
+              "features":{"methods":\(methodsJSON),"events":["tick"]},
+              "auth":{"role":"\(role)","scopes":\(scopesJSON)},
               "policy":{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000}
             }
-            """#.utf8)
+            """.utf8)
         )
         try await state.acceptHello(hello)
         return state
+    }
+
+    func testNativeOperationsRejectReducedGrantBeforeSocketSend() async throws {
+        for method in ["agent", "agent.wait", "chat.abort"] {
+            let socket = DispatcherSocket()
+            let dispatcher = OpenClawRPCDispatcher(
+                socket: socket,
+                state: try await readyState(
+                    scopes: ["operator.read"],
+                    methods: []
+                )
+            )
+            await dispatcher.start()
+
+            do {
+                _ = try await dispatcher.request(
+                    method: method,
+                    params: EmptyParams()
+                )
+                XCTFail("Expected authorization rejection for \(method)")
+            } catch let error as OpenClawAuthorizationError {
+                XCTAssertEqual(error, .missingScope("operator.write"))
+            } catch {
+                XCTFail("Unexpected error for \(method): \(error)")
+            }
+
+            XCTAssertEqual(await socket.sentCount(), 0)
+            await dispatcher.stop()
+            await socket.close()
+        }
+    }
+
+    func testNativeOperationsRejectNonOperatorRoleBeforeSocketSend() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(
+                role: "node",
+                scopes: ["operator.write"],
+                methods: []
+            )
+        )
+        await dispatcher.start()
+
+        do {
+            _ = try await dispatcher.request(
+                method: "agent",
+                params: EmptyParams()
+            )
+            XCTFail("Expected role rejection")
+        } catch let error as OpenClawAuthorizationError {
+            XCTAssertEqual(
+                error,
+                .roleMismatch(expected: "operator", actual: "node")
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(await socket.sentCount(), 0)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testConservativeFeatureListDoesNotBlockAuthorizedNativeRoute() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(
+                scopes: ["operator.write"],
+                methods: []
+            )
+        )
+        await dispatcher.start()
+
+        let requestTask = Task {
+            try await dispatcher.request(
+                method: "agent",
+                params: EmptyParams()
+            )
+        }
+
+        let id = try await socket.lastRequestID()
+        await socket.push(
+            #"{"type":"res","id":"\#(id)","ok":true,"payload":{}}"#
+        )
+
+        _ = try await requestTask.value
+        XCTAssertEqual(await socket.sentCount(), 1)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testReconnectUsesFreshAuthorizationSnapshot() async throws {
+        let socket = DispatcherSocket()
+        let state = try await readyState(
+            scopes: ["operator.write"],
+            methods: []
+        )
+        let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
+        await dispatcher.start()
+
+        let reducedState = try await readyState(
+            scopes: ["operator.read"],
+            methods: []
+        )
+        guard let reducedHello = await reducedState.hello else {
+            XCTFail("Expected reduced hello")
+            return
+        }
+
+        await state.beginReconnect(attempt: 1)
+        try await state.acceptHello(reducedHello)
+
+        do {
+            _ = try await dispatcher.request(
+                method: "agent.wait",
+                params: EmptyParams()
+            )
+            XCTFail("Expected refreshed reduced grant rejection")
+        } catch let error as OpenClawAuthorizationError {
+            XCTAssertEqual(error, .missingScope("operator.write"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(await socket.sentCount(), 0)
+        await dispatcher.stop()
+        await socket.close()
     }
 
     func testCorrelatesRPCResponse() async throws {
