@@ -17,6 +17,16 @@ public struct OpenClawHelloOK: Decodable, Sendable, Equatable {
         public let deviceToken: String?
     }
 
+    public struct Snapshot: Decodable, Sendable, Equatable {
+        /// Presence and health are authoritative control-plane snapshots. AWL
+        /// preserves their current wire shape without projecting vendor-owned
+        /// subfields into Core.
+        public let presence: [JSONValue]
+        public let health: JSONValue
+        public let stateVersion: OpenClawStateVersion
+        public let uptimeMs: Int64
+    }
+
     public struct Policy: Decodable, Sendable, Equatable {
         public struct Attachments: Decodable, Sendable, Equatable {
             public let maxBytes: Int
@@ -33,6 +43,9 @@ public struct OpenClawHelloOK: Decodable, Sendable, Equatable {
     public let protocolVersion: Int
     public let server: Server
     public let features: Features
+    /// Current OpenClaw always sends this snapshot. It remains optional at the
+    /// decoder edge so older recorded fixtures can still be inspected safely.
+    public let snapshot: Snapshot?
     public let auth: Auth
     public let policy: Policy
 
@@ -41,6 +54,7 @@ public struct OpenClawHelloOK: Decodable, Sendable, Equatable {
         case protocolVersion = "protocol"
         case server
         case features
+        case snapshot
         case auth
         case policy
     }
