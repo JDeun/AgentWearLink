@@ -111,6 +111,8 @@ public actor OpenClawRPCDispatcher {
                 responses[id] = continuation
 
                 let task = Task {
+                    var sendCompleted = false
+
                     guard await self.markSendStarted(
                         id: id,
                         generation: requestGeneration
@@ -124,6 +126,7 @@ public actor OpenClawRPCDispatcher {
                             text: text,
                             expectedGeneration: transportGeneration
                         )
+                        sendCompleted = true
 
                         try await Task.sleep(for: requestTimeout)
                         await self.fail(
@@ -131,8 +134,16 @@ public actor OpenClawRPCDispatcher {
                             error: OpenClawRPCDispatcherError.deadlineExceeded
                         )
                     } catch is CancellationError {
-                        // Response completion, explicit cancellation, or stop()
-                        // owns terminal signaling for a cancelled request task.
+                        if !sendCompleted {
+                            // Cancellation observed before transport handoff is a
+                            // definite-not-sent result.
+                            await self.fail(
+                                id: id,
+                                error: CancellationError()
+                            )
+                        }
+                        // After a successful send, response completion, explicit
+                        // cancellation, or stop() owns terminal classification.
                     } catch {
                         await self.fail(id: id, error: error)
                     }
@@ -228,10 +239,11 @@ public actor OpenClawRPCDispatcher {
         let mayHaveBeenSent = sendStarted.remove(id) != nil
         requestTasks.removeValue(forKey: id)?.cancel()
         await registry.remove(id: id)
+        let terminalError: Error = mayHaveBeenSent
+            ? OpenClawTransportSendError.deliveryUncertain
+            : CancellationError()
         responses.removeValue(forKey: id)?.resume(
-            throwing: mayHaveBeenSent
-                ? OpenClawTransportSendError.deliveryUncertain
-                : CancellationError()
+            throwing: terminalError
         )
     }
 
@@ -247,10 +259,11 @@ public actor OpenClawRPCDispatcher {
         for item in pending {
             requestTasks.removeValue(forKey: item.id)?.cancel()
             let mayHaveBeenSent = sendStarted.remove(item.id) != nil
+            let terminalError: Error = mayHaveBeenSent
+                ? OpenClawTransportSendError.deliveryUncertain
+                : error
             responses.removeValue(forKey: item.id)?.resume(
-                throwing: mayHaveBeenSent
-                    ? OpenClawTransportSendError.deliveryUncertain
-                    : error
+                throwing: terminalError
             )
         }
     }
