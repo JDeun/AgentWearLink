@@ -38,7 +38,6 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     public func responses(
         for request: AgentRequest
     ) async -> AsyncThrowingStream<AgentResponse, Error> {
-        let events = await dispatcher.events()
         let client = runClient
         let sessionKey = sessionKey
 
@@ -59,22 +58,15 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                         for: request.interactionID
                     )
 
-                    let updates = await client.updates(
-                        from: events,
-                        runID: accepted.runId
-                    )
+                    let updates = await client.updates(runID: accepted.runId)
                     let streamTask = Task {
-                        do {
-                            for try await update in updates {
-                                if case let .assistant(_, payload) = update,
-                                   let delta = Self.extractTextDelta(payload) {
-                                    continuation.yield(
-                                        .textDelta(request.interactionID, delta)
-                                    )
-                                }
+                        for try await update in updates {
+                            if case let .assistant(_, payload) = update,
+                               let delta = Self.extractTextDelta(payload) {
+                                continuation.yield(
+                                    .textDelta(request.interactionID, delta)
+                                )
                             }
-                        } catch {
-                            // Terminal wait owns final success/failure.
                         }
                     }
 
@@ -82,7 +74,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                         client: client,
                         runID: accepted.runId
                     )
-                    streamTask.cancel()
+                    await client.finishUpdates(runID: accepted.runId)
+                    try await streamTask.value
 
                     switch terminal.status {
                     case "ok":
@@ -102,12 +95,14 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                         )
                     }
 
-                    await self.forget(request.interactionID)
+                    _ = await self.forget(request.interactionID)
                 } catch is CancellationError {
                     await self.cancel(interactionID: request.interactionID)
                     continuation.finish()
                 } catch {
-                    await self.forget(request.interactionID)
+                    if let context = await self.forget(request.interactionID) {
+                        await client.finishUpdates(runID: context.runID)
+                    }
                     continuation.finish(throwing: error)
                 }
             }
@@ -117,15 +112,18 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     }
 
     public func cancel(interactionID: InteractionID) async {
-        guard let context = runs.removeValue(forKey: interactionID),
-              let sessionKey = context.sessionKey else {
+        guard let context = runs.removeValue(forKey: interactionID) else {
             return
         }
-        try? await runClient.cancel(
-            runID: context.runID,
-            sessionKey: sessionKey,
-            agentID: context.agentID
-        )
+
+        if let sessionKey = context.sessionKey {
+            try? await runClient.cancel(
+                runID: context.runID,
+                sessionKey: sessionKey,
+                agentID: context.agentID
+            )
+        }
+        await runClient.finishUpdates(runID: context.runID)
     }
 
     private func remember(
@@ -135,8 +133,9 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         runs[interactionID] = context
     }
 
-    private func forget(_ interactionID: InteractionID) {
-        runs[interactionID] = nil
+    @discardableResult
+    private func forget(_ interactionID: InteractionID) -> RunContext? {
+        runs.removeValue(forKey: interactionID)
     }
 
     private func waitUntilTerminal(
