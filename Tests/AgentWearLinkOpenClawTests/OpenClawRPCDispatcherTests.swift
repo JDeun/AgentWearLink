@@ -893,6 +893,53 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
     }
 
 
+    func testDropsDuplicateAndStaleRunLocalAgentSequences() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+        let runEvents = await dispatcher.agentEvents(runID: "run-seq")
+        let genericEvents = await dispatcher.events()
+        await dispatcher.start()
+
+        let observeFourFrames = Task {
+            var iterator = genericEvents.makeAsyncIterator()
+            for _ in 0..<4 {
+                _ = try await iterator.next()
+            }
+        }
+
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"run-seq","stream":"assistant","data":{"delta":"one"},"seq":1},"seq":1}"#
+        )
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"run-seq","stream":"assistant","data":{"delta":"duplicate"},"seq":1},"seq":2}"#
+        )
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"run-seq","stream":"assistant","data":{"delta":"stale"},"seq":0},"seq":3}"#
+        )
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"run-seq","stream":"assistant","data":{"delta":"two"},"seq":2},"seq":4}"#
+        )
+
+        try await observeFourFrames.value
+        await dispatcher.finishAgentEvents(runID: "run-seq")
+
+        var iterator = runEvents.makeAsyncIterator()
+        let first = try await iterator.next()
+        let second = try await iterator.next()
+        let end = try await iterator.next()
+
+        XCTAssertEqual(first?.seq, 1)
+        XCTAssertEqual(second?.seq, 2)
+        XCTAssertNil(end)
+
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+
 }
 
 private struct EmptyParams: Encodable, Sendable {}
