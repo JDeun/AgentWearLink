@@ -43,7 +43,8 @@ final class OpenClawGatewayConnectionConcurrencyTests: XCTestCase {
         await socket.failReceiveDisconnected(id: 0)
         _ = try? await first.value
 
-        XCTAssertEqual(await socket.sentCount(), 0)
+        let sentCount = await socket.sentCount()
+        XCTAssertEqual(sentCount, 0)
     }
 
     func testDisconnectDuringChallengeInvalidatesLateChallengeBeforeSend() async throws {
@@ -77,9 +78,12 @@ final class OpenClawGatewayConnectionConcurrencyTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertEqual(await socket.sentCount(), 0)
-        XCTAssertEqual(await state.connectionState, .disconnected)
-        XCTAssertEqual(await socket.closeCount(), 1)
+        let sentCount = await socket.sentCount()
+        let connectionState = await state.connectionState
+        let closeCount = await socket.closeCount()
+        XCTAssertEqual(sentCount, 0)
+        XCTAssertEqual(connectionState, .disconnected)
+        XCTAssertEqual(closeCount, 1)
     }
 
     func testDisconnectDuringHelloPreventsLateCredentialPersistenceAndReady() async throws {
@@ -130,8 +134,10 @@ final class OpenClawGatewayConnectionConcurrencyTests: XCTestCase {
             role: "operator"
         )
         XCTAssertNil(persisted)
-        XCTAssertEqual(await state.connectionState, .disconnected)
-        XCTAssertNil(await state.hello)
+        let connectionState = await state.connectionState
+        let hello = await state.hello
+        XCTAssertEqual(connectionState, .disconnected)
+        XCTAssertNil(hello)
     }
 
     func testStaleFailureCannotCloseReplacementConnection() async throws {
@@ -151,7 +157,8 @@ final class OpenClawGatewayConnectionConcurrencyTests: XCTestCase {
         await socket.waitUntilReceiveCount(1)
 
         await connection.disconnect()
-        XCTAssertEqual(await socket.closeCount(), 1)
+        let closeCountAfterDisconnect = await socket.closeCount()
+        XCTAssertEqual(closeCountAfterDisconnect, 1)
 
         let replacement = Task {
             try await connection.connect(appVersion: "0.1.0")
@@ -163,7 +170,8 @@ final class OpenClawGatewayConnectionConcurrencyTests: XCTestCase {
 
         // The stale connect no longer owns the socket and must not close the
         // replacement transport during its catch cleanup.
-        XCTAssertEqual(await socket.closeCount(), 1)
+        let closeCountAfterStaleFailure = await socket.closeCount()
+        XCTAssertEqual(closeCountAfterStaleFailure, 1)
 
         await socket.resumeReceive(
             id: 1,
@@ -175,8 +183,10 @@ final class OpenClawGatewayConnectionConcurrencyTests: XCTestCase {
 
         let hello = try await replacement.value
         XCTAssertEqual(hello.server.connId, "replacement-conn")
-        XCTAssertEqual(await state.connectionState, .ready)
-        XCTAssertEqual(await socket.closeCount(), 1)
+        let readyState = await state.connectionState
+        let closeCountBeforeFinalDisconnect = await socket.closeCount()
+        XCTAssertEqual(readyState, .ready)
+        XCTAssertEqual(closeCountBeforeFinalDisconnect, 1)
 
         await connection.disconnect()
     }
@@ -210,7 +220,8 @@ final class OpenClawGatewayConnectionConcurrencyTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertEqual(await socket.sentCount(), 0)
+        let sentCount = await socket.sentCount()
+        XCTAssertEqual(sentCount, 0)
     }
 }
 
