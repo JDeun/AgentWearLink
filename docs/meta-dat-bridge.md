@@ -109,3 +109,12 @@ compatibility, but a production UI must supply it to claim lifecycle coverage.
 
 Mock and CI tests cannot prove physical lock-screen or iOS suspension timing;
 those remain on #96/#116 and #1/#59.
+
+## Rapid background/foreground transition guarantee
+
+The app phase stream is bounded and preserves the first pending background
+edge rather than always replacing it with the most recent foreground value.
+This is deliberate: a brief lock/background transition must retire a media
+generation even if the UI is foreground again before the adapter task gets
+scheduled. `currentPhase` remains the authoritative latest host phase.
+Foreground never replays work or automatically resurrects retired media.

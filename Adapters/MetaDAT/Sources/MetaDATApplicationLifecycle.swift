@@ -30,7 +30,12 @@ final class MetaDATApplicationPhaseSource: @unchecked Sendable {
     }
 
     func stream() -> AsyncStream<MetaDATApplicationPhase> {
-        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        // A pending background event must not be replaced by a rapid
+        // background -> foreground transition before the consumer runs.
+        // Retain the initial snapshot and the first transition; the adapter
+        // retires its media generation on the first background observation.
+        // Consumers requiring the latest UI state must use currentPhase.
+        AsyncStream(bufferingPolicy: .bufferingOldest(2)) { continuation in
             lock.lock()
             nextGeneration &+= 1
             let generation = nextGeneration
