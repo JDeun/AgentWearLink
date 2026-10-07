@@ -2,6 +2,21 @@ import Foundation
 import XCTest
 @testable import AgentWearLinkMetaDATIntegration
 
+private final class CancellationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func increment() {
+        lock.withLock {
+            count += 1
+        }
+    }
+
+    var value: Int {
+        lock.withLock { count }
+    }
+}
+
 private final class CancellationInsensitivePhotoTransfer: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Data, Error>?
@@ -115,15 +130,12 @@ final class MetaDATPhotoRaceTests: XCTestCase {
 
     func testSuccessfulTransferDoesNotCancelSource() async throws {
         let data = Data([1, 2, 3])
-        let sourceCancellation = NSLock()
-        var cancellationCount = 0
+        let cancellationCounter = CancellationCounter()
 
         let result = try await MetaDATPhotoRace.run(
             timeout: .seconds(1),
             cancelTransfer: {
-                sourceCancellation.lock()
-                cancellationCount += 1
-                sourceCancellation.unlock()
+                cancellationCounter.increment()
             },
             transfer: {
                 data
@@ -131,9 +143,6 @@ final class MetaDATPhotoRaceTests: XCTestCase {
         )
 
         XCTAssertEqual(result, data)
-        sourceCancellation.lock()
-        let count = cancellationCount
-        sourceCancellation.unlock()
-        XCTAssertEqual(count, 0)
+        XCTAssertEqual(cancellationCounter.value, 0)
     }
 }
