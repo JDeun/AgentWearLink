@@ -69,6 +69,20 @@ final class OpenClawEndpointTests: XCTestCase {
         }
     }
 
+    func testLoopbackRejectsHostnameThatOnlyStartsWith127() {
+        XCTAssertThrowsError(
+            try OpenClawEndpoint(
+                gatewayURL: URL(string: "ws://127.attacker.example:18789")!,
+                exposure: .loopback
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? OpenClawEndpointError,
+                .exposureHostMismatch
+            )
+        }
+    }
+
     func testDirectTailnetAcceptsCGNATAndTailscaleIPv6() throws {
         for rawURL in [
             "ws://100.64.0.10:18789",
