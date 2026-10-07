@@ -9,10 +9,29 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var sentFrames: [String] = []
     private var receiveWaiter: CheckedContinuation<String, Error>?
     private var successfulConnectCalls: Set<Int> = [1]
+    private var blockedConnectCall: Int?
+    private var blockedConnectStarted = false
+    private var blockedConnectRelease: CheckedContinuation<Void, Never>?
+    private var blockedConnectStartedWaiter: CheckedContinuation<Void, Never>?
+    private var closeCalls = 0
+    private var closeWaitTarget: Int?
+    private var closeWaiter: CheckedContinuation<Void, Never>?
 
     func connect() async {
         connectCalls += 1
         handshakeStep = 0
+
+        guard blockedConnectCall == connectCalls else { return }
+        blockedConnectStarted = true
+        blockedConnectStartedWaiter?.resume()
+        blockedConnectStartedWaiter = nil
+
+        await withCheckedContinuation { continuation in
+            blockedConnectRelease = continuation
+        }
+
+        blockedConnectCall = nil
+        blockedConnectStarted = false
     }
 
     func send(text: String) async throws {
@@ -59,18 +78,163 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     }
 
     func close() async {
+        closeCalls += 1
+        if let target = closeWaitTarget, closeCalls >= target {
+            closeWaiter?.resume()
+            closeWaiter = nil
+            closeWaitTarget = nil
+        }
+
         receiveWaiter?.resume(throwing: AWLOpenClawError.disconnected)
         receiveWaiter = nil
     }
 
     func connectionCount() -> Int { connectCalls }
+    func closeCount() -> Int { closeCalls }
 
     func makeNextHandshakeSucceed() {
         successfulConnectCalls.insert(connectCalls + 1)
     }
+
+    func blockNextConnect() {
+        blockedConnectCall = connectCalls + 1
+        blockedConnectStarted = false
+    }
+
+    func waitForBlockedConnectStart() async {
+        if blockedConnectStarted { return }
+        await withCheckedContinuation { continuation in
+            blockedConnectStartedWaiter = continuation
+        }
+    }
+
+    func releaseBlockedConnect() {
+        blockedConnectRelease?.resume()
+        blockedConnectRelease = nil
+    }
+
+    func waitForCloseCount(atLeast target: Int) async {
+        if closeCalls >= target { return }
+        closeWaitTarget = target
+        await withCheckedContinuation { continuation in
+            closeWaiter = continuation
+        }
+    }
 }
 
 final class OpenClawRecoveryMatrixTests: XCTestCase {
+
+    private func makeSupervisor(
+        reconnectPolicy: GatewayReconnectPolicy = .init(
+            initialDelayMilliseconds: 1,
+            maximumDelayMilliseconds: 1,
+            maximumAttempts: 2
+        )
+    ) -> (
+        socket: SupervisorRetrySocket,
+        state: OpenClawGatewayState,
+        dispatcher: OpenClawRPCDispatcher,
+        supervisor: OpenClawGatewaySupervisor
+    ) {
+        let socket = SupervisorRetrySocket()
+        let state = OpenClawGatewayState()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore()
+            ),
+            credentialStore: InMemoryOpenClawDeviceCredentialStore()
+        )
+        let connection = OpenClawGatewayConnection(
+            socket: socket,
+            assembler: assembler,
+            state: state
+        )
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: state
+        )
+        let supervisor = OpenClawGatewaySupervisor(
+            connection: connection,
+            dispatcher: dispatcher,
+            state: state,
+            socket: socket,
+            appVersion: "0.1.0",
+            reconnectPolicy: reconnectPolicy
+        )
+        return (socket, state, dispatcher, supervisor)
+    }
+
+    func testConcurrentReconnectTriggersShareOneOwnedTransition() async throws {
+        let fixture = makeSupervisor()
+        try await fixture.supervisor.start()
+
+        await fixture.socket.makeNextHandshakeSucceed()
+        await fixture.socket.blockNextConnect()
+
+        let first = Task {
+            await fixture.supervisor.reconnect(
+                closeCode: 4_000,
+                closeReason: "first trigger"
+            )
+        }
+
+        await fixture.socket.waitForBlockedConnectStart()
+
+        let second = Task {
+            await fixture.supervisor.reconnect(
+                closeCode: 4_001,
+                closeReason: "duplicate trigger"
+            )
+        }
+
+        // start() racing an active reconnect must remain idempotent and must not
+        // create another handshake.
+        try await fixture.supervisor.start()
+        XCTAssertEqual(await fixture.socket.connectionCount(), 2)
+
+        await fixture.socket.releaseBlockedConnect()
+        await first.value
+        await second.value
+
+        XCTAssertEqual(await fixture.socket.connectionCount(), 2)
+        XCTAssertEqual(await fixture.state.connectionState, .ready)
+
+        await fixture.supervisor.stop()
+    }
+
+    func testStopInvalidatesLateReconnectSuccessBeforeDispatcherCanResurrect() async throws {
+        let fixture = makeSupervisor()
+        try await fixture.supervisor.start()
+
+        await fixture.socket.makeNextHandshakeSucceed()
+        await fixture.socket.blockNextConnect()
+
+        let reconnect = Task {
+            await fixture.supervisor.reconnect(
+                closeCode: 4_000,
+                closeReason: "blocked reconnect"
+            )
+        }
+
+        await fixture.socket.waitForBlockedConnectStart()
+        let closeCountBeforeStop = await fixture.socket.closeCount()
+
+        let stop = Task {
+            await fixture.supervisor.stop()
+        }
+
+        // Observe stop() retiring the transport before releasing the delayed
+        // reconnect handshake, so the late success is deterministic.
+        await fixture.socket.waitForCloseCount(atLeast: closeCountBeforeStop + 1)
+        await fixture.socket.releaseBlockedConnect()
+
+        await stop.value
+        await reconnect.value
+
+        XCTAssertEqual(await fixture.state.connectionState, .disconnected)
+        XCTAssertFalse(await fixture.dispatcher.isRunning)
+        XCTAssertEqual(await fixture.socket.connectionCount(), 2)
+    }
 
     func testReconnectBudgetExhaustionIsTerminalUntilExplicitRestart() async throws {
         let socket = SupervisorRetrySocket()
