@@ -110,6 +110,30 @@ final class OpenClawAdapterTests: XCTestCase {
         }
     }
 
+    func testCompatibilityBearerTransportRejectsHostnameThatOnlyStartsWith127() {
+        let configuration = OpenClawConfiguration(
+            baseURL: URL(string: "http://127.attacker.example:18789")!,
+            bearerToken: "secret",
+            conversationID: "deceptive-loopback"
+        )
+        XCTAssertThrowsError(
+            try OpenClawRequestFactory.makeRequest(
+                configuration: configuration,
+                request: AgentRequest(
+                    interactionID: InteractionID(),
+                    text: "hello"
+                )
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? AWLError,
+                .transport(
+                    "OpenClaw bearer credentials require HTTPS outside loopback"
+                )
+            )
+        }
+    }
+
     func testCompatibilityEndpointRejectsNonHTTPTransport() {
         let configuration = OpenClawConfiguration(
             baseURL: URL(string: "ftp://gateway.example.test")!,
