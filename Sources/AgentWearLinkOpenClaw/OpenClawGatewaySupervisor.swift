@@ -1,3 +1,4 @@
+import AgentWearLinkCore
 import Foundation
 
 public actor OpenClawGatewaySupervisor {
@@ -11,6 +12,7 @@ public actor OpenClawGatewaySupervisor {
     private let clientIdentity: OpenClawGatewayClientIdentity
     private let locale: String
     private let reconnectPolicy: GatewayReconnectPolicy
+    private let diagnostics: AWLDiagnosticRecorder?
 
     private var watchdogTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
@@ -30,7 +32,8 @@ public actor OpenClawGatewaySupervisor {
         credentials: OpenClawConnectCredentials = .init(),
         clientIdentity: OpenClawGatewayClientIdentity = .backend,
         locale: String = "en-US",
-        reconnectPolicy: GatewayReconnectPolicy = .init()
+        reconnectPolicy: GatewayReconnectPolicy = .init(),
+        diagnostics: AWLDiagnosticRecorder? = nil
     ) {
         self.connection = connection
         self.dispatcher = dispatcher
@@ -42,6 +45,7 @@ public actor OpenClawGatewaySupervisor {
         self.clientIdentity = clientIdentity
         self.locale = locale
         self.reconnectPolicy = reconnectPolicy
+        self.diagnostics = diagnostics
     }
 
     public func start() async throws {
@@ -63,9 +67,11 @@ public actor OpenClawGatewaySupervisor {
             )
             tickIntervalMilliseconds = max(1_000, hello.policy.tickIntervalMs)
             await dispatcher.start()
+            diagnostics?.record(.init(kind: .transportConnected, generation: transportGeneration))
             startWatchdog()
         } catch {
             stopped = true
+            diagnostics?.record(.init(kind: .transportFailed, generation: transportGeneration))
             throw error
         }
     }
@@ -75,6 +81,7 @@ public actor OpenClawGatewaySupervisor {
         stopping = true
         stopped = true
         transportGeneration &+= 1
+        diagnostics?.record(.init(kind: .transportStopped, generation: transportGeneration))
         watchdogTask?.cancel()
         watchdogTask = nil
         await dispatcher.setReceiveFailureHandler(nil)
@@ -240,6 +247,7 @@ public actor OpenClawGatewaySupervisor {
         // intentionally not retained or replayed by the supervisor: its outcome is
         // uncertain once the old transport is retired.
         transportGeneration &+= 1
+        diagnostics?.record(.init(kind: .transportReconnecting, generation: transportGeneration))
         await socket.close(code: closeCode, reason: closeReason)
         guard reconnectIsActive(token) else { return }
 
@@ -261,6 +269,7 @@ public actor OpenClawGatewaySupervisor {
                 return
             }
 
+            diagnostics?.record(.init(kind: .transportRetry, generation: transportGeneration, attempt: attempt))
             await state.beginReconnect(attempt: attempt)
             guard reconnectIsActive(token) else { return }
 
@@ -302,6 +311,7 @@ public actor OpenClawGatewaySupervisor {
                     await connection.disconnect()
                     return
                 }
+                diagnostics?.record(.init(kind: .transportRecovered, generation: transportGeneration, attempt: attempt))
                 return
             } catch let error as OpenClawHandshakeError {
                 guard reconnectIsActive(token) else { return }
