@@ -194,7 +194,7 @@ public struct OpenClawConnectAssembler: Sendable {
 
         _ = try await credentialStore.compareAndRemove(
             deviceID: stored.deviceID,
-            role: stored.role,
+            role: stored.storageRole,
             expected: stored
         )
     }
@@ -219,6 +219,7 @@ public struct OpenClawConnectAssembler: Sendable {
         let credential = OpenClawDeviceCredential(
             deviceID: deviceID,
             role: hello.auth.role,
+            requestedRole: assembled.params.role,
             scopes: scopes,
             token: token
         )
