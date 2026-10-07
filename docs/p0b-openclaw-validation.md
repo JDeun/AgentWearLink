@@ -90,3 +90,13 @@ Repeat a harmless interaction around the intended iPhone network transition (for
 - no Telegram dependency exists
 - uncertain requests are not silently replayed
 - sanitized evidence and exact versions/topology are attached to #56
+
+## CLI output privacy boundary
+
+The read-only health probe emits only a fixed `{"ok":true}` success marker;
+upstream health JSON is deliberately not echoed to stdout because its fields
+may expand to include local configuration. Probe error messages do not print
+arbitrary upstream error/reason strings. The mutating chat probe intentionally
+prints generated model text when explicitly invoked; treat its stdout as private
+session content and avoid storing it in CI logs or shared artifacts. The
+development-Gateway smoke harness redirects chat output to `/dev/null`.
