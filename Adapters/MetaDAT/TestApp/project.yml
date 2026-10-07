@@ -26,6 +26,8 @@ targets:
         product: AgentWearLinkAppleOutput
       - package: MetaIntegration
         product: AgentWearLinkMetaDATIntegration
+      - package: MetaIntegration
+        product: AgentWearLinkMetaDATTestSupport
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.MetaDATTestHost
