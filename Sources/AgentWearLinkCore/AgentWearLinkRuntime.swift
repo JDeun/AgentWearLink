@@ -36,6 +36,20 @@ public actor AgentWearLinkRuntime {
         self.coordinator = InteractionCoordinator(agent: agent, output: output)
     }
 
+    public init(
+        device: any DeviceAdapter,
+        agent: any AgentAdapter,
+        outputSink: any InteractionOutputSink
+    ) {
+        let output: @Sendable (InteractionEvent) async -> Void = { event in
+            await outputSink.consume(event)
+        }
+        self.device = device
+        self.agent = agent
+        self.output = output
+        self.coordinator = InteractionCoordinator(agent: agent, output: output)
+    }
+
     public func start() async throws {
         while true {
             try Task.checkCancellation()
