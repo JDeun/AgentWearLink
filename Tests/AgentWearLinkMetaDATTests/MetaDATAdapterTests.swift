@@ -17,6 +17,14 @@ final class MetaDATAdapterTests: XCTestCase {
         XCTAssertFalse(adapter.capabilities.contains(.speakerOutput))
     }
 
+    func testSpeakerCapabilityIsNotAdvertisedWithoutDeviceOutputCommandSurface() async {
+        let session = StubSession(capabilities: [.speaker])
+        let adapter = MetaDATAdapter(session: session)
+
+        XCTAssertFalse(adapter.capabilities.contains(.speakerOutput))
+        XCTAssertTrue(adapter.capabilities.isEmpty)
+    }
+
     func testCapturesBoundedSnapshotThroughOptionalSession() async throws {
         let session = SnapshotStubSession(
             capabilities: [.cameraSnapshot],
