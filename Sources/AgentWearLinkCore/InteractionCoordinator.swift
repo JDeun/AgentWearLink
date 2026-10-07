@@ -147,7 +147,12 @@ public actor InteractionCoordinator {
                     guard !Task.isCancelled else { break responseLoop }
                     guard response.interactionID == id else {
                         observedTerminal = true
-                        await agent.cancel(interactionID: id)
+                        let cancellationOutcome = await agent.cancellationOutcome(
+                            interactionID: id
+                        )
+                        await self.emitCancellationDiagnosticIfNeeded(
+                            cancellationOutcome
+                        )
                         _ = await self.emitIfCurrent(
                             .failed(id, .agent("response interaction ID mismatch")),
                             id: id,
@@ -262,7 +267,19 @@ public actor InteractionCoordinator {
     public func cancel(_ id: InteractionID) async {
         guard let entry = tasks.removeValue(forKey: id) else { return }
         entry.task.cancel()
-        await agent.cancel(interactionID: id)
+        let outcome = await agent.cancellationOutcome(interactionID: id)
+        await emitCancellationDiagnosticIfNeeded(outcome)
+    }
+
+    private func emitCancellationDiagnosticIfNeeded(
+        _ outcome: AgentCancellationOutcome
+    ) async {
+        guard case let .uncertain(error) = outcome else { return }
+
+        // Nil-ID non-device failures are diagnostics, not runtime-terminal
+        // device/session failures. This preserves the local lifecycle event
+        // while making uncertain remote execution observable.
+        await outputQueue.emit(.failed(nil, error))
     }
 
     public func cancelAll() async {
