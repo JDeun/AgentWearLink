@@ -115,6 +115,118 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
         XCTAssertEqual(timeouts, [123, 123, 123])
     }
 
+    func testBareWaitTimeoutRemainsNonTerminal() async throws {
+        let script = TerminalWaitScript(
+            results: [
+                try terminalWaitResult("timeout"),
+                try terminalWaitResult("ok")
+            ]
+        )
+
+        let result = try await OpenClawNativeAgentAdapter.pollUntilTerminal(
+            maximumPolls: 3,
+            pollTimeoutMilliseconds: 30_000
+        ) { timeoutMilliseconds in
+            try await script.next(timeoutMilliseconds: timeoutMilliseconds)
+        }
+
+        XCTAssertEqual(result.status, "ok")
+        let callCount = await script.callCount()
+        XCTAssertEqual(callCount, 2)
+    }
+
+    func testGatewayDrainingTimeoutRemainsNonTerminal() async throws {
+        let draining = try JSONDecoder().decode(
+            OpenClawAgentWaitResult.self,
+            from: Data(#"""
+            {
+              "status":"timeout",
+              "timeoutPhase":"gateway_draining"
+            }
+            """#.utf8)
+        )
+        let script = TerminalWaitScript(
+            results: [draining, try terminalWaitResult("ok")]
+        )
+
+        let result = try await OpenClawNativeAgentAdapter.pollUntilTerminal(
+            maximumPolls: 3,
+            pollTimeoutMilliseconds: 30_000
+        ) { timeoutMilliseconds in
+            try await script.next(timeoutMilliseconds: timeoutMilliseconds)
+        }
+
+        XCTAssertEqual(result.status, "ok")
+        let callCount = await script.callCount()
+        XCTAssertEqual(callCount, 2)
+    }
+
+    func testTerminalRunTimeoutStopsPollingAndPreservesMetadata() async throws {
+        let terminalTimeout = try JSONDecoder().decode(
+            OpenClawAgentWaitResult.self,
+            from: Data(#"""
+            {
+              "status":"timeout",
+              "startedAt":100,
+              "endedAt":200,
+              "livenessState":"terminal",
+              "timeoutPhase":"runtime",
+              "providerStarted":true,
+              "error":"agent run timed out"
+            }
+            """#.utf8)
+        )
+        let script = TerminalWaitScript(
+            results: [terminalTimeout, try terminalWaitResult("ok")]
+        )
+
+        let result = try await OpenClawNativeAgentAdapter.pollUntilTerminal(
+            maximumPolls: 3,
+            pollTimeoutMilliseconds: 30_000
+        ) { timeoutMilliseconds in
+            try await script.next(timeoutMilliseconds: timeoutMilliseconds)
+        }
+
+        XCTAssertEqual(result.status, "timeout")
+        let callCount = await script.callCount()
+        XCTAssertEqual(callCount, 1)
+        XCTAssertEqual(
+            OpenClawNativeAgentAdapter.terminalRunTimeoutError(result),
+            .terminalRunTimedOut(
+                timeoutPhase: "runtime",
+                providerStarted: true,
+                gatewayMessage: "agent run timed out"
+            )
+        )
+    }
+
+    func testPendingErrorTimeoutStopsPollingWithoutEndedAt() async throws {
+        let terminalTimeout = try JSONDecoder().decode(
+            OpenClawAgentWaitResult.self,
+            from: Data(#"""
+            {
+              "status":"timeout",
+              "pendingError":true,
+              "error":"provider failed before wait completed"
+            }
+            """#.utf8)
+        )
+        let script = TerminalWaitScript(
+            results: [terminalTimeout, try terminalWaitResult("ok")]
+        )
+
+        let result = try await OpenClawNativeAgentAdapter.pollUntilTerminal(
+            maximumPolls: 3,
+            pollTimeoutMilliseconds: 30_000
+        ) { timeoutMilliseconds in
+            try await script.next(timeoutMilliseconds: timeoutMilliseconds)
+        }
+
+        XCTAssertEqual(result.status, "timeout")
+        let callCount = await script.callCount()
+        XCTAssertEqual(callCount, 1)
+    }
+
     func testTerminalPollingFailsAtConfiguredNonTerminalLimit() async throws {
         let script = TerminalWaitScript(
             results: [
