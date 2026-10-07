@@ -17,6 +17,8 @@ The primary adapter is `OpenClawNativeAgentAdapter`. It uses the native Gateway 
 
 A reconnect restores transport readiness. It does **not** silently replay an in-flight request whose delivery or completion is uncertain.
 
+The native dispatcher treats negotiated `policy.maxBufferedBytes` as the byte budget for its own pre-subscription agent-event backlog, measured using received raw frame sizes. This is separate from the local per-frame inbound limit and the count-bounded active subscriber queues. Exceeding the negotiated backlog budget retires the current transport generation; a reconnect reads the replacement budget from the new hello snapshot.
+
 ### Gateway client identity
 
 AWL uses OpenClaw's canonical protocol-v4 client registry instead of inventing a private client ID or treating the operator role as a client mode. The production native adapter identifies as `gateway-client` / `backend`; the read-only validation probe uses `openclaw-probe` / `probe`. AWL deliberately does not claim the official `openclaw-ios` application identity.
