@@ -87,21 +87,25 @@ public struct OpenClawConnectParams: Encodable, Sendable, CustomStringConvertibl
 
     public struct Auth: Encodable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
         public let token: String?
+        public let deviceToken: String?
         public let password: String?
         public let bootstrapToken: String?
 
         public init(
             token: String? = nil,
+            deviceToken: String? = nil,
             password: String? = nil,
             bootstrapToken: String? = nil
         ) {
             self.token = token
+            self.deviceToken = deviceToken
             self.password = password
             self.bootstrapToken = bootstrapToken
         }
 
         public var description: String {
             "Auth(token: \(token == nil ? "nil" : "<redacted>"), " +
+            "deviceToken: \(deviceToken == nil ? "nil" : "<redacted>"), " +
             "password: \(password == nil ? "nil" : "<redacted>"), " +
             "bootstrapToken: \(bootstrapToken == nil ? "nil" : "<redacted>"))"
         }
