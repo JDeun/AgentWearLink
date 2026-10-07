@@ -56,6 +56,14 @@ public struct OpenClawEndpoint: Sendable, Equatable {
         .init(endpoint: self)
     }
 
+    /// Bootstrap handoff bearer tokens may only be persisted on transport
+    /// profiles OpenClaw treats as locally/trustfully protected.
+    public var allowsBootstrapHandoffPersistence: Bool {
+        if exposure == .loopback { return true }
+        let scheme = gatewayURL.scheme?.lowercased()
+        return scheme == "wss" || scheme == "https"
+    }
+
     public static func tailnetServe(hostname: String) throws -> Self {
         guard !hostname.isEmpty, !hostname.contains("/") else {
             throw OpenClawEndpointError.invalidHostname
