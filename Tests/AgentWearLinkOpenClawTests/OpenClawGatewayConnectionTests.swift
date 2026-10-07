@@ -206,8 +206,10 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertTrue(await socket.closed())
-        XCTAssertEqual(await state.connectionState, .disconnected)
+        let closed = await socket.closed()
+        let connectionState = await state.connectionState
+        XCTAssertTrue(closed)
+        XCTAssertEqual(connectionState, .disconnected)
     }
 
     func testHelloWaitTimesOutAfterConnectRequestAndClosesSocket() async {
@@ -229,9 +231,12 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertEqual(await socket.sentCount(), 1)
-        XCTAssertTrue(await socket.closed())
-        XCTAssertEqual(await state.connectionState, .disconnected)
+        let sentCount = await socket.sentCount()
+        let closed = await socket.closed()
+        let connectionState = await state.connectionState
+        XCTAssertEqual(sentCount, 1)
+        XCTAssertTrue(closed)
+        XCTAssertEqual(connectionState, .disconnected)
     }
 
     func testCancellationDuringHandshakeClosesSocketAndCannotPublishReady() async {
