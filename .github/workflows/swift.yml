@@ -19,10 +19,26 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
+        id: core-filter
+        with:
+          filters: |
+            swift:
+              - 'Sources/**'
+              - 'Tests/**'
+              - 'Adapters/**'
+              - 'Package.swift'
+              - 'Package.resolved'
+              - '.github/workflows/swift.yml'
       - name: Show Swift version
+        if: steps.core-filter.outputs.swift == 'true'
         run: swift --version
       - name: Test core package
+        if: steps.core-filter.outputs.swift == 'true'
         run: swift test
+      - name: Fast-pass non-code changes
+        if: steps.core-filter.outputs.swift != 'true'
+        run: echo "No Swift/package/workflow changes; required gate passes without compiling."
 
   meta-dat-changes:
     runs-on: ubuntu-latest
