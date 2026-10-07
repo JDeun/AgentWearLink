@@ -110,12 +110,17 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                         }
                     }
 
-                    let terminal = try await self.waitUntilTerminal(
-                        client: client,
-                        runID: accepted.runId
-                    )
-                    await client.finishUpdates(runID: accepted.runId)
-                    try await streamTask.value
+                    let terminal = try await Self.withOwnedUpdateTask(
+                        streamTask
+                    ) {
+                        let terminal = try await self.waitUntilTerminal(
+                            client: client,
+                            runID: accepted.runId
+                        )
+                        await client.finishUpdates(runID: accepted.runId)
+                        try await streamTask.value
+                        return terminal
+                    }
 
                     switch terminal.status {
                     case "ok":
@@ -153,6 +158,14 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
 
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    static func withOwnedUpdateTask<T>(
+        _ updateTask: Task<Void, Error>,
+        operation: () async throws -> T
+    ) async rethrows -> T {
+        defer { updateTask.cancel() }
+        return try await operation()
     }
 
     private nonisolated static func yieldResponse(
