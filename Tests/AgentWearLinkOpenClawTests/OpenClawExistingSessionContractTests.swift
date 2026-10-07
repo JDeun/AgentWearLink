@@ -1,7 +1,8 @@
 import XCTest
 @testable import AgentWearLinkOpenClaw
 
-/// Wire-format fixtures only; live adapter behavior is covered separately.\nfinal class OpenClawExistingSessionWireContractTests: XCTestCase {
+/// Wire-format fixtures only; live adapter behavior is covered separately.
+final class OpenClawExistingSessionWireContractTests: XCTestCase {
     func testAcceptedRunPreservesExistingSessionIdentity() throws {
         let data = Data(#"""
         {
