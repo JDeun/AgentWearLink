@@ -24,3 +24,18 @@ let diagnostics = AWLDiagnosticRecorder(capacity: 256)
 // Pass diagnostics to AgentWearLinkRuntime and OpenClawGatewaySupervisor.
 // Explicitly inspect diagnostics.drain() from a development-only host UI.
 ```
+
+## Meta DAT lifecycle and media correlation
+
+The vendor-linked `MetaDATDeviceAdapter` accepts the same optional
+`AWLDiagnosticRecorder`. Its bounded, typed events cover session startup,
+readiness, retired generations, background invalidation, explicit snapshot
+request/success/failure and accepted final Speech transcripts. All events contain
+only a local interaction identifier (where applicable), a generation and the
+closed event kind. No transcript, capture bytes, error text, device identity or
+credential is passed to diagnostics.
+
+This provides code-side correlation only. A production host must explicitly
+inject one recorder into its runtime and device/agent adapters and opt in to a
+sanitized export before claiming deployment observability. Hardware-verified
+privacy and log/cache inspection remain required for #330/#59.

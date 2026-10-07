@@ -149,6 +149,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private let wearables: any WearablesInterface
     private var deviceSession: DeviceSession?
     private let applicationLifecycle: MetaDATApplicationLifecycle?
+    private let diagnostics: AWLDiagnosticRecorder?
     private var applicationPhaseTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
     private var errorTask: Task<Void, Never>?
@@ -175,13 +176,15 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         eventBufferLimit: Int = MetaDATDeviceAdapter.defaultEventBufferLimit,
         snapshotTimeout: Duration = .seconds(5),
         maximumSnapshotBytes: Int = ImageAttachment.defaultMaximumBytes,
-        applicationLifecycle: MetaDATApplicationLifecycle? = nil
+        applicationLifecycle: MetaDATApplicationLifecycle? = nil,
+        diagnostics: AWLDiagnosticRecorder? = nil
     ) {
         precondition(connectTimeout > .zero)
         precondition(eventBufferLimit > 0)
         self.wearables = wearables
         self.connectTimeout = connectTimeout
         self.applicationLifecycle = applicationLifecycle
+        self.diagnostics = diagnostics
         self.eventSource = MetaDATDeviceEventSource(bufferLimit: eventBufferLimit)
         self.cameraSnapshotController = MetaDATCameraSnapshotController(
             timeout: snapshotTimeout,
@@ -213,6 +216,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         stopping = false
         connecting = true
         let generation = generationFence.begin()
+        diagnostics?.record(.init(kind: .metaConnectStarted, generation: generation))
         defer {
             if generationFence.owns(generation) {
                 connecting = false
@@ -347,6 +351,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             guard generationFence.owns(generation), !stopping else {
                 throw AWLError.device("Meta DAT session setup was superseded")
             }
+            diagnostics?.record(.init(kind: .metaSessionReady, generation: generation))
 
             stateTask = Task { [weak self] in
                 for await state in stateStream {
@@ -395,7 +400,23 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             throw CancellationError()
         }
 
-        let image = try await cameraSnapshotController.capture(from: session)
+        diagnostics?.record(.init(
+            kind: .metaSnapshotRequested,
+            interactionID: interactionID,
+            generation: generation
+        ))
+
+        let image: ImageAttachment
+        do {
+            image = try await cameraSnapshotController.capture(from: session)
+        } catch {
+            diagnostics?.record(.init(
+                kind: .metaSnapshotFailed,
+                interactionID: interactionID,
+                generation: generation
+            ))
+            throw error
+        }
 
         guard generationFence.owns(generation),
               !stopping,
@@ -403,7 +424,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             throw CancellationError()
         }
 
-        _ = interactionID
+        diagnostics?.record(.init(
+            kind: .metaSnapshotCompleted,
+            interactionID: interactionID,
+            generation: generation
+        ))
         return image
     }
 
@@ -476,6 +501,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         ) else {
             return
         }
+        diagnostics?.record(.init(
+            kind: .metaTranscriptAccepted,
+            interactionID: interactionID,
+            generation: generation
+        ))
         yieldEvent(event)
     }
 
@@ -638,6 +668,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             speechReady: false,
             cameraReady: false
         )
+        diagnostics?.record(.init(kind: .metaBackgroundRetired, generation: generation))
         yieldEvent(.failed(nil, .device("Meta DAT media retired on app background")))
         tearDownSession(expectedGeneration: generation)
     }
@@ -672,9 +703,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     }
 
     private func tearDownSession(expectedGeneration: UInt64? = nil) {
+        let retiredGeneration = generationFence.current
         guard generationFence.retire(ifOwned: expectedGeneration) else {
             return
         }
+        diagnostics?.record(.init(kind: .metaMediaRetired, generation: retiredGeneration))
 
         liveCapabilities.update(
             sessionReady: false,
