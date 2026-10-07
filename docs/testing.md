@@ -41,7 +41,7 @@ xcodebuild \
 
 # For a Meta behavioral change CI reuses one test build:
 xcodebuild \
-  -scheme AgentWearLinkMetaDATIntegration \
+  -scheme AgentWearLinkMetaDATIntegration-Package \
   -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
   -skipPackagePluginValidation \
   -parallel-testing-enabled NO \
@@ -50,7 +50,7 @@ xcodebuild \
 
 # After booting that simulator:
 xcodebuild \
-  -scheme AgentWearLinkMetaDATIntegration \
+  -scheme AgentWearLinkMetaDATIntegration-Package \
   -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
   -skipPackagePluginValidation \
   -parallel-testing-enabled NO \
