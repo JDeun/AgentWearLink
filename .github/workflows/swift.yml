@@ -101,7 +101,6 @@ jobs:
 
           echo "Meta DAT Swift toolchain contract satisfied: Swift $swift_version"
       - name: Select available iPhone simulator
-        if: needs.changes.outputs.meta_ui == 'true'
         run: |
           SIMULATOR_UDID="$(xcrun simctl list devices available -j | /usr/bin/python3 -c 'import json,sys; payload=json.load(sys.stdin); print(next(device["udid"] for devices in payload.get("devices", {}).values() for device in devices if device.get("isAvailable", True) and device.get("name", "").startswith("iPhone")))')"
           echo "Using iPhone simulator: ${SIMULATOR_UDID}"
@@ -122,6 +121,33 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
+      - name: Boot selected iPhone Simulator
+        timeout-minutes: 2
+        run: |
+          xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
+          for attempt in {1..60}; do
+            state="$(xcrun simctl list devices | grep "${AWL_IOS_SIMULATOR_UDID}" || true)"
+            if echo "$state" | grep -q "(Booted)"; then
+              echo "Simulator reports Booted after ${attempt}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Simulator did not reach Booted state within 60 seconds" >&2
+          xcrun simctl list devices >&2
+          exit 1
+      - name: Execute deterministic Meta DAT integration tests
+        timeout-minutes: 5
+        working-directory: Adapters/MetaDAT
+        run: |
+          xcodebuild \
+            -scheme AgentWearLinkMetaDATIntegration \
+            -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" \
+            -skipPackagePluginValidation \
+            -parallel-testing-enabled NO \
+            -maximum-parallel-testing-workers 1 \
+            -only-testing:AgentWearLinkMetaDATIntegrationTests \
+            test
       - name: Install pinned XcodeGen
         if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
         run: |
@@ -138,22 +164,6 @@ jobs:
         working-directory: Adapters/MetaDAT/TestApp
         run: |
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
-      - name: Boot selected iPhone Simulator
-        if: needs.changes.outputs.meta_ui == 'true'
-        timeout-minutes: 2
-        run: |
-          xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
-          for attempt in {1..60}; do
-            state="$(xcrun simctl list devices | grep "${AWL_IOS_SIMULATOR_UDID}" || true)"
-            if echo "$state" | grep -q "(Booted)"; then
-              echo "Simulator reports Booted after ${attempt}s"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Simulator did not reach Booted state within 60 seconds" >&2
-          xcrun simctl list devices >&2
-          exit 1
       - name: Build MockDeviceKit UI test bundle
         if: needs.changes.outputs.meta_ui == 'true'
         timeout-minutes: 8
@@ -170,6 +180,6 @@ jobs:
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing test-without-building
       - name: Explain behavioral test boundary
         run: |
-          echo "The concrete Meta DAT integration library and app-hosted XCUITest harness are compile-gated here."
-          echo "Behavioral MockDeviceKit coverage runs only in the app-hosted XCUITest harness (#122)."
-          echo "No SwiftPM executable/xctest is treated as a linked-app behavioral host."
+          echo "The concrete Meta DAT integration library is compile-gated and its deterministic helper/integration XCTest target is executed on iOS Simulator."
+          echo "Behavioral MockDeviceKit pairing remains app-hosted XCUITest evidence (#122); the package test that requires linked-app Keychain context is intentionally skipped."
+          echo "No package-hosted mock test is treated as physical-device evidence."
