@@ -6,6 +6,10 @@ This document records the SDK assumptions for the first AgentWearLink device ada
 
 As of 2026-10-06, Meta's Wearables FAQ states that **Device Access Toolkit 1.0 is a stable, supported release**, rolling out from 2026-09-30. Some public iOS repository text still retains older **developer preview** wording. AWL therefore records and pins the exact package version used for validation instead of inferring capability/release-channel status from a single marketing label.
 
+AWL's human-readable SDK baseline is **1.0.0**, but build reproducibility is anchored to the immutable upstream source revision `1f38beecba83c4c8b5e343540f9cd615323ab19a` (the commit currently referenced by the `1.0.0` package tag). Both `Adapters/MetaDAT/Package.swift` and the generated TestApp package reference must use that same revision. CI resolves the package and verifies the resulting `Package.resolved` revision before compilation.
+
+An intentional DAT upgrade must be a focused dependency change: resolve the target upstream version/tag to its commit SHA, update both package references plus the expected revision in `scripts/verify-meta-dat-revision.sh`, run the Meta compile/app-host gates, and refresh compatibility evidence. Do not change only the semantic version label or only one of the two package references.
+
 The current public sample uses:
 
 - `MWDATCore`
