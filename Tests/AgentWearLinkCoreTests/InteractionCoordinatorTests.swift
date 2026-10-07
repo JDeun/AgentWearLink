@@ -44,6 +44,37 @@ private actor StubAgent: AgentAdapter {
     func cancellations() -> [InteractionID] { cancelled }
 }
 
+
+private actor SuspendedOutputRecorder {
+    private var values: [InteractionEvent] = []
+    private let textStarted = TestCountSignal()
+    private var textGate: CheckedContinuation<Void, Never>?
+
+    func append(_ event: InteractionEvent) async {
+        if case .text = event {
+            await textStarted.increment()
+            await withCheckedContinuation { continuation in
+                textGate = continuation
+            }
+        }
+        values.append(event)
+    }
+
+    func waitUntilTextStarts() async throws {
+        try await textStarted.wait(
+            until: 1,
+            label: "suspended output text emission"
+        )
+    }
+
+    func releaseText() {
+        textGate?.resume()
+        textGate = nil
+    }
+
+    func recorded() -> [InteractionEvent] { values }
+}
+
 final class InteractionCoordinatorTests: XCTestCase {
     func testRuntimeGenerationAdmissionRejectsStaleEventsAfterDeactivation() async {
         let agent = MockAgentAdapter()
@@ -126,6 +157,37 @@ final class InteractionCoordinatorTests: XCTestCase {
         await coordinator.handle(.text(id, "hello"))
         await coordinator.handle(.interrupted(id))
 
+        let cancellations = await agent.cancellations()
+        XCTAssertEqual(cancellations, [id])
+    }
+
+
+    func testCommittedTextCannotCrossLaterInterruptionBarrier() async throws {
+        let agent = StubAgent()
+        let recorded = SuspendedOutputRecorder()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await recorded.waitUntilTextStarts()
+
+        let interruption = Task {
+            await coordinator.handle(.interrupted(id))
+        }
+
+        await recorded.releaseText()
+        await interruption.value
+
+        let events = await recorded.recorded()
+        XCTAssertEqual(
+            events,
+            [
+                .text(id, "response"),
+                .interrupted(id),
+            ]
+        )
         let cancellations = await agent.cancellations()
         XCTAssertEqual(cancellations, [id])
     }
