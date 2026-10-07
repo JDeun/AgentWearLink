@@ -200,6 +200,8 @@ public actor OpenClawGatewaySupervisor {
 
         var attempt = 1
         var serverMinimumDelay = 0
+        var pairingRequestID: String?
+        var pairingDeviceID: String?
         while reconnectIsActive(token) {
             if let maximum = reconnectPolicy.maximumAttempts,
                attempt > maximum {
@@ -256,10 +258,42 @@ public actor OpenClawGatewaySupervisor {
             } catch let error as OpenClawHandshakeError {
                 guard reconnectIsActive(token) else { return }
                 switch error {
-                case .pairingRequired:
-                    // Pairing requires explicit external approval. Do not spin.
-                    stopped = true
-                    return
+                case let .pairingRequired(pairing):
+                    guard Self.shouldRetryPairing(pairing) else {
+                        // The server explicitly paused reconnect, marked the
+                        // condition non-retryable, or did not request a bounded
+                        // wait/retry flow. Explicit start() is the recovery
+                        // boundary after external approval/user action.
+                        stopped = true
+                        return
+                    }
+
+                    // A wait-for-resolution flow is tied to one pairing request
+                    // and device. If the server starts returning a different
+                    // identity while we are waiting, fail closed instead of
+                    // manufacturing repeated pairing requests.
+                    if pairing.waitForResolution {
+                        if let expected = pairingRequestID,
+                           let actual = pairing.requestID,
+                           expected != actual {
+                            stopped = true
+                            return
+                        }
+                        if let expected = pairingDeviceID,
+                           let actual = pairing.deviceID,
+                           expected != actual {
+                            stopped = true
+                            return
+                        }
+                        pairingRequestID = pairingRequestID ?? pairing.requestID
+                        pairingDeviceID = pairingDeviceID ?? pairing.deviceID
+                    }
+
+                    serverMinimumDelay = max(
+                        0,
+                        pairing.retryAfterMilliseconds ?? 0
+                    )
+                    attempt += 1
                 default:
                     attempt += 1
                 }
@@ -280,6 +314,17 @@ public actor OpenClawGatewaySupervisor {
                 attempt += 1
             }
         }
+    }
+
+    private nonisolated static func shouldRetryPairing(
+        _ pairing: OpenClawPairingRequired
+    ) -> Bool {
+        guard pairing.retryable, !pairing.pauseReconnect else {
+            return false
+        }
+
+        return pairing.waitForResolution
+            || pairing.recommendedNextStep == "wait_then_retry"
     }
 
     private func reconnectIsActive(_ token: UInt64) -> Bool {
