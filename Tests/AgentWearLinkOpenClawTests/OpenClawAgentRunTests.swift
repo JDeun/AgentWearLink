@@ -160,10 +160,10 @@ final class OpenClawAgentRunTests: XCTestCase {
         var frames: [String] = []
         for index in 0..<50 {
             frames.append(
-                #"{"type":"event","event":"agent","seq":#(index * 2 + 1),"payload":{"runId":"run-a","stream":"assistant","seq":#(index),"data":{"delta":"a#(index)"}}}"#
+                #"{"type":"event","event":"agent","seq":\#(index * 2 + 1),"payload":{"runId":"run-a","stream":"assistant","seq":\#(index),"data":{"delta":"a\#(index)"}}}"#
             )
             frames.append(
-                #"{"type":"event","event":"agent","seq":#(index * 2 + 2),"payload":{"runId":"run-b","stream":"assistant","seq":#(index),"data":{"delta":"b#(index)"}}}"#
+                #"{"type":"event","event":"agent","seq":\#(index * 2 + 2),"payload":{"runId":"run-b","stream":"assistant","seq":\#(index),"data":{"delta":"b\#(index)"}}}"#
             )
         }
         frames.append(
