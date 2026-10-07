@@ -2,7 +2,7 @@
 
 **Version:** 0.2  
 **Status:** Implementation source of truth  
-**Date:** 2026-10-06  
+**Date:** 2026-10-07  
 **Repository:** AgentWearLink
 
 > This document is the canonical product/scope handoff for continuing work in a new session. Read it together with `docs/architecture.md`, ADRs, open GitHub issues, and the current code before changing architecture.
@@ -78,7 +78,7 @@ The following are invariants:
 
 - `AgentWearLinkCore`: capabilities, normalized interactions, coordinator/runtime, generic transport primitives and deterministic mocks.
 - `AgentWearLinkOpenClaw`: OpenClaw-specific HTTP/native Gateway protocol integration.
-- `Adapters/MetaDAT`: pinned Meta DAT 1.0.0 integration for registration/device lifecycle, camera, Speech, Voice Invocation, live capabilities, lifecycle policy, and simulator/mock hosting.
+- `Adapters/MetaDAT`: pinned Meta DAT 1.0.0 integration. Registration, selected-device handling, and device-session lifecycle are production-wired. Camera, Speech, Voice Invocation, live-capability, and foreground/background policy slices are implemented/tested but still require composition into the concrete production session path (#230). Simulator/mock support remains isolated from the production target.
 
 Future device/runtime adapters should remain outside Core.
 
@@ -285,17 +285,19 @@ Implemented code-side:
 - deterministic mock device/agent harness and bounded streaming/HTTP/SSE primitives;
 - OpenClaw Chat Completions compatibility adapter;
 - preferred native OpenClaw Gateway WebSocket stack: challenge/connect authentication, persistent Ed25519 device identity/Keychain credentials, negotiated policy, RPC/event dispatch, incremental agent runs, cancellation, reconnect supervision, event-sequence retirement, and probes;
-- Meta DAT 1.0.0 pinned integration: registration/device lifecycle, selected-device handling, live capabilities, bounded camera capture/readiness/cancellation, Speech final-transcript filtering/deduplication, Voice Invocation acknowledgement/reopen policy, foreground/background readiness invalidation, and MockDeviceKit bootstrap;
+- Meta DAT 1.0.0 pinned integration: production-wired registration/selected-device/device-session lifecycle, plus helper-implemented and deterministically tested live-capability, bounded camera capture/readiness/cancellation, Speech final-transcript filtering/deduplication, Voice Invocation acknowledgement/reopen, and foreground/background readiness slices; full production composition of those helper slices remains #230;
 - Apple output/TTS boundary;
 - deterministic privacy/reliability regressions including credential diagnostic redaction and representative no-replay transition scenarios.
 
 Current unclosed evidence/work priorities:
 
-1. complete the real iOS app-hosted MockDeviceKit/XCUITest gate (#122);
-2. run the read-only OpenClaw probe against the owner's Mac mini over Tailscale;
-3. validate one existing-session incremental native agent turn over the real Tailnet (#97/#118);
-4. validate persistent Gateway credential reuse in deployment (#117);
-5. run physical Ray-Ban Meta + iPhone camera/Speech/Voice/lifecycle gates (#1/#98 and children);
-6. complete physical reliability/privacy/network transition evidence (#59/#119/#120).
+1. compose Meta camera/Speech/Voice/capability/lifecycle helper slices into the concrete production session/adapter path (#230);
+2. replace policy-only OpenClaw recovery coverage with deterministic supervisor transition/no-replay tests (#233);
+3. complete the real iOS app-hosted MockDeviceKit/XCUITest gate (#122);
+4. run the read-only OpenClaw probe against the owner's Mac mini over Tailscale;
+5. validate one existing-session incremental native agent turn over the real Tailnet (#97/#118);
+6. validate persistent Gateway credential reuse in deployment (#117);
+7. run physical Ray-Ban Meta + iPhone camera/Speech/Voice/lifecycle gates (#1/#98 and children);
+8. complete physical reliability/privacy/network transition evidence (#59/#119/#120).
 
-Code-side completion must not be reported as physical completion. See `testing.md` for the evidence vocabulary.
+Helper implementation must not be reported as production wiring, and code-side completion must not be reported as deployment or physical completion. See `testing.md` for the evidence vocabulary.
