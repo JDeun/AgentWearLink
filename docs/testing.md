@@ -117,7 +117,9 @@ A hardware-dependent feature remains unvalidated until this layer passes, even w
 
 ## CI interpretation
 
-The root job protects vendor-neutral contracts. The Meta integration job also serves as the iPhone reference-stack compile gate and uses its own vendor-compatible Apple toolchain with path-sensitive depth: Core/package changes that can affect Meta receive the pinned-SDK compatibility compile gate; Meta adapter/test or workflow changes additionally boot an iOS Simulator and execute `AgentWearLinkMetaDATIntegrationTests`; app-host/UI paths additionally run their generated-host and MockDeviceKit/XCUITest gates. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
+The root `core-test` job protects vendor-neutral contracts. The Meta integration job also serves as the iPhone reference-stack compile gate and uses its own vendor-compatible Apple toolchain with path-sensitive depth: Core/package changes that can affect Meta receive the pinned-SDK compatibility compile gate; Meta adapter/test or workflow changes additionally boot an iOS Simulator and execute `AgentWearLinkMetaDATIntegrationTests`; app-host/UI paths additionally run their generated-host and MockDeviceKit/XCUITest gates. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
+
+The repository ruleset requires the final GitHub Actions status context `test`. That context is an aggregate merge gate, not another test execution: it passes only when `core-test` succeeds and, for paths that require Meta/iPhone-reference validation, `meta-dat-integration` also succeeds. This prevents a green Core job from admitting a PR whose applicable Meta gate failed. Physical-device and deployment E2E evidence remains outside the required deterministic merge gate.
 
 ## Test-data policy
 

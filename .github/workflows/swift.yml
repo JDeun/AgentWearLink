@@ -71,7 +71,7 @@ jobs:
               - 'scripts/install-xcodegen.sh'
               - '.github/workflows/swift.yml'
 
-  test:
+  core-test:
     needs: changes
     runs-on: macos-15
     timeout-minutes: 10
@@ -220,3 +220,44 @@ jobs:
           echo "The concrete Meta DAT integration library is compile-gated and its deterministic helper/integration XCTest target is executed on iOS Simulator."
           echo "Behavioral MockDeviceKit pairing remains app-hosted XCUITest evidence (#122); the package test that requires linked-app Keychain context is intentionally skipped."
           echo "No package-hosted mock test is treated as physical-device evidence."
+
+  test:
+    needs:
+      - changes
+      - core-test
+      - meta-dat-integration
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require Core and applicable Meta gates
+        shell: bash
+        env:
+          CORE_RESULT: ${{ needs.core-test.result }}
+          META_RESULT: ${{ needs.meta-dat-integration.result }}
+          META_CHANGED: ${{ needs.changes.outputs.meta }}
+          IOS_REFERENCE_CHANGED: ${{ needs.changes.outputs.ios_reference }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CORE_RESULT" != "success" ]]; then
+            echo "Core gate did not succeed: $CORE_RESULT" >&2
+            exit 1
+          fi
+
+          meta_required=false
+          if [[ "$META_CHANGED" == "true" || "$IOS_REFERENCE_CHANGED" == "true" ]]; then
+            meta_required=true
+          fi
+
+          if [[ "$meta_required" == "true" && "$META_RESULT" != "success" ]]; then
+            echo "Meta DAT gate is required but did not succeed: $META_RESULT" >&2
+            exit 1
+          fi
+
+          if [[ "$meta_required" != "true" && "$META_RESULT" != "success" && "$META_RESULT" != "skipped" ]]; then
+            echo "Unexpected Meta DAT gate result: $META_RESULT" >&2
+            exit 1
+          fi
+
+          echo "Required merge gate passed."

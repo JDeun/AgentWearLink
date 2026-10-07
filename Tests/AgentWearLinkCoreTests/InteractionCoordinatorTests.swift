@@ -177,6 +177,12 @@ final class InteractionCoordinatorTests: XCTestCase {
             await coordinator.handle(.interrupted(id))
         }
 
+        try await waitUntilTestCondition(
+            "interruption reached agent cancellation"
+        ) {
+            await agent.cancellations() == [id]
+        }
+
         await recorded.releaseText()
         await interruption.value
 
