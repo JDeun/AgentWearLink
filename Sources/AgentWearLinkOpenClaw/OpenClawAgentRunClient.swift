@@ -4,6 +4,7 @@ public actor OpenClawAgentRunClient {
     private let dispatcher: OpenClawRPCDispatcher
     private let decoder = JSONDecoder()
     private let updateBufferLimit: Int
+    private(set) var updateBufferOverflowCount = 0
 
     public init(
         dispatcher: OpenClawRPCDispatcher,
@@ -95,6 +96,7 @@ public actor OpenClawAgentRunClient {
                         case .enqueued:
                             break
                         case .dropped:
+                            await self.recordUpdateBufferOverflow()
                             throw OpenClawAgentRunError.updateBufferOverflow(runID)
                         case .terminated:
                             return
@@ -114,6 +116,10 @@ public actor OpenClawAgentRunClient {
 
     public func finishUpdates(runID: String) async {
         await dispatcher.finishAgentEvents(runID: runID)
+    }
+
+    private func recordUpdateBufferOverflow() {
+        updateBufferOverflowCount += 1
     }
 
     private func decodePayload<T: Decodable>(
