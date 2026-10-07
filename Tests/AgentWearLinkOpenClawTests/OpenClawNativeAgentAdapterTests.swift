@@ -1,3 +1,4 @@
+import AgentWearLinkCore
 import Foundation
 import XCTest
 
@@ -55,7 +56,91 @@ private enum OwnedUpdateTaskTestError: Error {
     case terminalWaitFailed
 }
 
+private actor RemoteCancellationProbe {
+    private let disconnectOnAbort: Bool
+    private(set) var sessionKeys: [String] = []
+
+    init(disconnectOnAbort: Bool = false) {
+        self.disconnectOnAbort = disconnectOnAbort
+    }
+
+    func abort(sessionKey: String) throws {
+        sessionKeys.append(sessionKey)
+        if disconnectOnAbort {
+            throw AWLOpenClawError.disconnected
+        }
+    }
+}
+
 final class OpenClawNativeAgentAdapterTests: XCTestCase {
+    func testRemoteCancellationWithoutSessionKeyIsExplicitlyUncertain() async {
+        let id = InteractionID(
+            rawValue: UUID(uuidString: "00000000-0000-0000-0000-000000000252")!
+        )
+        let probe = RemoteCancellationProbe()
+
+        let outcome = await OpenClawNativeAgentAdapter.remoteCancellationOutcome(
+            interactionID: id,
+            sessionKey: nil
+        ) { sessionKey in
+            try await probe.abort(sessionKey: sessionKey)
+        }
+
+        XCTAssertEqual(
+            outcome,
+            .uncertain(
+                .agent(
+                    "OpenClaw remote cancellation uncertain for interaction " +
+                    "00000000-0000-0000-0000-000000000252: accepted run has no session key"
+                )
+            )
+        )
+        let sessionKeys = await probe.sessionKeys
+        XCTAssertTrue(sessionKeys.isEmpty)
+    }
+
+    func testRemoteCancellationWithSessionKeyIsHandledAfterConfirmedAbort() async {
+        let id = InteractionID()
+        let probe = RemoteCancellationProbe()
+
+        let outcome = await OpenClawNativeAgentAdapter.remoteCancellationOutcome(
+            interactionID: id,
+            sessionKey: "session-key"
+        ) { sessionKey in
+            try await probe.abort(sessionKey: sessionKey)
+        }
+
+        XCTAssertEqual(outcome, .handled)
+        let sessionKeys = await probe.sessionKeys
+        XCTAssertEqual(sessionKeys, ["session-key"])
+    }
+
+    func testRemoteCancellationDisconnectDuringAbortIsExplicitlyUncertain() async {
+        let id = InteractionID(
+            rawValue: UUID(uuidString: "00000000-0000-0000-0000-000000000253")!
+        )
+        let probe = RemoteCancellationProbe(disconnectOnAbort: true)
+
+        let outcome = await OpenClawNativeAgentAdapter.remoteCancellationOutcome(
+            interactionID: id,
+            sessionKey: "session-key"
+        ) { sessionKey in
+            try await probe.abort(sessionKey: sessionKey)
+        }
+
+        XCTAssertEqual(
+            outcome,
+            .uncertain(
+                .agent(
+                    "OpenClaw remote cancellation uncertain for interaction " +
+                    "00000000-0000-0000-0000-000000000253: chat.abort was not confirmed"
+                )
+            )
+        )
+        let sessionKeys = await probe.sessionKeys
+        XCTAssertEqual(sessionKeys, ["session-key"])
+    }
+
     func testSubmissionDeliveryUncertainBecomesTypedExecutionUncertainty() async {
         let correlationKey = "submission-correlation"
 
