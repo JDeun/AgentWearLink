@@ -67,6 +67,8 @@ This preserves SDK/API compatibility coverage for Core-only changes without payi
 
 ## 3. Simulator/vendor behavioral integration
 
+The generated iOS reference host links the complete shipping stack used by the phone-side reference path: AgentWearLinkCore, AgentWearLinkMetaDATIntegration, AgentWearLinkOpenClaw, and AgentWearLinkAppleOutput. CI compiles this host for a generic iOS Simulator whenever any of those product paths, the Meta integration, the root package manifest, or the workflow changes. This is a compile/availability gate only; it does not claim live Gateway or physical wearable behavior.
+
 The generated Meta iOS test host uses **XcodeGen 2.46.0**. Install the repository-pinned, checksum-verified official release archive before generating the project:
 
 ```bash
@@ -115,7 +117,7 @@ A hardware-dependent feature remains unvalidated until this layer passes, even w
 
 ## CI interpretation
 
-The root job protects vendor-neutral contracts. The Meta integration job uses its own vendor-compatible Apple toolchain with path-sensitive depth: Core/package changes that can affect Meta receive the pinned-SDK compatibility compile gate; Meta adapter/test or workflow changes additionally boot an iOS Simulator and execute `AgentWearLinkMetaDATIntegrationTests`; app-host/UI paths additionally run their generated-host and MockDeviceKit/XCUITest gates. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
+The root job protects vendor-neutral contracts. The Meta integration job also serves as the iPhone reference-stack compile gate and uses its own vendor-compatible Apple toolchain with path-sensitive depth: Core/package changes that can affect Meta receive the pinned-SDK compatibility compile gate; Meta adapter/test or workflow changes additionally boot an iOS Simulator and execute `AgentWearLinkMetaDATIntegrationTests`; app-host/UI paths additionally run their generated-host and MockDeviceKit/XCUITest gates. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
 
 ## Test-data policy
 

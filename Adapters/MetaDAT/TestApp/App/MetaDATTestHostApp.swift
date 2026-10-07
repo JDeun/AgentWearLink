@@ -1,4 +1,7 @@
 import SwiftUI
+import AgentWearLinkCore
+import AgentWearLinkOpenClaw
+import AgentWearLinkAppleOutput
 import AgentWearLinkMetaDATIntegration
 
 @main

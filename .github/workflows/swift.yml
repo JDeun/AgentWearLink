@@ -23,6 +23,7 @@ jobs:
       meta_behavior: ${{ steps.filter.outputs.meta_behavior }}
       meta_host: ${{ steps.filter.outputs.meta_host }}
       meta_ui: ${{ steps.filter.outputs.meta_ui }}
+      ios_reference: ${{ steps.filter.outputs.ios_reference }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
@@ -59,6 +60,16 @@ jobs:
               - 'Adapters/MetaDAT/Package.swift'
               - 'scripts/install-xcodegen.sh'
               - '.github/workflows/swift.yml'
+            ios_reference:
+              - 'Sources/AgentWearLinkCore/**'
+              - 'Sources/AgentWearLinkMetaDAT/**'
+              - 'Sources/AgentWearLinkOpenClaw/**'
+              - 'Sources/AgentWearLinkAppleOutput/**'
+              - 'Adapters/MetaDAT/**'
+              - 'Package.swift'
+              - 'Package.resolved'
+              - 'scripts/install-xcodegen.sh'
+              - '.github/workflows/swift.yml'
 
   test:
     needs: changes
@@ -78,7 +89,7 @@ jobs:
 
   meta-dat-integration:
     needs: changes
-    if: needs.changes.outputs.meta == 'true'
+    if: needs.changes.outputs.meta == 'true' || needs.changes.outputs.ios_reference == 'true'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -169,18 +180,18 @@ jobs:
             -only-testing:AgentWearLinkMetaDATIntegrationTests \
             test-without-building
       - name: Install pinned XcodeGen
-        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
+        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true' || needs.changes.outputs.ios_reference == 'true'
         run: |
           bash scripts/install-xcodegen.sh
           echo "$PWD/.build/tools" >> "$GITHUB_PATH"
-      - name: Generate minimal Meta DAT iOS app host
-        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
+      - name: Generate full iPhone reference stack host
+        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true' || needs.changes.outputs.ios_reference == 'true'
         working-directory: Adapters/MetaDAT/TestApp
         run: |
           xcodegen --version
           xcodegen generate
-      - name: Compile minimal Meta DAT iOS app host
-        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
+      - name: Compile full iPhone reference stack host
+        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true' || needs.changes.outputs.ios_reference == 'true'
         working-directory: Adapters/MetaDAT/TestApp
         run: |
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
