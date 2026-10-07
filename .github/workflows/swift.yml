@@ -199,7 +199,7 @@ jobs:
             -parallel-testing-enabled NO \
             -maximum-parallel-testing-workers 1 \
             -only-testing:AgentWearLinkMetaDATIntegrationTests \
-            test-without-building
+            test
       - name: Install pinned XcodeGen
         if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true' || needs.changes.outputs.ios_reference == 'true'
         run: |
