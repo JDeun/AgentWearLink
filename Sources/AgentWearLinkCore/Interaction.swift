@@ -65,3 +65,18 @@ public enum AWLError: Error, Sendable, Equatable {
     case timeout
     case cancelled
 }
+
+
+extension InteractionEvent {
+    /// An ID-less device failure means the active device/session generation is
+    /// no longer usable. Other ID-less failures remain non-terminal diagnostics.
+    var isTerminalGlobalDeviceFailure: Bool {
+        guard case let .failed(id, error) = self, id == nil else {
+            return false
+        }
+        guard case .device = error else {
+            return false
+        }
+        return true
+    }
+}
