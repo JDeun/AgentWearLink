@@ -1,6 +1,7 @@
 import Foundation
 import AgentWearLinkCore
 import MWDATCore
+import MWDATSpeech
 
 struct MetaDATDeviceSelectionCandidate: Equatable, Sendable {
     let identifier: String
@@ -136,9 +137,10 @@ final class MetaDATDeviceEventSource: @unchecked Sendable {
 public actor MetaDATDeviceAdapter: DeviceAdapter {
     public static let defaultEventBufferLimit = 64
 
-    /// Capabilities are advertised only when their implementation exists.
-    /// Camera/Speech/Voice Invocation are added in later slices.
-    public nonisolated let capabilities: CapabilitySet = []
+    /// Only production-wired capabilities are advertised. Raw audio remains
+    /// unavailable: DAT Speech yields normalized on-device transcripts rather
+    /// than exposing microphone PCM through this adapter.
+    public nonisolated let capabilities: CapabilitySet = [.speechInput]
 
     private let wearables: any WearablesInterface
     private var deviceSession: DeviceSession?
@@ -147,6 +149,12 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var registrationTask: Task<Void, Never>?
     private var deviceMonitorTask: Task<Void, Never>?
     private var selectedDeviceListenerTask: Task<Void, Never>?
+    private var speechTask: Task<Void, Never>?
+    private var speech: Speech?
+    private var speechErrorToken: (any AnyListenerToken)?
+    private let speechTranscriptStream = MetaDATSpeechTranscriptStream()
+    private let transcriptDeduplicator = MetaDATFinalTranscriptDeduplicator()
+    private let finalTranscriptFilter = MetaDATFinalTranscriptFilter()
     private nonisolated let eventSource: MetaDATDeviceEventSource
     private var generationFence = MetaDATSessionGenerationFence()
     private var selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
@@ -274,6 +282,11 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
 
             selectedDeviceLinkLossGate.markSessionStarted()
 
+            try await startSpeech(
+                on: session,
+                generation: generation
+            )
+
             // Do not create a second stateStream() after consuming .started.
             // Continue the same stream in one observer so SDK stream semantics cannot
             // create a gap between startup and steady-state monitoring.
@@ -296,6 +309,88 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             tearDownSession(expectedGeneration: generation)
             throw error
         }
+    }
+
+    private func startSpeech(
+        on session: DeviceSession,
+        generation: UInt64
+    ) async throws {
+        guard generationFence.owns(generation), !stopping else {
+            throw AWLError.device("Meta DAT Speech setup was superseded")
+        }
+
+        let microphoneStatus = try await wearables.checkPermissionStatus(.microphone)
+        guard microphoneStatus == .granted else {
+            throw AWLError.capabilityUnavailable(
+                "Meta DAT microphone permission is not granted"
+            )
+        }
+
+        guard let speech = try session.addSpeech() else {
+            throw AWLError.capabilityUnavailable(
+                "Meta DAT Speech is unavailable for the selected device"
+            )
+        }
+
+        await transcriptDeduplicator.reset()
+
+        let transcripts = speechTranscriptStream.stream(from: speech)
+        speechTask = Task { [weak self] in
+            for await transcript in transcripts {
+                guard !Task.isCancelled else { break }
+                await self?.handleSpeechTranscript(
+                    transcript,
+                    generation: generation
+                )
+            }
+        }
+
+        speechErrorToken = speech.errorPublisher.listen { [weak self] error in
+            Task {
+                await self?.handleSpeechError(
+                    String(describing: error),
+                    generation: generation
+                )
+            }
+        }
+
+        self.speech = speech
+        speech.start()
+
+        guard generationFence.owns(generation), !stopping else {
+            throw AWLError.device("Meta DAT Speech setup was superseded")
+        }
+    }
+
+    private func handleSpeechTranscript(
+        _ transcript: MetaDATTranscript,
+        generation: UInt64
+    ) async {
+        guard !stopping, generationFence.owns(generation) else { return }
+
+        let accepted = await transcriptDeduplicator.accept(
+            .init(text: transcript.text, isFinal: transcript.isFinal)
+        )
+        guard accepted else { return }
+
+        let interactionID = InteractionID()
+        guard let event = finalTranscriptFilter.event(
+            for: .init(text: transcript.text, isFinal: transcript.isFinal),
+            interactionID: interactionID
+        ) else {
+            return
+        }
+        yieldEvent(event)
+    }
+
+    private func handleSpeechError(
+        _ message: String,
+        generation: UInt64
+    ) {
+        guard !stopping, generationFence.owns(generation) else { return }
+        yieldEvent(
+            .failed(nil, .device("Meta DAT Speech error: \(message)"))
+        )
     }
 
     private func monitorSelectedDeviceSignals(
@@ -471,11 +566,24 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         registrationTask?.cancel()
         deviceMonitorTask?.cancel()
         selectedDeviceListenerTask?.cancel()
+        speechTask?.cancel()
         stateTask = nil
         errorTask = nil
         registrationTask = nil
         deviceMonitorTask = nil
         selectedDeviceListenerTask = nil
+        speechTask = nil
+
+        speech?.stop()
+        if speech != nil {
+            try? deviceSession?.removeSpeech()
+        }
+        speech = nil
+
+        if let speechErrorToken {
+            Task { await speechErrorToken.cancel() }
+        }
+        self.speechErrorToken = nil
 
         deviceSession?.stop()
         deviceSession = nil
