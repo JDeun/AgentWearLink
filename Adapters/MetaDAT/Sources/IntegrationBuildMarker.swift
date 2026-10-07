@@ -5,7 +5,6 @@ import AgentWearLinkCore
 import AgentWearLinkMetaDAT
 import MWDATCore
 import MWDATCamera
-import MWDATMockDevice
 
 public enum MetaDATIntegrationBuildMarker {
     public static let pinnedSDKVersion = "1.0.0"
