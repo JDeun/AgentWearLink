@@ -66,8 +66,25 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         XCTAssertEqual(latest, .foreground)
     }
 
+    func testPublishesBackgroundColdStartAsInitialPhase() async {
+        let lifecycle = MetaDATApplicationLifecycle(initialPhase: .background)
+        var iterator = lifecycle.phases().makeAsyncIterator()
+
+        let initial = await iterator.next()
+        XCTAssertEqual(initial, .background)
+        let current = await lifecycle.currentPhase
+        XCTAssertEqual(current, .background)
+    }
+
     func testForegroundReadinessRequiresFreshReacquisitionAfterBackground() async {
-        let readiness = MetaDATForegroundReadiness()
+        let readiness = MetaDATForegroundReadiness(initialPhase: .foreground)
+
+        // Construction is not evidence that private-media state is fresh.
+        let initialState = await readiness.state
+        XCTAssertEqual(initialState, .reacquiring)
+        await readiness.markReacquired()
+        let initialFreshState = await readiness.state
+        XCTAssertEqual(initialFreshState, .fresh)
 
         await readiness.handle(.background)
         let staleState = await readiness.state
@@ -92,13 +109,34 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         XCTAssertEqual(repeatedFreshState, .fresh)
     }
 
-    func testForegroundWithoutBackgroundDoesNotTriggerReacquisition() async {
-        let readiness = MetaDATForegroundReadiness()
+    func testForegroundStartRequiresExplicitReacquisitionBeforeFresh() async {
+        let readiness = MetaDATForegroundReadiness(initialPhase: .foreground)
+
+        let initial = await readiness.state
+        XCTAssertEqual(initial, .reacquiring)
 
         await readiness.handle(.foreground)
+        let duplicateForeground = await readiness.state
+        XCTAssertEqual(duplicateForeground, .reacquiring)
 
-        let state = await readiness.state
-        XCTAssertEqual(state, .fresh)
+        await readiness.markReacquired()
+        let fresh = await readiness.state
+        XCTAssertEqual(fresh, .fresh)
+    }
+
+    func testBackgroundColdStartStaysStaleUntilForegroundReacquisition() async {
+        let readiness = MetaDATForegroundReadiness(initialPhase: .background)
+
+        let initial = await readiness.state
+        XCTAssertEqual(initial, .stale)
+
+        await readiness.handle(.foreground)
+        let reacquiring = await readiness.state
+        XCTAssertEqual(reacquiring, .reacquiring)
+
+        await readiness.markReacquired()
+        let fresh = await readiness.state
+        XCTAssertEqual(fresh, .fresh)
     }
 
 }
