@@ -26,7 +26,8 @@ struct AgentWearLinkOpenClawChatProbe {
         let assembler = OpenClawConnectAssembler(
             identityManager: .init(store: KeychainOpenClawDeviceIdentityStore(service: "dev.agentwearlink.openclaw.chat-probe")),
             credentialStore: KeychainOpenClawDeviceCredentialStore(service: "dev.agentwearlink.openclaw.chat-probe"),
-            gatewayNamespace: endpoint.credentialNamespace
+            gatewayNamespace: endpoint.credentialNamespace,
+            bootstrapHandoffPersistenceAllowed: endpoint.allowsBootstrapHandoffPersistence
         )
         let connection = OpenClawGatewayConnection(socket: socket, assembler: assembler, state: state)
         let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
