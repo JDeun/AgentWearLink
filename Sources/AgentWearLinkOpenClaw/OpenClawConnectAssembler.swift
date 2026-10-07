@@ -39,14 +39,18 @@ public struct OpenClawAssembledConnect: Sendable, CustomStringConvertible, Custo
 public struct OpenClawConnectAssembler: Sendable {
     private let identityManager: OpenClawDeviceIdentityManager
     private let credentialStore: any OpenClawDeviceCredentialStore
+    private let bootstrapHandoffPersistenceAllowed: Bool
     private let proofBuilder = OpenClawDeviceProofBuilder()
 
     public init(
         identityManager: OpenClawDeviceIdentityManager,
         credentialStore: any OpenClawDeviceCredentialStore,
-        gatewayNamespace: OpenClawGatewayCredentialNamespace? = nil
+        gatewayNamespace: OpenClawGatewayCredentialNamespace? = nil,
+        bootstrapHandoffPersistenceAllowed: Bool = false
     ) {
         self.identityManager = identityManager
+        self.bootstrapHandoffPersistenceAllowed =
+            bootstrapHandoffPersistenceAllowed
         if let gatewayNamespace {
             self.credentialStore = GatewayScopedOpenClawDeviceCredentialStore(
                 base: credentialStore,
@@ -214,33 +218,75 @@ public struct OpenClawConnectAssembler: Sendable {
         _ hello: OpenClawHelloOK,
         assembled: OpenClawAssembledConnect
     ) async throws {
-        guard let token = hello.auth.deviceToken else { return }
-
         let deviceID = try assembled.identity.deviceID
-        let scopes: [String]
+        let handoffTokens = hello.auth.deviceTokens ?? []
+        let mayPersistHandoffs =
+            assembled.usedBootstrapToken &&
+            bootstrapHandoffPersistenceAllowed &&
+            !handoffTokens.isEmpty
 
-        if let stored = assembled.storedCredential,
-           token == stored.token {
-            // Preserve the approved grant for an unchanged stored token.
-            scopes = stored.scopes
-        } else {
-            scopes = hello.auth.scopes
+        if let token = hello.auth.deviceToken {
+            let scopes: [String]
+
+            if let stored = assembled.storedCredential,
+               token == stored.token {
+                // Preserve the approved grant for an unchanged stored token.
+                scopes = stored.scopes
+            } else {
+                scopes = hello.auth.scopes
+            }
+
+            // A trusted multi-token bootstrap can return a primary credential
+            // for one role plus separate handoff grants for another role. Keep
+            // the primary under its authenticated role so an operator handoff
+            // remains a distinct record instead of colliding with it.
+            let requestedRole =
+                mayPersistHandoffs && hello.auth.role != assembled.params.role
+                ? hello.auth.role
+                : assembled.params.role
+
+            let credential = OpenClawDeviceCredential(
+                deviceID: deviceID,
+                role: hello.auth.role,
+                requestedRole: requestedRole,
+                scopes: scopes,
+                token: token
+            )
+
+            // The stored credential captured during assemble() is the compare
+            // token. A stale handshake must not overwrite a newer grant.
+            _ = try await credentialStore.compareAndSave(
+                credential,
+                expected: assembled.storedCredential
+            )
         }
 
-        let credential = OpenClawDeviceCredential(
-            deviceID: deviceID,
-            role: hello.auth.role,
-            requestedRole: assembled.params.role,
-            scopes: scopes,
-            token: token
-        )
+        guard mayPersistHandoffs else { return }
 
-        // The stored credential captured during assemble() is the compare token.
-        // A stale handshake must not overwrite a grant that a newer handshake
-        // has already rotated after this snapshot was taken.
-        _ = try await credentialStore.compareAndSave(
-            credential,
-            expected: assembled.storedCredential
-        )
+        var seenRoles = Set<String>()
+        for handoff in handoffTokens {
+            guard !handoff.deviceToken.isEmpty,
+                  !handoff.role.isEmpty,
+                  seenRoles.insert(handoff.role).inserted,
+                  handoff.role != hello.auth.role else {
+                continue
+            }
+
+            let credential = OpenClawDeviceCredential(
+                deviceID: deviceID,
+                role: handoff.role,
+                requestedRole: handoff.role,
+                scopes: handoff.scopes,
+                token: handoff.deviceToken
+            )
+
+            // Handoff records are additional grants. Insert-only persistence
+            // prevents a stale bootstrap receipt from rotating an already
+            // durable role credential behind a newer lifecycle owner.
+            _ = try await credentialStore.compareAndSave(
+                credential,
+                expected: nil
+            )
+        }
     }
 }
