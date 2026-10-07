@@ -28,7 +28,7 @@ The root package's toolchain contract is independent from concrete vendor adapte
 
 Concrete vendor code is compiled against the exact dependency it claims to support.
 
-For Meta DAT, use a Swift 6.0+ toolchain for `Adapters/MetaDAT`; this is intentionally stricter than the vendor-neutral root package. The package manifest explicitly keeps AWL's Meta targets in Swift 5 language mode until source migration is handled separately:
+For Meta DAT, use a Swift 6.0+ toolchain for `Adapters/MetaDAT`; this is intentionally stricter than the vendor-neutral root package. CI fails fast before dependency resolution when the active Swift toolchain is older than 6.0, so a floating runner image cannot silently fall below this contract. The package manifest explicitly keeps AWL's Meta targets in Swift 5 language mode until source migration is handled separately:
 
 ```bash
 cd Adapters/MetaDAT
