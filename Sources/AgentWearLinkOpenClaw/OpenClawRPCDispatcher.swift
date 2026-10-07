@@ -236,8 +236,11 @@ public actor OpenClawRPCDispatcher {
             throw OpenClawTransportSendError.generationBindingUnavailable
         }
 
-        if let textParams = params as? OpenClawAgentParams {
-            try await state.validateOutboundFrameSize(textParams.message.utf8.count)
+        if let agentParams = params as? OpenClawAgentParams {
+            try await state.validateAgentPayload(
+                messageUTF8Bytes: agentParams.message.utf8.count,
+                attachments: agentParams.attachments ?? []
+            )
             guard isActive(generation: requestGeneration) else {
                 throw AWLOpenClawError.disconnected
             }

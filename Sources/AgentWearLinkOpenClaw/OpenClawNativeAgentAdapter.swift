@@ -15,9 +15,16 @@ struct OpenClawSubmissionIdentity: Sendable, Equatable {
     }
 }
 
-public actor OpenClawNativeAgentAdapter: AgentAdapter {
+public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     public static let defaultMaximumTerminalWaitPolls = 10
     public static let defaultTerminalPollTimeoutMilliseconds = 30_000
+
+    /// Explicit host/runtime capability decision. This defaults to false so the
+    /// presence of the wire attachment schema alone never advertises vision.
+    /// Hosts should enable it only after validating the selected OpenClaw
+    /// runtime/model can consume image input. Negotiated attachment limits are
+    /// still revalidated for every submission and after reconnect.
+    public nonisolated let supportsVisionInput: Bool
 
     private let supervisor: OpenClawGatewaySupervisor
     private let dispatcher: OpenClawRPCDispatcher
@@ -41,7 +48,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         sessionKey: String? = nil,
         maximumTerminalWaitPolls: Int = OpenClawNativeAgentAdapter.defaultMaximumTerminalWaitPolls,
         terminalPollTimeoutMilliseconds: Int = OpenClawNativeAgentAdapter.defaultTerminalPollTimeoutMilliseconds,
-        responseBufferLimit: Int = AgentResponse.defaultBufferLimit
+        responseBufferLimit: Int = AgentResponse.defaultBufferLimit,
+        supportsVisionInput: Bool = false
     ) {
         precondition(maximumTerminalWaitPolls > 0)
         precondition(terminalPollTimeoutMilliseconds > 0)
@@ -53,6 +61,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         self.maximumTerminalWaitPolls = maximumTerminalWaitPolls
         self.terminalPollTimeoutMilliseconds = terminalPollTimeoutMilliseconds
         self.responseBufferLimit = responseBufferLimit
+        self.supportsVisionInput = supportsVisionInput
     }
 
     public func connect() async throws {
@@ -69,6 +78,98 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     ) async -> AsyncThrowingStream<AgentResponse, Error> {
         let client = runClient
         let sessionKey = sessionKey
+
+        return makeResponseStream(
+            interactionID: request.interactionID,
+            fallbackSessionKey: sessionKey
+        ) { idempotencyKey in
+            try await client.submit(
+                message: request.text,
+                sessionKey: sessionKey,
+                idempotencyKey: idempotencyKey
+            )
+        }
+    }
+
+    public func responses(
+        for request: VisionRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        guard supportsVisionInput else {
+            let limit = responseBufferLimit
+            return AsyncThrowingStream(
+                bufferingPolicy: .bufferingOldest(limit)
+            ) { continuation in
+                continuation.finish(
+                    throwing: AWLError.capabilityUnavailable(
+                        "OpenClaw vision input is not enabled for the selected runtime"
+                    )
+                )
+            }
+        }
+
+        let client = runClient
+        let sessionKey = sessionKey
+        let attachment: OpenClawAgentAttachment
+        do {
+            attachment = try Self.makeImageAttachment(request.image)
+        } catch {
+            let limit = responseBufferLimit
+            return AsyncThrowingStream(
+                bufferingPolicy: .bufferingOldest(limit)
+            ) { continuation in
+                continuation.finish(throwing: error)
+            }
+        }
+
+        return makeResponseStream(
+            interactionID: request.interactionID,
+            fallbackSessionKey: sessionKey
+        ) { idempotencyKey in
+            try await client.submit(
+                message: request.prompt,
+                sessionKey: sessionKey,
+                idempotencyKey: idempotencyKey,
+                attachments: [attachment]
+            )
+        }
+    }
+
+    nonisolated static func makeImageAttachment(
+        _ image: ImageAttachment
+    ) throws -> OpenClawAgentAttachment {
+        // Callers can construct ImageAttachment with a custom larger limit.
+        // The shipped OpenClaw path still enforces Core's canonical ceiling
+        // before any base64/network allocation.
+        guard image.data.count <= ImageAttachment.defaultMaximumBytes else {
+            throw AWLError.capabilityUnavailable(
+                "image payload exceeds configured limit"
+            )
+        }
+
+        let mimeType: String
+        let fileExtension: String
+        switch image.format {
+        case .jpeg:
+            mimeType = "image/jpeg"
+            fileExtension = "jpg"
+        case .png:
+            mimeType = "image/png"
+            fileExtension = "png"
+        }
+
+        return OpenClawAgentAttachment(
+            mimeType: mimeType,
+            fileName: "capture.\(fileExtension)",
+            content: image.data
+        )
+    }
+
+    private func makeResponseStream(
+        interactionID: InteractionID,
+        fallbackSessionKey: String?,
+        submit: @escaping @Sendable (String) async throws -> OpenClawAgentAccepted
+    ) -> AsyncThrowingStream<AgentResponse, Error> {
+        let client = runClient
         let responseBufferLimit = responseBufferLimit
 
         // A Core InteractionID is a correlation identity and may produce a
@@ -86,19 +187,15 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                     let accepted = try await Self.performSubmission(
                         idempotencyKey: submissionIdentity.idempotencyKey
                     ) {
-                        try await client.submit(
-                            message: request.text,
-                            sessionKey: sessionKey,
-                            idempotencyKey: submissionIdentity.idempotencyKey
-                        )
+                        try await submit(submissionIdentity.idempotencyKey)
                     }
                     await self.remember(
                         RunContext(
                             runID: accepted.runId,
-                            sessionKey: accepted.sessionKey ?? sessionKey,
+                            sessionKey: accepted.sessionKey ?? fallbackSessionKey,
                             agentID: accepted.agentId
                         ),
-                        for: request.interactionID
+                        for: interactionID
                     )
 
                     let updates = await client.updates(runID: accepted.runId)
@@ -108,7 +205,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                             if case let .assistant(_, payload) = update,
                                let delta = Self.extractTextDelta(payload) {
                                 try Self.yieldResponse(
-                                    .textDelta(request.interactionID, delta),
+                                    .textDelta(interactionID, delta),
                                     to: continuation
                                 )
                                 streamedText += delta
@@ -139,12 +236,12 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                             terminalReply: terminal.terminalReply
                         ) {
                             try Self.yieldResponse(
-                                .textDelta(request.interactionID, suffix),
+                                .textDelta(interactionID, suffix),
                                 to: continuation
                             )
                         }
                         try Self.yieldResponse(
-                            .completed(request.interactionID),
+                            .completed(interactionID),
                             to: continuation
                         )
                         continuation.finish()
@@ -153,7 +250,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                             ?? terminal.stopReason
                             ?? "OpenClaw agent run failed"
                         try Self.yieldResponse(
-                            .failed(request.interactionID, .agent(message)),
+                            .failed(interactionID, .agent(message)),
                             to: continuation
                         )
                         continuation.finish()
@@ -165,12 +262,12 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                         )
                     }
 
-                    _ = await self.forget(request.interactionID)
+                    _ = await self.forget(interactionID)
                 } catch is CancellationError {
-                    await self.cancel(interactionID: request.interactionID)
+                    await self.cancel(interactionID: interactionID)
                     continuation.finish()
                 } catch {
-                    if let context = await self.forget(request.interactionID) {
+                    if let context = await self.forget(interactionID) {
                         await client.finishUpdates(runID: context.runID)
                     }
                     continuation.finish(throwing: error)

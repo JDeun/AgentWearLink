@@ -100,6 +100,89 @@ public actor OpenClawGatewayState {
         }
     }
 
+    /// Preflights native agent text + attachments before JSON/base64 allocation.
+    ///
+    /// The exact encoded frame is still checked by `validateOutboundFrameSize`
+    /// after encoding. This earlier guard prevents a raw image that is already
+    /// outside negotiated policy from first expanding into a large base64
+    /// string.
+    public func validateAgentPayload(
+        messageUTF8Bytes: Int,
+        attachments: [OpenClawAgentAttachment]
+    ) throws {
+        guard let policy = hello?.policy else {
+            throw AWLOpenClawError.notReady
+        }
+        guard messageUTF8Bytes >= 0 else {
+            throw AWLOpenClawError.payloadTooLarge(
+                actual: Int.max,
+                maximum: policy.maxPayload
+            )
+        }
+
+        if attachments.isEmpty {
+            guard messageUTF8Bytes <= policy.maxPayload else {
+                throw AWLOpenClawError.payloadTooLarge(
+                    actual: messageUTF8Bytes,
+                    maximum: policy.maxPayload
+                )
+            }
+            return
+        }
+
+        guard let attachmentPolicy = policy.attachments else {
+            throw AWLOpenClawError.attachmentsUnavailable
+        }
+
+        var totalRawBytes = 0
+        var estimatedPayloadBytes = messageUTF8Bytes
+
+        for attachment in attachments {
+            let rawBytes = attachment.rawByteCount
+            guard rawBytes > 0 else {
+                throw AWLOpenClawError.invalidAttachment
+            }
+            guard rawBytes <= attachmentPolicy.maxImageBytes else {
+                throw AWLOpenClawError.imageAttachmentTooLarge(
+                    actual: rawBytes,
+                    maximum: attachmentPolicy.maxImageBytes
+                )
+            }
+
+            let (nextRawBytes, rawOverflow) = totalRawBytes.addingReportingOverflow(rawBytes)
+            guard !rawOverflow else {
+                throw AWLOpenClawError.attachmentBudgetExceeded(
+                    actual: Int.max,
+                    maximum: attachmentPolicy.maxBytes
+                )
+            }
+            totalRawBytes = nextRawBytes
+            guard totalRawBytes <= attachmentPolicy.maxBytes else {
+                throw AWLOpenClawError.attachmentBudgetExceeded(
+                    actual: totalRawBytes,
+                    maximum: attachmentPolicy.maxBytes
+                )
+            }
+
+            let encodedBytes = attachment.base64EncodedByteCount
+            let (nextEstimatedBytes, payloadOverflow) =
+                estimatedPayloadBytes.addingReportingOverflow(encodedBytes)
+            guard !payloadOverflow else {
+                throw AWLOpenClawError.payloadTooLarge(
+                    actual: Int.max,
+                    maximum: policy.maxPayload
+                )
+            }
+            estimatedPayloadBytes = nextEstimatedBytes
+            guard estimatedPayloadBytes <= policy.maxPayload else {
+                throw AWLOpenClawError.payloadTooLarge(
+                    actual: estimatedPayloadBytes,
+                    maximum: policy.maxPayload
+                )
+            }
+        }
+    }
+
     public func negotiatedMaximumBufferedBytes() throws -> Int {
         guard let policy = hello?.policy else {
             throw AWLOpenClawError.notReady
@@ -117,6 +200,10 @@ public enum AWLOpenClawError: Error, Sendable, Equatable {
     case sequenceExhausted(last: Int)
     case sequenceGap(expected: Int, actual: Int)
     case payloadTooLarge(actual: Int, maximum: Int)
+    case attachmentsUnavailable
+    case invalidAttachment
+    case imageAttachmentTooLarge(actual: Int, maximum: Int)
+    case attachmentBudgetExceeded(actual: Int, maximum: Int)
     case bufferBudgetExceeded(actual: Int, maximum: Int)
     case gateway(code: String, retryable: Bool, retryAfterMilliseconds: Int? = nil)
     case disconnected
