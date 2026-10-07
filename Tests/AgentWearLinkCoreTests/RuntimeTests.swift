@@ -134,11 +134,19 @@ private actor BlockingLifecycleAgent: AgentAdapter {
     private(set) var connects = 0
     private var released = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let connectError: AWLError?
+
+    init(connectError: AWLError? = nil) {
+        self.connectError = connectError
+    }
 
     func connect() async throws {
         connects += 1
         if !released {
             await withCheckedContinuation { waiters.append($0) }
+        }
+        if let connectError {
+            throw connectError
         }
     }
 
@@ -399,6 +407,77 @@ final class RuntimeTests: XCTestCase {
         await runtime.stop()
     }
 
+
+    func testConcurrentStartJoinsTheSameFailureResult() async {
+        let device = MockDeviceAdapter()
+        let agent = BlockingLifecycleAgent(
+            connectError: .agent("blocked failure")
+        )
+        let runtime = AgentWearLinkRuntime(
+            device: device,
+            agent: agent,
+            output: { _ in }
+        )
+
+        let first = Task { try await runtime.start() }
+        while await agent.connectCount() == 0 {
+            await Task.yield()
+        }
+
+        let second = Task { try await runtime.start() }
+        await Task.yield()
+        let connectCount = await agent.connectCount()
+        XCTAssertEqual(connectCount, 1)
+
+        await agent.release()
+
+        for task in [first, second] {
+            do {
+                try await task.value
+                XCTFail("expected joined startup failure")
+            } catch let error as AWLError {
+                XCTAssertEqual(error, .agent("blocked failure"))
+            } catch {
+                XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testCancelledStartupCannotPublishRunningOrConnectDevice() async {
+        let device = StartupTrackingDevice()
+        let agent = BlockingLifecycleAgent()
+        let runtime = AgentWearLinkRuntime(
+            device: device,
+            agent: agent,
+            output: { _ in }
+        )
+
+        let starting = Task { try await runtime.start() }
+        while await agent.connectCount() == 0 {
+            await Task.yield()
+        }
+
+        starting.cancel()
+        await agent.release()
+
+        do {
+            try await starting.value
+            XCTFail("expected cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        let snapshot = device.snapshot()
+        XCTAssertEqual(snapshot.connects, 0)
+        XCTAssertGreaterThanOrEqual(snapshot.disconnects, 1)
+
+        // A fresh generation can still start after the cancelled startup
+        // retired and rolled back.
+        try? await runtime.start()
+        await runtime.stop()
+    }
+
     func testStopDuringStartCannotResurrectRuntime() async throws {
         let device = MockDeviceAdapter()
         let agent = BlockingLifecycleAgent()
@@ -409,9 +488,21 @@ final class RuntimeTests: XCTestCase {
         let connectCount = await agent.connectCount()
         XCTAssertEqual(connectCount, 1)
 
-        await runtime.stop()
+        let stopping = Task { await runtime.stop() }
+        // Give stop() the actor turn while the startup owner is suspended in
+        // connect(), so this regression deterministically exercises supersession.
+        try? await Task.sleep(for: .milliseconds(10))
         await agent.release()
-        try await starting.value
+
+        do {
+            try await starting.value
+            XCTFail("expected startup to be superseded by stop")
+        } catch let error as AgentWearLinkRuntimeError {
+            XCTAssertEqual(error, .startSuperseded)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+        await stopping.value
 
         let afterInterruptedStart = await agent.counts()
         XCTAssertEqual(afterInterruptedStart.0, 1)

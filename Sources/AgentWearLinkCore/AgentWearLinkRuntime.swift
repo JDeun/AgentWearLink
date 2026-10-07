@@ -9,9 +9,20 @@ public actor AgentWearLinkRuntime {
     private let coordinator: InteractionCoordinator
     private let output: @Sendable (InteractionEvent) async -> Void
     private var forwardingTask: Task<Void, Never>?
+
     private enum LifecycleState { case stopped, starting, running, stopping }
     private var lifecycleState: LifecycleState = .stopped
     private var lifecycleGeneration: UInt64 = 0
+
+    private struct StartWaiter {
+        let id: UUID
+        let generation: UInt64
+        let continuation: CheckedContinuation<Void, Error>
+    }
+    private var startWaiters: [StartWaiter] = []
+    private var startupRetirementWaiters: [
+        UInt64: [CheckedContinuation<Void, Never>]
+    ] = [:]
     private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
@@ -26,48 +37,74 @@ public actor AgentWearLinkRuntime {
     }
 
     public func start() async throws {
-        if lifecycleState == .stopping {
-            await withCheckedContinuation { continuation in
-                stopWaiters.append(continuation)
+        while true {
+            try Task.checkCancellation()
+
+            switch lifecycleState {
+            case .running:
+                return
+
+            case .starting:
+                let generation = lifecycleGeneration
+                try await waitForStart(generation: generation)
+                return
+
+            case .stopping:
+                await waitForStop()
+                continue
+
+            case .stopped:
+                break
             }
+            break
         }
-        guard lifecycleState == .stopped else { return }
+
         lifecycleState = .starting
         lifecycleGeneration &+= 1
         let generation = lifecycleGeneration
+
+        // stop() may need to wait for this exact startup attempt to retire before
+        // admitting another generation.
+        defer { retireStartup(generation: generation) }
 
         // Subscribe before connect so adapters that emit lifecycle events during
         // connection cannot race the runtime and lose their first event.
         let events = device.events()
 
         do {
+            try Task.checkCancellation()
             try await agent.connect()
-            guard lifecycleState == .starting, lifecycleGeneration == generation else {
-                await device.disconnect()
-                await agent.disconnect()
-                return
-            }
+            try Task.checkCancellation()
+            try requireActiveStartup(generation: generation)
 
             try await device.connect()
-            guard lifecycleState == .starting, lifecycleGeneration == generation else {
-                await device.disconnect()
-                await agent.disconnect()
-                return
-            }
+            try Task.checkCancellation()
+            try requireActiveStartup(generation: generation)
+
+            await coordinator.activate(runtimeGeneration: generation)
+            try Task.checkCancellation()
+            try requireActiveStartup(generation: generation)
         } catch {
-            // `events()` has already installed the device-side subscription and
-            // either adapter may have acquired resources before throwing. Treat
-            // startup as one transaction and roll both sides back.
+            // A cancelled/superseded startup can finish a lower-level connect
+            // after stop() has already changed the runtime generation. Always
+            // roll both sides back before retiring this startup attempt.
+            await coordinator.deactivate(runtimeGeneration: generation)
             await device.disconnect()
             await agent.disconnect()
-            if lifecycleGeneration == generation {
+
+            if lifecycleState == .starting,
+               lifecycleGeneration == generation {
                 lifecycleState = .stopped
             }
+
+            finishStartWaiters(
+                generation: generation,
+                result: .failure(error)
+            )
             throw error
         }
 
         lifecycleState = .running
-        await coordinator.activate(runtimeGeneration: generation)
         forwardingTask = Task { [coordinator] in
             for await event in events {
                 guard !Task.isCancelled else { break }
@@ -79,6 +116,8 @@ public actor AgentWearLinkRuntime {
                 wasCancelled: Task.isCancelled
             )
         }
+
+        finishStartWaiters(generation: generation, result: .success(()))
     }
 
     private func forwardingDidEnd(
@@ -112,10 +151,30 @@ public actor AgentWearLinkRuntime {
     }
 
     public func stop() async {
-        guard lifecycleState != .stopped, lifecycleState != .stopping else { return }
+        if lifecycleState == .stopping {
+            await waitForStop()
+            return
+        }
+        guard lifecycleState != .stopped else { return }
+
         let activeGeneration = lifecycleGeneration
+        let wasStarting = lifecycleState == .starting
+
         lifecycleState = .stopping
         lifecycleGeneration &+= 1
+
+        if wasStarting {
+            finishStartWaiters(
+                generation: activeGeneration,
+                result: .failure(AgentWearLinkRuntimeError.startSuperseded)
+            )
+
+            // Do not let a late completion from the retired connect sequence
+            // overlap a new runtime generation. The startup owner performs its
+            // own rollback before this barrier opens.
+            await waitForStartupRetirement(generation: activeGeneration)
+        }
+
         forwardingTask?.cancel()
         forwardingTask = nil
         await coordinator.deactivate(runtimeGeneration: activeGeneration)
@@ -124,10 +183,105 @@ public actor AgentWearLinkRuntime {
         finishStopping()
     }
 
+    private func requireActiveStartup(generation: UInt64) throws {
+        guard lifecycleState == .starting,
+              lifecycleGeneration == generation else {
+            throw AgentWearLinkRuntimeError.startSuperseded
+        }
+    }
+
+    private func waitForStart(generation: UInt64) async throws {
+        let id = UUID()
+
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+
+                startWaiters.append(
+                    StartWaiter(
+                        id: id,
+                        generation: generation,
+                        continuation: continuation
+                    )
+                )
+            }
+        } onCancel: {
+            Task {
+                await self.cancelStartWaiter(
+                    id: id,
+                    generation: generation
+                )
+            }
+        }
+    }
+
+    private func cancelStartWaiter(id: UUID, generation: UInt64) {
+        guard let index = startWaiters.firstIndex(where: {
+            $0.id == id && $0.generation == generation
+        }) else {
+            return
+        }
+
+        let waiter = startWaiters.remove(at: index)
+        waiter.continuation.resume(throwing: CancellationError())
+    }
+
+    private func finishStartWaiters(
+        generation: UInt64,
+        result: Result<Void, Error>
+    ) {
+        var remaining: [StartWaiter] = []
+
+        for waiter in startWaiters {
+            guard waiter.generation == generation else {
+                remaining.append(waiter)
+                continue
+            }
+
+            switch result {
+            case .success:
+                waiter.continuation.resume()
+            case let .failure(error):
+                waiter.continuation.resume(throwing: error)
+            }
+        }
+
+        startWaiters = remaining
+    }
+
+    private func waitForStartupRetirement(generation: UInt64) async {
+        await withCheckedContinuation { continuation in
+            startupRetirementWaiters[generation, default: []].append(
+                continuation
+            )
+        }
+    }
+
+    private func retireStartup(generation: UInt64) {
+        let waiters = startupRetirementWaiters.removeValue(
+            forKey: generation
+        ) ?? []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    private func waitForStop() async {
+        await withCheckedContinuation { continuation in
+            stopWaiters.append(continuation)
+        }
+    }
+
     private func finishStopping() {
         lifecycleState = .stopped
         let waiters = stopWaiters
         stopWaiters.removeAll(keepingCapacity: false)
         for waiter in waiters { waiter.resume() }
     }
+}
+
+public enum AgentWearLinkRuntimeError: Error, Sendable, Equatable {
+    case startSuperseded
 }
