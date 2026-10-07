@@ -19,6 +19,7 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable, CustomString
         self.timeout = timeout
         self.maximumResponseBytes = maximumResponseBytes
     }
+
     public func validateCredentialTransport() throws {
         guard bearerToken != nil else { return }
         if endpoint.scheme?.lowercased() == "https" { return }
@@ -42,18 +43,17 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable, CustomString
 
 /// Buffered HTTP baseline transport.
 ///
-/// This type deliberately does not claim streaming semantics. SSE/WebSocket
-/// transports are separate implementations of AgentTransport.
+/// The response is buffered only up to `maximumResponseBytes`. The transport
+/// consumes URLSession's async byte stream and stops the request as soon as the
+/// configured ceiling is exceeded rather than allowing Foundation to buffer an
+/// unbounded response first.
+///
+/// This type deliberately does not claim conversational streaming semantics.
+/// SSE/WebSocket transports are separate implementations of AgentTransport.
 public actor HTTPAgentTransport: AgentTransport {
-    private enum OperationPhase {
-        case registering
-        case running(URLSessionDataTask)
-        case cancelled
-    }
-
     private struct Operation {
         let generation: UUID
-        var phase: OperationPhase
+        let task: Task<Void, Never>
     }
 
     private let configuration: HTTPAgentTransportConfiguration
@@ -74,9 +74,7 @@ public actor HTTPAgentTransport: AgentTransport {
 
     public func disconnect() async {
         for operation in operations.values {
-            if case let .running(task) = operation.phase {
-                task.cancel()
-            }
+            operation.task.cancel()
         }
         operations.removeAll(keepingCapacity: false)
     }
@@ -115,126 +113,137 @@ public actor HTTPAgentTransport: AgentTransport {
         }
 
         let generation = UUID()
+        let (stream, continuation) = AsyncThrowingStream<AgentResponse, Error>.makeStream()
+
+        continuation.onTermination = { _ in
+            Task {
+                await self.cancel(interactionID: id)
+            }
+        }
+
+        let session = self.session
+        let configuration = self.configuration
+        let task = Task {
+            await self.performRequest(
+                urlRequest,
+                interactionID: id,
+                generation: generation,
+                session: session,
+                configuration: configuration,
+                continuation: continuation
+            )
+        }
+
+        // The request task must hop back onto this actor before it can enter
+        // performRequest(), so the operation is registered before any response
+        // can be emitted or cleaned up.
         operations[id] = Operation(
             generation: generation,
-            phase: .registering
+            task: task
         )
 
-        let configuration = self.configuration
-        let session = self.session
+        return stream
+    }
 
-        return AsyncThrowingStream { continuation in
-            let task = session.dataTask(with: urlRequest) { data, response, error in
-                defer {
-                    Task {
-                        await self.finish(id, generation: generation)
-                    }
-                }
+    private func performRequest(
+        _ request: URLRequest,
+        interactionID id: InteractionID,
+        generation: UUID,
+        session: URLSession,
+        configuration: HTTPAgentTransportConfiguration,
+        continuation: AsyncThrowingStream<AgentResponse, Error>.Continuation
+    ) async {
+        do {
+            try Task.checkCancellation()
 
-                if let error {
-                    let nsError = error as NSError
-                    if nsError.domain == NSURLErrorDomain &&
-                        nsError.code == NSURLErrorCancelled {
-                        continuation.finish(throwing: AWLError.cancelled)
-                    } else if nsError.domain == NSURLErrorDomain &&
-                                nsError.code == NSURLErrorTimedOut {
-                        continuation.finish(throwing: AWLError.timeout)
-                    } else {
-                        continuation.finish(
-                            throwing: AWLError.transport(error.localizedDescription)
-                        )
-                    }
-                    return
-                }
+            let (bytes, response) = try await session.bytes(for: request)
+            guard isCurrent(id, generation: generation) else { return }
 
-                guard let http = response as? HTTPURLResponse else {
-                    continuation.finish(
-                        throwing: AWLError.transport("non-HTTP response")
-                    )
-                    return
-                }
-
-                guard (200..<300).contains(http.statusCode) else {
-                    let category: AWLError =
-                        (http.statusCode == 401 || http.statusCode == 403)
-                        ? .authentication
-                        : .transport("HTTP \(http.statusCode)")
-                    continuation.finish(throwing: category)
-                    return
-                }
-
-                guard let data else {
-                    continuation.finish(
-                        throwing: AWLError.agent("empty response")
-                    )
-                    return
-                }
-
-                guard data.count <= configuration.maximumResponseBytes else {
-                    continuation.finish(
-                        throwing: AWLError.transport(
-                            "response exceeds configured byte limit"
-                        )
-                    )
-                    return
-                }
-
-                guard let text = String(data: data, encoding: .utf8) else {
-                    continuation.finish(
-                        throwing: AWLError.agent("non-UTF8 response")
-                    )
-                    return
-                }
-
-                continuation.yield(.textDelta(id, text))
-                continuation.yield(.completed(id))
-                continuation.finish()
+            guard let http = response as? HTTPURLResponse else {
+                throw AWLError.transport("non-HTTP response")
             }
 
-            continuation.onTermination = { _ in
-                Task {
-                    await self.cancel(interactionID: id)
+            guard (200..<300).contains(http.statusCode) else {
+                if http.statusCode == 401 || http.statusCode == 403 {
+                    throw AWLError.authentication
                 }
+                throw AWLError.transport("HTTP \(http.statusCode)")
             }
 
-            Task {
-                let shouldStart = await self.register(
-                    task,
-                    for: id,
-                    generation: generation
+            let maximumResponseBytes = configuration.maximumResponseBytes
+            let expectedLength = http.expectedContentLength
+            if expectedLength > Int64(maximumResponseBytes) {
+                throw AWLError.transport(
+                    "response exceeds configured byte limit"
                 )
-                if shouldStart {
-                    task.resume()
-                } else {
-                    task.cancel()
-                }
             }
+
+            var data = Data()
+            if expectedLength > 0 {
+                data.reserveCapacity(
+                    min(maximumResponseBytes, Int(expectedLength))
+                )
+            }
+
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                guard isCurrent(id, generation: generation) else { return }
+
+                // Check before append so resident response storage never grows
+                // past the configured ceiling.
+                guard data.count < maximumResponseBytes else {
+                    throw AWLError.transport(
+                        "response exceeds configured byte limit"
+                    )
+                }
+                data.append(byte)
+            }
+
+            guard isCurrent(id, generation: generation) else { return }
+            guard !data.isEmpty else {
+                throw AWLError.agent("empty response")
+            }
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw AWLError.agent("non-UTF8 response")
+            }
+
+            // Retire the operation before finishing the stream so the
+            // continuation's termination callback cannot race a completed task.
+            finish(id, generation: generation)
+            continuation.yield(.textDelta(id, text))
+            continuation.yield(.completed(id))
+            continuation.finish()
+        } catch {
+            finish(id, generation: generation)
+            continuation.finish(throwing: Self.map(error))
         }
     }
 
-    private func register(
-        _ task: URLSessionDataTask,
-        for id: InteractionID,
+    private static func map(_ error: Error) -> Error {
+        if let error = error as? AWLError {
+            return error
+        }
+        if error is CancellationError {
+            return AWLError.cancelled
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain &&
+            nsError.code == NSURLErrorCancelled {
+            return AWLError.cancelled
+        }
+        if nsError.domain == NSURLErrorDomain &&
+            nsError.code == NSURLErrorTimedOut {
+            return AWLError.timeout
+        }
+        return AWLError.transport(error.localizedDescription)
+    }
+
+    private func isCurrent(
+        _ id: InteractionID,
         generation: UUID
     ) -> Bool {
-        guard var operation = operations[id],
-              operation.generation == generation else {
-            return false
-        }
-
-        switch operation.phase {
-        case .registering:
-            operation.phase = .running(task)
-            operations[id] = operation
-            return true
-
-        case .cancelled:
-            operations[id] = nil
-            return false
-
-        case .running:
-            return false
-        }
+        operations[id]?.generation == generation
     }
 
     private func finish(_ id: InteractionID, generation: UUID) {
@@ -243,22 +252,10 @@ public actor HTTPAgentTransport: AgentTransport {
     }
 
     public func cancel(interactionID: InteractionID) async {
-        guard var operation = operations[interactionID] else {
+        guard let operation = operations.removeValue(forKey: interactionID) else {
             return
         }
-
-        switch operation.phase {
-        case .registering:
-            operation.phase = .cancelled
-            operations[interactionID] = operation
-
-        case let .running(task):
-            operations[interactionID] = nil
-            task.cancel()
-
-        case .cancelled:
-            break
-        }
+        operation.task.cancel()
     }
 
     func operationCount() -> Int {
