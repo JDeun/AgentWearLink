@@ -15,9 +15,20 @@ struct OpenClawSubmissionIdentity: Sendable, Equatable {
     }
 }
 
+private actor OpenClawEmittedTextAccumulator {
+    private var text = ""
+
+    func append(_ delta: String) {
+        text += delta
+    }
+
+    func snapshot() -> String { text }
+}
+
 public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     public static let defaultMaximumTerminalWaitPolls = 10
     public static let defaultTerminalPollTimeoutMilliseconds = 30_000
+    public static let defaultMaximumAcceptedRunRecoveries = 2
 
     /// Explicit host/runtime capability decision. This defaults to false so the
     /// presence of the wire attachment schema alone never advertises vision.
@@ -38,6 +49,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     private let sessionKey: String?
     private let maximumTerminalWaitPolls: Int
     private let terminalPollTimeoutMilliseconds: Int
+    private let maximumAcceptedRunRecoveries: Int
     private let responseBufferLimit: Int
     private var runs: [InteractionID: RunContext] = [:]
 
@@ -48,11 +60,13 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         sessionKey: String? = nil,
         maximumTerminalWaitPolls: Int = OpenClawNativeAgentAdapter.defaultMaximumTerminalWaitPolls,
         terminalPollTimeoutMilliseconds: Int = OpenClawNativeAgentAdapter.defaultTerminalPollTimeoutMilliseconds,
+        maximumAcceptedRunRecoveries: Int = OpenClawNativeAgentAdapter.defaultMaximumAcceptedRunRecoveries,
         responseBufferLimit: Int = AgentResponse.defaultBufferLimit,
         supportsVisionInput: Bool = false
     ) {
         precondition(maximumTerminalWaitPolls > 0)
         precondition(terminalPollTimeoutMilliseconds > 0)
+        precondition(maximumAcceptedRunRecoveries >= 0)
         precondition(responseBufferLimit > 0)
         self.supervisor = supervisor
         self.dispatcher = dispatcher
@@ -60,6 +74,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         self.sessionKey = sessionKey
         self.maximumTerminalWaitPolls = maximumTerminalWaitPolls
         self.terminalPollTimeoutMilliseconds = terminalPollTimeoutMilliseconds
+        self.maximumAcceptedRunRecoveries = maximumAcceptedRunRecoveries
         self.responseBufferLimit = responseBufferLimit
         self.supportsVisionInput = supportsVisionInput
     }
@@ -198,39 +213,27 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
                         for: interactionID
                     )
 
-                    let updates = await client.updates(runID: accepted.runId)
-                    let streamTask = Task<String, Error> {
-                        var streamedText = ""
-                        for try await update in updates {
-                            if case let .assistant(_, payload) = update,
-                               let delta = Self.extractTextDelta(payload) {
-                                try Self.yieldResponse(
-                                    .textDelta(interactionID, delta),
-                                    to: continuation
-                                )
-                                streamedText += delta
-                            }
-                        }
-                        return streamedText
-                    }
-
-                    let (terminal, streamedText) = try await Self.withOwnedUpdateTask(
-                        streamTask
-                    ) {
-                        let terminal = try await self.waitUntilTerminal(
+                    let (terminal, streamedText, recovered) =
+                        try await self.waitForAcceptedRunTerminal(
                             client: client,
-                            runID: accepted.runId
+                            runID: accepted.runId,
+                            interactionID: interactionID,
+                            continuation: continuation
                         )
-                        // Close the per-run dispatcher subscription only after the
-                        // terminal snapshot is known, then drain everything already
-                        // accepted ahead of that boundary.
-                        await client.finishUpdates(runID: accepted.runId)
-                        let streamedText = try await streamTask.value
-                        return (terminal, streamedText)
-                    }
 
                     switch terminal.status {
                     case "ok":
+                        // After transport recovery, post-reconnect live deltas
+                        // are deliberately not emitted because their replay
+                        // boundary is not authoritative. Require the terminal
+                        // snapshot to repair everything after the last text
+                        // emitted on the original transport.
+                        if recovered,
+                           Self.terminalReplyText(terminal.terminalReply) == nil {
+                            throw OpenClawNativeAdapterError
+                                .recoveredRunMissingTerminalReply
+                        }
+
                         if let suffix = try Self.terminalReplySuffix(
                             streamedText: streamedText,
                             terminalReply: terminal.terminalReply
@@ -275,6 +278,121 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
             }
 
             continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func waitForAcceptedRunTerminal(
+        client: OpenClawAgentRunClient,
+        runID: String,
+        interactionID: InteractionID,
+        continuation: AsyncThrowingStream<AgentResponse, Error>.Continuation
+    ) async throws -> (
+        terminal: OpenClawAgentWaitResult,
+        streamedText: String,
+        recovered: Bool
+    ) {
+        let accumulator = OpenClawEmittedTextAccumulator()
+        var failedGeneration = await supervisor.transportGeneration
+        var recoveryCount = 0
+        var recovered = false
+
+        while true {
+            try Task.checkCancellation()
+
+            let updates = await client.updates(runID: runID)
+            let emitLiveDeltas = !recovered
+            let streamTask = Task<Void, Error> {
+                for try await update in updates {
+                    guard case let .assistant(_, payload) = update,
+                          let delta = Self.extractTextDelta(payload) else {
+                        continue
+                    }
+
+                    // A new transport does not provide an authoritative replay
+                    // boundary for run-local deltas. Suppress those deltas and
+                    // reconcile against the terminal reply instead.
+                    guard emitLiveDeltas else { continue }
+
+                    try Self.yieldResponse(
+                        .textDelta(interactionID, delta),
+                        to: continuation
+                    )
+                    await accumulator.append(delta)
+                }
+            }
+
+            do {
+                let terminal = try await Self.withOwnedUpdateTask(streamTask) {
+                    let terminal = try await self.waitUntilTerminal(
+                        client: client,
+                        runID: runID
+                    )
+
+                    // Once terminal status is known, close this exact
+                    // generation's subscription and drain every update already
+                    // accepted ahead of that boundary.
+                    await client.finishUpdates(runID: runID)
+                    try await streamTask.value
+                    return terminal
+                }
+
+                return (
+                    terminal,
+                    await accumulator.snapshot(),
+                    recovered
+                )
+            } catch is CancellationError {
+                await client.finishUpdates(runID: runID)
+                throw CancellationError()
+            } catch {
+                await client.finishUpdates(runID: runID)
+
+                guard Self.isRecoverableAcceptedRunTransportError(error) else {
+                    throw error
+                }
+                guard recoveryCount < maximumAcceptedRunRecoveries else {
+                    throw OpenClawNativeAdapterError
+                        .acceptedRunRecoveryLimitExceeded(
+                            maximumRecoveries: maximumAcceptedRunRecoveries
+                        )
+                }
+
+                recoveryCount += 1
+                guard let nextGeneration = try await supervisor
+                    .recoverAcceptedRunTransport(after: failedGeneration) else {
+                    throw OpenClawNativeAdapterError
+                        .acceptedRunRecoveryUnavailable
+                }
+
+                failedGeneration = nextGeneration
+                recovered = true
+            }
+        }
+    }
+
+    nonisolated static func isRecoverableAcceptedRunTransportError(
+        _ error: Error
+    ) -> Bool {
+        if let transport = error as? OpenClawTransportSendError {
+            switch transport {
+            case .staleGeneration, .deliveryUncertain:
+                return true
+            case .generationBindingUnavailable:
+                return false
+            }
+        }
+
+        guard let gateway = error as? AWLOpenClawError else {
+            return false
+        }
+        switch gateway {
+        case .notReady, .disconnected:
+            return true
+        default:
+            // Application/Gateway errors (including run-not-found after a
+            // server restart) are terminal for the accepted run. Never turn
+            // them into a fresh mutation.
+            return false
         }
     }
 
@@ -542,6 +660,9 @@ public enum OpenClawNativeAdapterError: Error, Sendable, Equatable {
     case submissionExecutionUncertain(idempotencyKey: String)
     case unexpectedWaitStatus(String)
     case terminalWaitLimitExceeded(maximumPolls: Int)
+    case acceptedRunRecoveryUnavailable
+    case acceptedRunRecoveryLimitExceeded(maximumRecoveries: Int)
+    case recoveredRunMissingTerminalReply
     case terminalReplyMismatch
     case terminalRunTimedOut(
         timeoutPhase: String?,
