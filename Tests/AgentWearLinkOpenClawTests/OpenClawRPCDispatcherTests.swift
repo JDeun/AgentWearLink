@@ -45,6 +45,10 @@ private actor DispatcherSocket: OpenClawWebSocket {
         }
     }
 
+    func sentCount() -> Int {
+        sentFrames.count
+    }
+
     func lastRequestID() async throws -> String {
         while sentFrames.isEmpty {
             await Task.yield()
@@ -60,6 +64,36 @@ private actor DispatcherSocket: OpenClawWebSocket {
     }
 }
 
+
+private actor RegistrationGate {
+    private var entered = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func block() async {
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+            entered = true
+            let waiters = enteredWaiters
+            enteredWaiters.removeAll(keepingCapacity: false)
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { continuation in
+            enteredWaiters.append(continuation)
+        }
+    }
+
+    func open() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
 
 private actor GenerationGateSocket: OpenClawWebSocket {
     private var generation: UInt64 = 1
@@ -357,6 +391,48 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
 
         let sentCount = await socket.sentCount()
         XCTAssertEqual(sentCount, 1)
+    }
+
+    func testStopDuringRegistryRegistrationCannotResurrectRequest() async throws {
+        let socket = DispatcherSocket()
+        let registrationGate = RegistrationGate()
+        let registry = OpenClawRPCRegistry(
+            beforeRegister: {
+                await registrationGate.block()
+            }
+        )
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(),
+            registry: registry
+        )
+        await dispatcher.start()
+
+        let requestTask = Task {
+            try await dispatcher.request(
+                method: "mutate",
+                params: EmptyParams()
+            )
+        }
+
+        await registrationGate.waitUntilEntered()
+        await dispatcher.stop()
+        await registrationGate.open()
+
+        do {
+            _ = try await requestTask.value
+            XCTFail("Expected retired registration to fail")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(error, .disconnected)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let pendingCount = await registry.count
+        let sentCount = await socket.sentCount()
+        XCTAssertEqual(pendingCount, 0)
+        XCTAssertEqual(sentCount, 0)
+        await socket.close()
     }
 
 
