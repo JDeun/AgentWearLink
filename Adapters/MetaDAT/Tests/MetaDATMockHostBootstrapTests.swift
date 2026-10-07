@@ -1,5 +1,6 @@
 import XCTest
 @testable import AgentWearLinkMetaDATIntegration
+import AgentWearLinkMetaDATTestSupport
 
 final class MetaDATMockHostBootstrapTests: XCTestCase {
     func testNonTestLaunchIsNoOp() async throws {
