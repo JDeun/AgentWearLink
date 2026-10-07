@@ -26,6 +26,8 @@ public struct OpenClawAssembledConnect: Sendable, CustomStringConvertible, Custo
     public let params: OpenClawConnectParams
     public let identity: OpenClawDeviceIdentity
     public let storedCredential: OpenClawDeviceCredential?
+    /// Token bound into the V3 device proof. This is selected from the exact
+    /// wire auth fields in protocol order: shared, device, then bootstrap.
     public let effectiveToken: String?
     public let usedStoredCredential: Bool
     public let usedBootstrapToken: Bool
@@ -62,21 +64,42 @@ public struct OpenClawConnectAssembler: Sendable {
             role: "operator"
         )
 
-        // Mirrors OpenClaw connect auth precedence.
-        let effectiveToken =
-            credentials.token ??
-            credentials.explicitDeviceToken ??
-            stored?.token
+        // Mirrors upstream selectGatewayConnectAuth/buildGatewayConnectAuth
+        // for the auth fields supported by AWL.
+        let sharedToken = credentials.token
+        let explicitDeviceToken = credentials.explicitDeviceToken
+        let storedToken = stored?.token
+
+        let resolvedDeviceToken: String?
+        if let explicitDeviceToken {
+            resolvedDeviceToken = explicitDeviceToken
+        } else if sharedToken == nil,
+                  credentials.password == nil,
+                  (credentials.bootstrapToken == nil || storedToken != nil) {
+            resolvedDeviceToken = storedToken
+        } else {
+            resolvedDeviceToken = nil
+        }
 
         let usedStoredCredential =
-            credentials.token == nil &&
-            credentials.explicitDeviceToken == nil &&
-            stored != nil &&
-            effectiveToken == stored?.token
+            resolvedDeviceToken != nil &&
+            explicitDeviceToken == nil &&
+            storedToken != nil &&
+            resolvedDeviceToken == storedToken
 
-        let bootstrap = effectiveToken == nil
+        let bootstrap =
+            sharedToken == nil &&
+            resolvedDeviceToken == nil &&
+            credentials.password == nil
             ? credentials.bootstrapToken
             : nil
+
+        // OpenClaw V3 binds exactly one token to the device proof in protocol
+        // precedence order. Password is intentionally not a signature token.
+        let effectiveToken =
+            sharedToken ??
+            resolvedDeviceToken ??
+            bootstrap
 
         let scopes: [String]
         if usedStoredCredential,
@@ -95,7 +118,8 @@ public struct OpenClawConnectAssembler: Sendable {
         )
 
         let auth = OpenClawConnectParams.Auth(
-            token: effectiveToken,
+            token: sharedToken,
+            deviceToken: resolvedDeviceToken,
             password: credentials.password,
             bootstrapToken: bootstrap
         )

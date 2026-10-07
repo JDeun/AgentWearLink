@@ -76,8 +76,18 @@ final class OpenClawPrivacyRegressionTests: XCTestCase {
         let key = identity.privateKeyRaw.base64EncodedString()
         XCTAssertFalse(String(describing: identity).contains(key))
         XCTAssertFalse(String(reflecting: identity).contains(key))
-        let secrets = ["TOKEN_SENTINEL", "PASSWORD_SENTINEL", "BOOTSTRAP_SENTINEL"]
-        let auth = OpenClawConnectParams.Auth(token: secrets[0], password: secrets[1], bootstrapToken: secrets[2])
+        let secrets = [
+            "TOKEN_SENTINEL",
+            "DEVICE_TOKEN_SENTINEL",
+            "PASSWORD_SENTINEL",
+            "BOOTSTRAP_SENTINEL"
+        ]
+        let auth = OpenClawConnectParams.Auth(
+            token: secrets[0],
+            deviceToken: secrets[1],
+            password: secrets[2],
+            bootstrapToken: secrets[3]
+        )
         for rendered in [String(describing: auth), String(reflecting: auth)] {
             for secret in secrets { XCTAssertFalse(rendered.contains(secret)) }
             XCTAssertTrue(rendered.contains("<redacted>"))

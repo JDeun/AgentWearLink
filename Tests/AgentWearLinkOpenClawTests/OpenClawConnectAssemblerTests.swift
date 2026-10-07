@@ -6,6 +6,49 @@ import XCTest
 final class OpenClawConnectAssemblerTests: XCTestCase {
     private let challenge = OpenClawConnectChallenge(nonce: "nonce", ts: 123)
 
+    private func assertProof(
+        _ result: OpenClawAssembledConnect,
+        signs token: String?,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let proof = try XCTUnwrap(result.params.device, file: file, line: line)
+        let payload = OpenClawDeviceProofBuilder().buildPayloadV3(
+            deviceID: try result.identity.deviceID,
+            clientID: result.params.client.id,
+            clientMode: result.params.client.mode,
+            role: result.params.role,
+            scopes: result.params.scopes,
+            token: token,
+            nonce: proof.nonce,
+            signedAt: proof.signedAt,
+            platform: result.params.client.platform,
+            deviceFamily: result.params.client.deviceFamily
+        )
+
+        var encodedSignature = proof.signature
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        encodedSignature += String(
+            repeating: "=",
+            count: (4 - encodedSignature.count % 4) % 4
+        )
+
+        let signature = try XCTUnwrap(
+            Data(base64Encoded: encodedSignature),
+            file: file,
+            line: line
+        )
+        let publicKey = try Curve25519.Signing.PublicKey(
+            rawRepresentation: result.identity.publicKeyRaw
+        )
+        XCTAssertTrue(
+            publicKey.isValidSignature(signature, for: payload),
+            file: file,
+            line: line
+        )
+    }
+
     func testExplicitSharedTokenWinsOverStoredDeviceToken() async throws {
         let identity = OpenClawDeviceIdentity.generate()
         let identityStore = InMemoryOpenClawDeviceIdentityStore(identity: identity)
@@ -34,12 +77,16 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         )
 
         XCTAssertEqual(result.effectiveToken, "shared")
+        XCTAssertEqual(result.params.auth?.token, "shared")
+        XCTAssertNil(result.params.auth?.deviceToken)
+        XCTAssertNil(result.params.auth?.bootstrapToken)
         XCTAssertFalse(result.usedStoredCredential)
         XCTAssertFalse(result.usedBootstrapToken)
         XCTAssertEqual(
             result.params.scopes,
             ["operator.read", "operator.write"]
         )
+        try assertProof(result, signs: "shared")
     }
 
     func testStoredTokenReusesApprovedScopes() async throws {
@@ -67,12 +114,16 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         )
 
         XCTAssertEqual(result.effectiveToken, "stored")
+        XCTAssertNil(result.params.auth?.token)
+        XCTAssertEqual(result.params.auth?.deviceToken, "stored")
+        XCTAssertNil(result.params.auth?.bootstrapToken)
         XCTAssertTrue(result.usedStoredCredential)
         XCTAssertEqual(
             result.params.scopes,
             ["operator.read", "operator.write"]
         )
         XCTAssertFalse(result.usedBootstrapToken)
+        try assertProof(result, signs: "stored")
     }
 
     func testBootstrapUsedOnlyWhenNoOtherTokenExists() async throws {
@@ -90,8 +141,90 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
             challenge: challenge
         )
 
-        XCTAssertNil(result.effectiveToken)
+        XCTAssertEqual(result.effectiveToken, "bootstrap")
+        XCTAssertNil(result.params.auth?.token)
+        XCTAssertNil(result.params.auth?.deviceToken)
+        XCTAssertEqual(result.params.auth?.bootstrapToken, "bootstrap")
         XCTAssertTrue(result.usedBootstrapToken)
+        try assertProof(result, signs: "bootstrap")
+    }
+
+    func testExplicitDeviceTokenUsesDeviceTokenFieldAndSignature() async throws {
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore()
+            ),
+            credentialStore: InMemoryOpenClawDeviceCredentialStore()
+        )
+
+        let result = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(explicitDeviceToken: "device-explicit"),
+            challenge: challenge
+        )
+
+        XCTAssertNil(result.params.auth?.token)
+        XCTAssertEqual(result.params.auth?.deviceToken, "device-explicit")
+        XCTAssertNil(result.params.auth?.bootstrapToken)
+        XCTAssertEqual(result.effectiveToken, "device-explicit")
+        XCTAssertFalse(result.usedStoredCredential)
+        try assertProof(result, signs: "device-explicit")
+    }
+
+    func testPasswordOnlyDoesNotBecomeDeviceSignatureToken() async throws {
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore()
+            ),
+            credentialStore: InMemoryOpenClawDeviceCredentialStore()
+        )
+
+        let result = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(
+                password: "password-only",
+                bootstrapToken: "must-not-be-used"
+            ),
+            challenge: challenge
+        )
+
+        XCTAssertNil(result.params.auth?.token)
+        XCTAssertNil(result.params.auth?.deviceToken)
+        XCTAssertEqual(result.params.auth?.password, "password-only")
+        XCTAssertNil(result.params.auth?.bootstrapToken)
+        XCTAssertNil(result.effectiveToken)
+        XCTAssertFalse(result.usedBootstrapToken)
+        try assertProof(result, signs: nil)
+    }
+
+    func testSharedTokenAndExplicitDeviceTokenKeepDistinctWireFields() async throws {
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore()
+            ),
+            credentialStore: InMemoryOpenClawDeviceCredentialStore()
+        )
+
+        let result = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(
+                token: "shared",
+                explicitDeviceToken: "device-explicit",
+                bootstrapToken: "must-not-be-used"
+            ),
+            challenge: challenge
+        )
+
+        XCTAssertEqual(result.params.auth?.token, "shared")
+        XCTAssertEqual(result.params.auth?.deviceToken, "device-explicit")
+        XCTAssertNil(result.params.auth?.bootstrapToken)
+        XCTAssertEqual(result.effectiveToken, "shared")
+        XCTAssertFalse(result.usedStoredCredential)
+        XCTAssertFalse(result.usedBootstrapToken)
+        try assertProof(result, signs: "shared")
     }
 
     func testCanonicalClientIdentityMatchesSignedV3Tuple() async throws {
