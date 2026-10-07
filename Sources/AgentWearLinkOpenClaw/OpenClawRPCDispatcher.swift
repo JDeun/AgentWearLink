@@ -61,8 +61,9 @@ public actor OpenClawRPCDispatcher {
         generation &+= 1
         let receiveGeneration = generation
         lastActivityMilliseconds = nowMilliseconds()
-        let task = Task { [weak self] in
-            await self?.receiveLoop(generation: receiveGeneration)
+        let task = Task<Void, Never> { [weak self] in
+            guard let self else { return }
+            await self.receiveLoop(generation: receiveGeneration)
         }
         receiveTask = ReceiveTaskEntry(
             generation: receiveGeneration,
