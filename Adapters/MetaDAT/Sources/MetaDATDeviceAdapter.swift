@@ -20,6 +20,28 @@ enum MetaDATDeviceSelectionPolicy {
     }
 }
 
+struct MetaDATSessionGenerationFence: Sendable {
+    private(set) var current: UInt64 = 0
+
+    mutating func begin() -> UInt64 {
+        current &+= 1
+        return current
+    }
+
+    func owns(_ generation: UInt64) -> Bool {
+        current == generation
+    }
+
+    @discardableResult
+    mutating func retire(ifOwned generation: UInt64? = nil) -> Bool {
+        if let generation, generation != current {
+            return false
+        }
+        current &+= 1
+        return true
+    }
+}
+
 /// First concrete device adapter for Meta Wearables DAT.
 ///
 /// This target is intentionally iOS/vendor-specific and must be compiled only
@@ -40,6 +62,8 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var deviceMonitorTask: Task<Void, Never>?
     private var selectedDeviceListenerTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<InteractionEvent>.Continuation?
+    private var generationFence = MetaDATSessionGenerationFence()
+    private var connecting = false
     private var stopping = false
     private let connectTimeout: Duration
     private nonisolated let eventBufferLimit: Int
@@ -73,11 +97,19 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     }
 
     public func connect() async throws {
-        guard deviceSession == nil else { return }
+        guard deviceSession == nil, !connecting else { return }
 
         stopping = false
+        connecting = true
+        let generation = generationFence.begin()
+        defer {
+            if generationFence.owns(generation) {
+                connecting = false
+            }
+        }
 
         guard case .registered = wearables.registrationState else {
+            tearDownSession(expectedGeneration: generation)
             throw AWLError.device("Meta DAT application is not registered")
         }
 
@@ -85,7 +117,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             for await state in wearables.registrationStateStream() {
                 guard !Task.isCancelled else { break }
                 guard case .registered = state else {
-                    await self?.handleRegistrationLoss()
+                    await self?.handleRegistrationLoss(generation: generation)
                     break
                 }
             }
@@ -104,19 +136,25 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             from: selectionCandidates
         ),
         let selectedDevice = devices.first(where: { $0.identifier == selectedIdentifier }) else {
-            tearDownSession()
+            tearDownSession(expectedGeneration: generation)
             throw AWLError.device("Meta DAT has no paired device eligible for session selection")
         }
         guard selectedDevice.compatibility() == .compatible else {
-            tearDownSession()
+            tearDownSession(expectedGeneration: generation)
             throw AWLError.device("Selected Meta DAT device is not SDK-compatible")
         }
 
         selectedDeviceListenerTask = Task { [weak self] in
-            await self?.monitorSelectedDeviceSignals(selectedDevice)
+            await self?.monitorSelectedDeviceSignals(
+                selectedDevice,
+                generation: generation
+            )
         }
         deviceMonitorTask = Task { [weak self] in
-            await self?.monitorSelectedDevice(selectedIdentifier)
+            await self?.monitorSelectedDevice(
+                selectedIdentifier,
+                generation: generation
+            )
         }
 
         let selector = SpecificDeviceSelector(device: selectedIdentifier)
@@ -124,8 +162,12 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         do {
             session = try wearables.createSession(deviceSelector: selector)
         } catch {
-            tearDownSession()
+            tearDownSession(expectedGeneration: generation)
             throw error
+        }
+
+        guard generationFence.owns(generation), !stopping else {
+            throw AWLError.device("Meta DAT session setup was superseded")
         }
         deviceSession = session
 
@@ -137,7 +179,10 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         errorTask = Task { [weak self] in
             for await error in errorStream {
                 guard !Task.isCancelled else { break }
-                await self?.emitDeviceError(error.localizedDescription)
+                await self?.emitDeviceError(
+                    error.localizedDescription,
+                    generation: generation
+                )
             }
         }
 
@@ -152,33 +197,43 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             // Do not create a second stateStream() after consuming .started.
             // Continue the same stream in one observer so SDK stream semantics cannot
             // create a gap between startup and steady-state monitoring.
+            guard generationFence.owns(generation), !stopping else {
+                throw AWLError.device("Meta DAT session setup was superseded")
+            }
+
             stateTask = Task { [weak self] in
                 for await state in stateStream {
                     guard !Task.isCancelled else { break }
 
                     if state == .stopped {
-                        await self?.handleUnexpectedStop()
+                        await self?.handleUnexpectedStop(generation: generation)
                         break
                     }
                 }
             }
         } catch {
-            tearDownSession()
+            // A stale connect continuation must never tear down a newer retry.
+            tearDownSession(expectedGeneration: generation)
             throw error
         }
     }
 
-    private func monitorSelectedDeviceSignals(_ device: Device) async {
+    private func monitorSelectedDeviceSignals(
+        _ device: Device,
+        generation: UInt64
+    ) async {
         let linkToken = device.addLinkStateListener { [weak self] state in
             guard state != .connected else { return }
             Task { await self?.handleSelectedDeviceUnavailable(
-                "Selected Meta DAT device link became unavailable: \(state)"
+                "Selected Meta DAT device link became unavailable: \(state)",
+                generation: generation
             ) }
         }
         let compatibilityToken = device.addCompatibilityListener { [weak self] compatibility in
             guard compatibility != .compatible else { return }
             Task { await self?.handleSelectedDeviceUnavailable(
-                "Selected Meta DAT device became incompatible: \(compatibility)"
+                "Selected Meta DAT device became incompatible: \(compatibility)",
+                generation: generation
             ) }
         }
 
@@ -196,13 +251,17 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         await compatibilityToken.cancel()
     }
 
-    private func monitorSelectedDevice(_ selectedIdentifier: DeviceIdentifier) async {
+    private func monitorSelectedDevice(
+        _ selectedIdentifier: DeviceIdentifier,
+        generation: UInt64
+    ) async {
         for await identifiers in wearables.devicesStream() {
             guard !Task.isCancelled else { break }
             guard identifiers.contains(selectedIdentifier),
                   let device = wearables.deviceForIdentifier(selectedIdentifier) else {
                 handleSelectedDeviceUnavailable(
-                    "Selected Meta DAT device is no longer paired/available"
+                    "Selected Meta DAT device is no longer paired/available",
+                    generation: generation
                 )
                 return
             }
@@ -210,17 +269,25 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             let compatibility = device.compatibility()
             guard compatibility == .compatible else {
                 handleSelectedDeviceUnavailable(
-                    "Selected Meta DAT device became incompatible: \(compatibility)"
+                    "Selected Meta DAT device became incompatible: \(compatibility)",
+                    generation: generation
                 )
                 return
             }
         }
     }
 
-    private func handleSelectedDeviceUnavailable(_ message: String) {
-        guard !stopping, deviceSession != nil else { return }
+    private func handleSelectedDeviceUnavailable(
+        _ message: String,
+        generation: UInt64
+    ) {
+        guard !stopping,
+              generationFence.owns(generation),
+              deviceSession != nil else {
+            return
+        }
         yieldEvent(.failed(nil, .device(message)))
-        tearDownSession()
+        tearDownSession(expectedGeneration: generation)
     }
 
     private nonisolated static func deviceRank(_ device: Device) -> Int {
@@ -267,24 +334,28 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         tearDownSession()
     }
 
-    private func handleUnexpectedStop() {
-        guard !stopping else { return }
+    private func handleUnexpectedStop(generation: UInt64) {
+        guard !stopping, generationFence.owns(generation) else { return }
         yieldEvent(
             .failed(nil, .device("Meta DAT device session stopped"))
         )
-        tearDownSession()
+        tearDownSession(expectedGeneration: generation)
     }
 
-    private func handleRegistrationLoss() {
-        guard !stopping, deviceSession != nil else { return }
+    private func handleRegistrationLoss(generation: UInt64) {
+        guard !stopping, generationFence.owns(generation) else { return }
+
+        // Registration ownership begins before DeviceSession creation. Do not
+        // require deviceSession != nil here: revocation during startup must
+        // invalidate the whole connect generation.
         yieldEvent(
             .failed(nil, .device("Meta DAT registration became unavailable"))
         )
-        tearDownSession()
+        tearDownSession(expectedGeneration: generation)
     }
 
-    private func emitDeviceError(_ message: String) {
-        guard !stopping else { return }
+    private func emitDeviceError(_ message: String, generation: UInt64) {
+        guard !stopping, generationFence.owns(generation) else { return }
         yieldEvent(.failed(nil, .device(message)))
     }
 
@@ -311,7 +382,11 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         }
     }
 
-    private func tearDownSession() {
+    private func tearDownSession(expectedGeneration: UInt64? = nil) {
+        guard generationFence.retire(ifOwned: expectedGeneration) else {
+            return
+        }
+
         stateTask?.cancel()
         errorTask?.cancel()
         registrationTask?.cancel()
@@ -325,6 +400,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
 
         deviceSession?.stop()
         deviceSession = nil
+        connecting = false
         stopping = false
     }
 }
