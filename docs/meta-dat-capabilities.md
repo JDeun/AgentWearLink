@@ -67,6 +67,8 @@ A usable physical capability is the conservative intersection of:
 
 Multiple paired glasses must not be resolved by list order. Selection ranks connected+donned above connected above merely compatible devices; equal-rank candidates use the stable `DeviceIdentifier` string as a deterministic lexical fallback until the host provides an explicit remembered/user preference. Once a session is created with `SpecificDeviceSelector`, AWL keeps that device pinned for the session and does not silently switch active work to another pair. Eligibility is re-evaluated only at defined lifecycle boundaries.
 
+Concrete session setup is generation-owned from the moment registration monitoring starts. Registration loss during startup invalidates that generation even before a `DeviceSession` exists; no-device, incompatibility, session-creation/start/wait failures, explicit disconnect, selected-device loss, and unexpected stop all retire the same owned monitor/task set. Late callbacks from a retired generation are ignored and cannot tear down a newer reconnect attempt.
+
 ## Capability freshness
 
 The SDK-neutral `MetaDATCapabilities` value is currently static for the lifetime of a `MetaDATAdapter`.
