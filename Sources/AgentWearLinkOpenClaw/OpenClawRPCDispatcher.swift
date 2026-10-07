@@ -33,6 +33,8 @@ public actor OpenClawRPCDispatcher {
     private var finishedAgentRunOrder: [String] = []
 
     private var receiveTask: ReceiveTaskEntry?
+    private var failedReceiveGeneration: UInt64?
+    private var receiveFailureHandler: (@Sendable () async -> Void)?
     private var requestTasks: [String: Task<Void, Never>] = [:]
     private var sendStarted: Set<String> = []
     private var generation: UInt64 = 0
@@ -163,7 +165,14 @@ public actor OpenClawRPCDispatcher {
     }
 
     public var isRunning: Bool {
-        !stopping && receiveTask != nil
+        guard !stopping, let receiveTask else { return false }
+        return failedReceiveGeneration != receiveTask.generation
+    }
+
+    func setReceiveFailureHandler(
+        _ handler: (@Sendable () async -> Void)?
+    ) {
+        receiveFailureHandler = handler
     }
 
     public func isStale(
@@ -183,7 +192,8 @@ public actor OpenClawRPCDispatcher {
         params: Params
     ) async throws -> OpenClawResponseEnvelope {
         guard !stopping,
-              receiveTask != nil else {
+              let activeReceiveTask = receiveTask,
+              failedReceiveGeneration != activeReceiveTask.generation else {
             throw AWLOpenClawError.notReady
         }
         let requestGeneration = generation
@@ -376,21 +386,39 @@ public actor OpenClawRPCDispatcher {
             // stop() owns terminal signaling.
         } catch {
             if isCurrentReceiveGeneration(receiveGeneration) {
+                // Revoke admission synchronously before the first cross-actor
+                // await. A racing request must never observe a live receive
+                // generation after inbound failure is already known locally.
+                failedReceiveGeneration = receiveGeneration
                 await state.disconnect()
 
                 if isCurrentReceiveGeneration(receiveGeneration) {
                     await failAll(error)
-                    for continuation in eventContinuations.values {
-                        continuation.finish(throwing: error)
+                    if isCurrentReceiveGeneration(receiveGeneration) {
+                        for continuation in eventContinuations.values {
+                            continuation.finish(throwing: error)
+                        }
+                        eventContinuations.removeAll(keepingCapacity: false)
+                        finishAllAgentEventSubscribers(throwing: error)
+                        resetAgentRoutingBuffers()
                     }
-                    eventContinuations.removeAll(keepingCapacity: false)
-                    finishAllAgentEventSubscribers(throwing: error)
-                    resetAgentRoutingBuffers()
                 }
             }
         }
 
+        let notifyFailure =
+            failedReceiveGeneration == receiveGeneration &&
+            isCurrentReceiveGeneration(receiveGeneration)
         finishReceiveLoop(generation: receiveGeneration)
+
+        if notifyFailure, let receiveFailureHandler {
+            // Notify only after this exact receive task has retired. The
+            // supervisor may call dispatcher.stop() as part of reconnect;
+            // scheduling the callback after retirement avoids self-wait.
+            Task {
+                await receiveFailureHandler()
+            }
+        }
     }
 
     private static func requiredOperatorScope(for method: String) -> String? {
@@ -409,12 +437,16 @@ public actor OpenClawRPCDispatcher {
     private func finishReceiveLoop(generation completed: UInt64) {
         guard receiveTask?.generation == completed else { return }
         receiveTask = nil
+        if failedReceiveGeneration == completed {
+            failedReceiveGeneration = nil
+        }
     }
 
     private func isActive(generation expected: UInt64) -> Bool {
         !stopping &&
             generation == expected &&
-            receiveTask?.generation == expected
+            receiveTask?.generation == expected &&
+            failedReceiveGeneration != expected
     }
 
     private func markSendStarted(
