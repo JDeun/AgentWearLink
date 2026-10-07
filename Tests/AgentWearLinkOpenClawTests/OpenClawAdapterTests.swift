@@ -45,6 +45,61 @@ final class OpenClawAdapterTests: XCTestCase {
         super.tearDown()
     }
 
+    func testCompatibilityRequestRejectsBearerCredentialsOnRemotePlainHTTP() {
+        let configuration = OpenClawConfiguration(
+            baseURL: URL(string: "http://gateway.example.test:18789")!,
+            bearerToken: "secret",
+            conversationID: "compat-test"
+        )
+
+        XCTAssertThrowsError(
+            try OpenClawRequestFactory.makeRequest(
+                configuration: configuration,
+                request: AgentRequest(
+                    interactionID: InteractionID(),
+                    text: "hello"
+                )
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? AWLError,
+                .transport(
+                    "OpenClaw bearer credentials require HTTPS or an explicit loopback HTTP endpoint"
+                )
+            )
+        }
+    }
+
+    func testCompatibilityRequestAllowsHTTPSAndExplicitLoopbackHTTP() throws {
+        let endpoints = [
+            "https://gateway.example.test:18789",
+            "http://localhost:18789",
+            "http://127.0.0.1:18789",
+            "http://[::1]:18789"
+        ]
+
+        for endpoint in endpoints {
+            let configuration = OpenClawConfiguration(
+                baseURL: URL(string: endpoint)!,
+                bearerToken: "secret",
+                conversationID: "compat-test"
+            )
+            let request = try OpenClawRequestFactory.makeRequest(
+                configuration: configuration,
+                request: AgentRequest(
+                    interactionID: InteractionID(),
+                    text: "hello"
+                )
+            )
+
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "Authorization"),
+                "Bearer secret",
+                endpoint
+            )
+        }
+    }
+
     func testRequestUsesStableConversationAndOperatorToken() throws {
         let config = OpenClawConfiguration(
             baseURL: URL(string: "https://gateway.example.test:18789")!,
