@@ -41,9 +41,9 @@ final class OpenClawExistingSessionContractTests: XCTestCase {
     func testTerminalWaitCanCompleteAfterIncrementalAssistantEvent() throws {
         let data = Data(#"""
         {
-          "runId":"run-existing-session",
           "status":"ok",
-          "terminalReply":{"text":"partial complete"}
+          "terminalReply":{"text":"partial complete"},
+          "sourceReplyDelivered":true
         }
         """#.utf8)
 
@@ -52,8 +52,8 @@ final class OpenClawExistingSessionContractTests: XCTestCase {
             from: data
         )
 
-        XCTAssertEqual(terminal.runId, "run-existing-session")
         XCTAssertEqual(terminal.status, "ok")
+        XCTAssertEqual(terminal.sourceReplyDelivered, true)
         XCTAssertEqual(
             terminal.terminalReply,
             .object(["text": .string("partial complete")])

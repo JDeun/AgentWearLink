@@ -35,16 +35,19 @@ public struct OpenClawAgentWaitParams: Encodable, Sendable {
 }
 
 public struct OpenClawAgentWaitResult: Decodable, Sendable, Equatable {
-    public let runId: String
     public let status: String
+    public let error: String?
+    public let retryableTransportError: Bool?
     public let startedAt: Int64?
     public let endedAt: Int64?
-    public let error: String?
     public let stopReason: String?
+    public let livenessState: String?
+    public let yielded: Bool?
+    public let pendingError: Bool?
     public let timeoutPhase: String?
     public let providerStarted: Bool?
     public let terminalReply: JSONValue?
-    public let terminalReceipt: JSONValue?
+    public let sourceReplyDelivered: Bool?
 }
 
 public struct OpenClawChatAbortParams: Encodable, Sendable {

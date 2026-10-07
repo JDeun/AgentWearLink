@@ -29,7 +29,7 @@ private func terminalWaitResult(_ status: String) throws -> OpenClawAgentWaitRes
         OpenClawAgentWaitResult.self,
         from: Data(
             """
-            {"runId":"run-1","status":"\(status)"}
+            {"status":"\(status)"}
             """.utf8
         )
     )
@@ -128,8 +128,11 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
     func testWaitResultDecodesPendingMetadata() throws {
         let data = Data(#"""
         {
-          "runId":"run-1",
           "status":"pending",
+          "retryableTransportError":true,
+          "livenessState":"waiting",
+          "yielded":false,
+          "pendingError":false,
           "timeoutPhase":"queue",
           "providerStarted":false
         }
@@ -141,20 +144,28 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
         )
 
         XCTAssertEqual(result.status, "pending")
+        XCTAssertEqual(result.retryableTransportError, true)
+        XCTAssertEqual(result.livenessState, "waiting")
+        XCTAssertEqual(result.yielded, false)
+        XCTAssertEqual(result.pendingError, false)
         XCTAssertEqual(result.timeoutPhase, "queue")
         XCTAssertEqual(result.providerStarted, false)
         XCTAssertNil(result.endedAt)
     }
 
-    func testWaitResultDecodesTerminalReceipt() throws {
+    func testWaitResultDecodesCurrentTerminalReplyShape() throws {
         let data = Data(#"""
         {
-          "runId":"run-1",
           "status":"ok",
           "startedAt":1,
           "endedAt":2,
+          "stopReason":"end_turn",
+          "livenessState":"terminal",
+          "yielded":true,
+          "pendingError":false,
+          "providerStarted":true,
           "terminalReply":{"text":"done"},
-          "terminalReceipt":{"sourceReplyDelivered":true}
+          "sourceReplyDelivered":true
         }
         """#.utf8)
 
@@ -164,14 +175,51 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
         )
 
         XCTAssertEqual(result.status, "ok")
+        XCTAssertEqual(result.stopReason, "end_turn")
+        XCTAssertEqual(result.livenessState, "terminal")
+        XCTAssertEqual(result.yielded, true)
+        XCTAssertEqual(result.pendingError, false)
+        XCTAssertEqual(result.providerStarted, true)
         XCTAssertEqual(
             result.terminalReply,
             .object(["text": .string("done")])
         )
-        XCTAssertEqual(
-            result.terminalReceipt,
-            .object(["sourceReplyDelivered": .bool(true)])
+        XCTAssertEqual(result.sourceReplyDelivered, true)
+    }
+
+    func testTerminalPollingAcceptsCurrentGatewayShapeWithoutRunID() async throws {
+        let currentShape = try JSONDecoder().decode(
+            OpenClawAgentWaitResult.self,
+            from: Data(#"""
+            {
+              "status":"ok",
+              "startedAt":100,
+              "endedAt":200,
+              "stopReason":"end_turn",
+              "livenessState":"terminal",
+              "yielded":true,
+              "providerStarted":true,
+              "terminalReply":{"text":"done"},
+              "sourceReplyDelivered":true
+            }
+            """#.utf8)
         )
+        let script = TerminalWaitScript(results: [currentShape])
+
+        let result = try await OpenClawNativeAgentAdapter.pollUntilTerminal(
+            maximumPolls: 2,
+            pollTimeoutMilliseconds: 30_000
+        ) { timeoutMilliseconds in
+            try await script.next(timeoutMilliseconds: timeoutMilliseconds)
+        }
+
+        XCTAssertEqual(result.status, "ok")
+        XCTAssertEqual(
+            result.terminalReply,
+            .object(["text": .string("done")])
+        )
+        let callCount = await script.callCount()
+        XCTAssertEqual(callCount, 1)
     }
     func testAssistantProjectionEmitsOnlyExplicitAppendDelta() {
         let payload = JSONValue.object([
