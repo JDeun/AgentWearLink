@@ -133,6 +133,7 @@ public struct GatewayScopedOpenClawDeviceCredentialStore:
             deviceID: deviceID,
             role: credential.role,
             requestedRole: credential.requestedRole,
+            storageRoleOverride: credential.storageRoleOverride,
             scopes: credential.scopes,
             token: credential.token
         )
