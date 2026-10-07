@@ -202,8 +202,12 @@ final class OpenClawAgentRunTests: XCTestCase {
         }
 
         var iterator = updates.makeAsyncIterator()
-        let second = try await iterator.next()
-        let third = try await iterator.next()
+        let secondValue = try await iterator.next()
+        let thirdValue = try await iterator.next()
+        guard let second = secondValue, let third = thirdValue else {
+            await dispatcher.stop()
+            return XCTFail("Expected two buffered run updates before overflow")
+        }
 
         if case let .assistant(_, .object(payload)?) = second,
            case let .string(delta)? = payload["delta"] {
