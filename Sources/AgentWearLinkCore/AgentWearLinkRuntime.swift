@@ -183,6 +183,12 @@ public actor AgentWearLinkRuntime {
         finishStopping()
     }
 
+    /// Internal test probe used to replace scheduler-delay assumptions in
+    /// lifecycle race regressions. This is intentionally not public API.
+    func isStoppingForTesting() -> Bool {
+        lifecycleState == .stopping
+    }
+
     private func requireActiveStartup(generation: UInt64) throws {
         guard lifecycleState == .starting,
               lifecycleGeneration == generation else {
