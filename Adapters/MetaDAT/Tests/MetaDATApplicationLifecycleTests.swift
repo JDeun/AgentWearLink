@@ -3,20 +3,20 @@ import XCTest
 
 final class MetaDATApplicationLifecycleTests: XCTestCase {
     func testPublishesInitialAndDistinctHostPhases() async throws {
-        let lifecycle = MetaDATApplicationLifecycle()
+        let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
         let phases = await lifecycle.phases()
         var iterator = phases.makeAsyncIterator()
 
         let initial = await iterator.next()
-        XCTAssertEqual(initial, .foreground)
+        XCTAssertEqual(initial, MetaDATApplicationPhase.foreground)
         await lifecycle.transition(to: .background)
         let background = await iterator.next()
-        XCTAssertEqual(background, .background)
+        XCTAssertEqual(background, MetaDATApplicationPhase.background)
 
         // Repeating the same host callback must not manufacture another state edge.
         await lifecycle.transition(to: .background)
         let current = await lifecycle.currentPhase
-        XCTAssertEqual(current, .background)
+        XCTAssertEqual(current, MetaDATApplicationPhase.background)
     }
     func testForegroundReadinessRequiresFreshReacquisitionAfterBackground() async {
         let readiness = MetaDATForegroundReadiness()
