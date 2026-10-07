@@ -328,7 +328,7 @@ final class RuntimeTests: XCTestCase {
 
         let events = await recorder.events
         XCTAssertTrue(events.contains(.text(id, "echo: hello")))
-        XCTAssertTrue(events.contains(.sessionEnded(id)))
+        XCTAssertTrue(events.contains(.turnCompleted(id)))
 
         await runtime.stop()
     }
