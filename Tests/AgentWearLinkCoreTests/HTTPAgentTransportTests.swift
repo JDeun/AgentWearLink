@@ -27,108 +27,10 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
 
 }
 
-private final class StreamingURLProtocolStub: URLProtocol, @unchecked Sendable {
-    private static let metricsLock = NSLock()
-    private nonisolated(unsafe) static var chunksSentStorage = 0
-    private nonisolated(unsafe) static var onStopStorage: (() -> Void)?
-    static let overflowChunkCount = 3
-
-    private let stateLock = NSLock()
-    private var stopped = false
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    static func reset(onStop: (() -> Void)? = nil) {
-        metricsLock.lock()
-        chunksSentStorage = 0
-        onStopStorage = onStop
-        metricsLock.unlock()
-    }
-
-    static func chunksSent() -> Int {
-        metricsLock.lock()
-        defer { metricsLock.unlock() }
-        return chunksSentStorage
-    }
-
-    private static func recordChunk() {
-        metricsLock.lock()
-        chunksSentStorage += 1
-        metricsLock.unlock()
-    }
-
-    private static func stopHandler() -> (() -> Void)? {
-        metricsLock.lock()
-        defer { metricsLock.unlock() }
-        return onStopStorage
-    }
-
-    override func startLoading() {
-        guard let url = request.url,
-              let response = HTTPURLResponse(
-                url: url,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Transfer-Encoding": "chunked"]
-              ) else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        sendChunk(at: 0)
-    }
-
-    private func sendChunk(at index: Int) {
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.01) { [weak self] in
-            guard let self else { return }
-
-            self.stateLock.lock()
-            let isStopped = self.stopped
-            self.stateLock.unlock()
-            guard !isStopped else { return }
-
-            guard index < Self.overflowChunkCount else {
-                // Intentionally keep the chunked response open. The third
-                // 4-byte chunk crosses the transport's 8-byte ceiling, so the
-                // transport must fail and cancel this URLProtocol source
-                // without waiting for end-of-response. This makes the test
-                // prove incremental enforcement rather than scheduler timing.
-                return
-            }
-
-            Self.recordChunk()
-            self.client?.urlProtocol(
-                self,
-                didLoad: Data(repeating: 65, count: 4)
-            )
-            self.sendChunk(at: index + 1)
-        }
-    }
-
-    override func stopLoading() {
-        stateLock.lock()
-        let shouldNotify = !stopped
-        stopped = true
-        stateLock.unlock()
-
-        if shouldNotify {
-            Self.stopHandler()?()
-        }
-    }
-}
-
 final class HTTPAgentTransportTests: XCTestCase {
     private func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
-        return URLSession(configuration: configuration)
-    }
-
-    private func makeStreamingSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StreamingURLProtocolStub.self]
         return URLSession(configuration: configuration)
     }
 
@@ -269,39 +171,46 @@ final class HTTPAgentTransportTests: XCTestCase {
         }
     }
 
-    func testCancelsStreamingResponseBeforeFullBodyAccumulation() async throws {
-        let stopped = expectation(description: "streaming response cancelled")
-        StreamingURLProtocolStub.reset {
-            stopped.fulfill()
-        }
-        defer {
-            StreamingURLProtocolStub.reset()
-        }
+    func testResponseLoaderCancelsBeforeOversizedChunkCanBeAccumulated() {
+        let lock = NSLock()
+        var events: [String] = []
+        var terminalError: AWLError?
 
-        let transport = HTTPAgentTransport(
-            configuration: .init(
-                endpoint: URL(string: "https://example.invalid")!,
-                maximumResponseBytes: 8
-            ),
-            session: makeStreamingSession()
+        let request = URLRequest(
+            url: URL(string: "https://example.invalid")!
         )
-        let request = AgentRequest(interactionID: InteractionID(), text: "hello")
+        let loader = BoundedHTTPResponseLoader(
+            configuration: .ephemeral,
+            request: request,
+            maximumResponseBytes: 8
+        ) { result in
+            lock.lock()
+            defer { lock.unlock() }
 
-        do {
-            for try await _ in await transport.send(request) {}
-            XCTFail("Expected incremental byte limit failure")
-        } catch let error as AWLError {
-            XCTAssertEqual(
-                error,
-                .transport("response exceeds configured byte limit")
-            )
+            events.append("completion")
+            if case let .failure(error as AWLError) = result {
+                terminalError = error
+            }
         }
 
-        await fulfillment(of: [stopped], timeout: 1.0)
+        loader.receiveBodyChunk(Data(repeating: 65, count: 4)) {
+            XCTFail("first chunk must not cancel")
+        }
+        loader.receiveBodyChunk(Data(repeating: 66, count: 4)) {
+            XCTFail("chunk at the exact limit must not cancel")
+        }
+        loader.receiveBodyChunk(Data(repeating: 67, count: 4)) {
+            lock.lock()
+            events.append("cancel")
+            lock.unlock()
+        }
+
+        XCTAssertEqual(loader.bufferedResponseByteCount(), 8)
         XCTAssertEqual(
-            StreamingURLProtocolStub.chunksSent(),
-            StreamingURLProtocolStub.overflowChunkCount
+            terminalError,
+            .transport("response exceeds configured byte limit")
         )
+        XCTAssertEqual(events, ["cancel", "completion"])
     }
 
     func testCancellingUnknownInteractionDoesNotCreateState() async {
