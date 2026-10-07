@@ -1,6 +1,8 @@
 import Foundation
 
 private final class MockDeviceEventSource: @unchecked Sendable {
+    private static let bufferLimit = 64
+
     private struct Subscription {
         let id: UUID
         let continuation: AsyncStream<InteractionEvent>.Continuation
@@ -12,7 +14,9 @@ private final class MockDeviceEventSource: @unchecked Sendable {
     func stream() -> AsyncStream<InteractionEvent> {
         let id = UUID()
 
-        return AsyncStream { continuation in
+        return AsyncStream(
+            bufferingPolicy: .bufferingNewest(Self.bufferLimit)
+        ) { continuation in
             continuation.onTermination = { [weak self] _ in
                 self?.remove(id: id)
             }
@@ -28,8 +32,28 @@ private final class MockDeviceEventSource: @unchecked Sendable {
     }
 
     func yield(_ event: InteractionEvent) {
-        let continuation = lock.withLock { subscription?.continuation }
-        continuation?.yield(event)
+        guard let active = lock.withLock({ subscription }) else { return }
+
+        guard case .dropped = active.continuation.yield(event) else { return }
+
+        // A slow consumer must not turn this stream into an unbounded queue.
+        // Preserve an explicit terminal overload signal as the newest element,
+        // then retire only the subscription generation that overflowed.
+        _ = active.continuation.yield(
+            .failed(
+                event.interactionID,
+                .overloaded("Device event stream buffer capacity exceeded")
+            )
+        )
+
+        let shouldFinish = lock.withLock { () -> Bool in
+            guard subscription?.id == active.id else { return false }
+            subscription = nil
+            return true
+        }
+        if shouldFinish {
+            active.continuation.finish()
+        }
     }
 
     func finish() {

@@ -69,6 +69,8 @@ public enum MetaDATEvent: Sendable, Equatable {
 
 /// Normalizes Meta DAT session semantics into AgentWearLink Core contracts.
 private final class MetaDATInteractionEventSource: @unchecked Sendable {
+    private static let bufferLimit = 64
+
     private struct Subscription {
         let generation: UInt64
         let continuation: AsyncStream<InteractionEvent>.Continuation
@@ -79,7 +81,9 @@ private final class MetaDATInteractionEventSource: @unchecked Sendable {
     private var subscription: Subscription?
 
     func stream() -> AsyncStream<InteractionEvent> {
-        AsyncStream { continuation in
+        AsyncStream(
+            bufferingPolicy: .bufferingNewest(Self.bufferLimit)
+        ) { continuation in
             lock.lock()
             nextGeneration &+= 1
             let previous = subscription
@@ -102,9 +106,32 @@ private final class MetaDATInteractionEventSource: @unchecked Sendable {
 
     func yield(_ event: InteractionEvent) {
         lock.lock()
-        let continuation = subscription?.continuation
+        let active = subscription
         lock.unlock()
-        continuation?.yield(event)
+
+        guard let active else { return }
+        guard case .dropped = active.continuation.yield(event) else { return }
+
+        // Device-to-Core delivery is deliberately bounded. If a consumer falls
+        // behind far enough to drop an event, surface that loss explicitly and
+        // retire only the overflowing subscription generation.
+        _ = active.continuation.yield(
+            .failed(
+                event.interactionID,
+                .overloaded("Meta DAT event stream buffer capacity exceeded")
+            )
+        )
+
+        lock.lock()
+        let shouldFinish = subscription?.generation == active.generation
+        if shouldFinish {
+            subscription = nil
+        }
+        lock.unlock()
+
+        if shouldFinish {
+            active.continuation.finish()
+        }
     }
 
     func finish(generation: UInt64?) {
