@@ -158,7 +158,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private let cameraSnapshotController: MetaDATCameraSnapshotController
     private nonisolated let eventSource: MetaDATDeviceEventSource
     private let foregroundReadiness: MetaDATForegroundReadiness
-    private var applicationPhase: MetaDATApplicationPhase
+    private var applicationOwnership: MetaDATApplicationOwnershipState
     private var generationFence = MetaDATSessionGenerationFence()
     private var selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
     private var connecting = false
@@ -176,7 +176,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         precondition(connectTimeout > .zero)
         precondition(eventBufferLimit > 0)
         self.wearables = wearables
-        self.applicationPhase = initialApplicationPhase
+        self.applicationOwnership = MetaDATApplicationOwnershipState(
+            initialPhase: initialApplicationPhase
+        )
         self.foregroundReadiness = MetaDATForegroundReadiness(
             initialPhase: initialApplicationPhase
         )
@@ -194,7 +196,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     public func connect() async throws {
         guard deviceSession == nil, !connecting else { return }
-        guard applicationPhase == .foreground else {
+        guard applicationOwnership.permitsSessionAcquisition else {
             throw AWLError.capabilityUnavailable(
                 "Meta DAT media session cannot connect while the host is backgrounded"
             )
@@ -317,7 +319,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             // create a gap between startup and steady-state monitoring.
             guard generationFence.owns(generation),
                   !stopping,
-                  applicationPhase == .foreground else {
+                  applicationOwnership.permitsSessionAcquisition else {
                 throw AWLError.device("Meta DAT session setup was superseded")
             }
 
@@ -341,7 +343,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public func captureSnapshot(
         interactionID: InteractionID
     ) async throws -> ImageAttachment {
-        guard applicationPhase == .foreground,
+        guard applicationOwnership.permitsSessionAcquisition,
               await foregroundReadiness.state == .fresh else {
             throw AWLError.capabilityUnavailable(
                 "Meta DAT private media requires fresh foreground readiness"
@@ -599,12 +601,16 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public func applicationPhaseDidChange(
         _ phase: MetaDATApplicationPhase
     ) async {
-        guard phase != applicationPhase else { return }
+        let shouldRetireSession = applicationOwnership.transition(
+            to: phase
+        )
+        guard shouldRetireSession || applicationOwnership.phase == phase else {
+            return
+        }
 
-        applicationPhase = phase
         await foregroundReadiness.handle(phase)
 
-        if phase == .background {
+        if shouldRetireSession {
             tearDownSession()
         }
     }
