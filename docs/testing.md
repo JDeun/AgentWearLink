@@ -44,6 +44,16 @@ This catches SDK/API drift. It does not prove runtime behavior.
 
 ## 3. Simulator/vendor behavioral integration
 
+The generated Meta iOS test host uses **XcodeGen 2.46.0**. Install the repository-pinned, checksum-verified official release archive before generating the project:
+
+```bash
+bash scripts/install-xcodegen.sh
+export PATH="$PWD/.build/tools:$PATH"
+xcodegen --version
+```
+
+CI uses the same script and pinned archive SHA-256. The installer preserves the complete XcodeGen release distribution, including `share/xcodegen/SettingPresets`; copying only the executable drops default Xcode build settings required by generated app targets. Upgrade XcodeGen only in a dedicated dependency/CI change that updates the version/checksum, generated-project validation, and this documentation together. The generated `.xcodeproj` remains ephemeral.
+
 Meta's MockDeviceKit runs in an iOS host process and is driven through `MWDATMockDeviceTestClient`. The behavioral contract covers server rendezvous, mock pairing/state transitions, and normal DAT wiring.
 
 This layer can prove that the pinned vendor SDK and AWL integration cooperate in supported simulator conditions. It cannot prove Bluetooth, real sensor timing, firmware behavior, physical audio routing, lock-screen/background execution, or mobile Tailnet behavior.
