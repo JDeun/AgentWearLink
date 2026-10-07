@@ -136,6 +136,100 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
         }
     }
 
+    func testPairingRequiredInvalidatesStoredCredential() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let credentialStore = InMemoryOpenClawDeviceCredentialStore()
+        try await credentialStore.save(
+            .init(
+                deviceID: deviceID,
+                role: "operator",
+                scopes: ["operator.read"],
+                token: "stored"
+            )
+        )
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: credentialStore
+        )
+        let connection = OpenClawGatewayConnection(
+            socket: PairingRequiredHandshakeSocket(),
+            assembler: assembler
+        )
+
+        do {
+            _ = try await connection.connect(
+                appVersion: "0.1.0",
+                credentials: .init(bootstrapToken: "bootstrap")
+            )
+            XCTFail("Expected pairing-required rejection")
+        } catch let error as OpenClawHandshakeError {
+            guard case .pairingRequired = error else {
+                XCTFail("Unexpected handshake error: \(error)")
+                return
+            }
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let remaining = try await credentialStore.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        XCTAssertNil(remaining)
+    }
+
+    func testTransientGatewayErrorPreservesStoredCredential() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let credentialStore = InMemoryOpenClawDeviceCredentialStore()
+        try await credentialStore.save(
+            .init(
+                deviceID: deviceID,
+                role: "operator",
+                scopes: ["operator.read"],
+                token: "stored"
+            )
+        )
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: credentialStore
+        )
+        let connection = OpenClawGatewayConnection(
+            socket: RejectingHandshakeSocket(retryAfterMs: 1_000),
+            assembler: assembler
+        )
+
+        do {
+            _ = try await connection.connect(
+                appVersion: "0.1.0",
+                credentials: .init(bootstrapToken: "bootstrap")
+            )
+            XCTFail("Expected transient Gateway rejection")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(
+                error,
+                .gateway(
+                    code: "BUSY",
+                    retryable: true,
+                    retryAfterMilliseconds: 1_000
+                )
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let remaining = try await credentialStore.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        XCTAssertEqual(remaining?.token, "stored")
+    }
+
 }
 
 private actor AdaptiveHandshakeSocket: OpenClawWebSocket {
@@ -205,6 +299,50 @@ private actor RejectingHandshakeSocket: OpenClawWebSocket {
         }
         return """
         {"type":"res","id":"\(id)","ok":false,"error":{"code":"BUSY","message":"busy","retryable":true,"retryAfterMs":\(retryAfterMs)}}
+        """
+    }
+
+    func close() async {}
+}
+
+
+private actor PairingRequiredHandshakeSocket: OpenClawWebSocket {
+    private var sentFrames: [String] = []
+    private var receiveCount = 0
+
+    func connect() async {}
+
+    func send(text: String) async throws {
+        sentFrames.append(text)
+    }
+
+    func receive() async throws -> String {
+        defer { receiveCount += 1 }
+
+        if receiveCount == 0 {
+            return #"{"type":"event","event":"connect.challenge","payload":{"nonce":"abc","ts":1737264000000}}"#
+        }
+
+        guard let sent = sentFrames.last,
+              let data = sent.data(using: .utf8),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = json["id"] as? String else {
+            throw OpenClawFrameError.malformedFrame
+        }
+
+        return """
+        {"type":"res","id":"\(id)","ok":false,"error":{
+          "code":"AUTH_FAILED","message":"pairing required","retryable":false,
+          "details":{
+            "code":"PAIRING_REQUIRED",
+            "requestId":"pair-1",
+            "deviceId":"device-1",
+            "reason":"grant rejected",
+            "recommendedNextStep":"pair again",
+            "waitForResolution":true,
+            "pauseReconnect":true
+          }
+        }}
         """
     }
 

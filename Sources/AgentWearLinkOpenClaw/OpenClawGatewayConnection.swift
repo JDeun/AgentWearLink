@@ -87,6 +87,10 @@ public actor OpenClawGatewayConnection {
             guard response.ok else {
                 if let error = response.error,
                    let pairing = OpenClawPairingRequired(error: error) {
+                    // Pairing rejection proves the stored device grant is no longer
+                    // usable. Cleanup is best effort so Keychain/store failure cannot
+                    // mask the authoritative Gateway handshake error.
+                    try? await assembler.invalidateStoredCredentialIfUsed(assembled)
                     throw OpenClawHandshakeError.pairingRequired(pairing)
                 }
 

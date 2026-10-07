@@ -34,6 +34,7 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         )
 
         XCTAssertEqual(result.effectiveToken, "shared")
+        XCTAssertFalse(result.usedStoredCredential)
         XCTAssertFalse(result.usedBootstrapToken)
         XCTAssertEqual(
             result.params.scopes,
@@ -66,6 +67,7 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         )
 
         XCTAssertEqual(result.effectiveToken, "stored")
+        XCTAssertTrue(result.usedStoredCredential)
         XCTAssertEqual(
             result.params.scopes,
             ["operator.read", "operator.write"]
@@ -178,6 +180,78 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         XCTAssertEqual(reconnect.params.scopes, ["operator.read"])
         XCTAssertFalse(reconnect.usedBootstrapToken)
         XCTAssertEqual(reconnect.params.device?.nonce, "fresh-nonce")
+    }
+
+    func testInvalidatingRejectedStoredCredentialRemovesGrantActuallyUsed() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let credentialStore = InMemoryOpenClawDeviceCredentialStore()
+        let deviceID = try identity.deviceID
+        try await credentialStore.save(
+            .init(
+                deviceID: deviceID,
+                role: "operator",
+                scopes: ["operator.read"],
+                token: "stored"
+            )
+        )
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: credentialStore
+        )
+
+        let assembled = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(bootstrapToken: "bootstrap"),
+            challenge: challenge
+        )
+
+        XCTAssertTrue(assembled.usedStoredCredential)
+        try await assembler.invalidateStoredCredentialIfUsed(assembled)
+
+        let remaining = try await credentialStore.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        XCTAssertNil(remaining)
+    }
+
+    func testExplicitTokenEqualToStoredValueDoesNotInvalidateStoredGrant() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let credentialStore = InMemoryOpenClawDeviceCredentialStore()
+        let deviceID = try identity.deviceID
+        try await credentialStore.save(
+            .init(
+                deviceID: deviceID,
+                role: "operator",
+                scopes: ["operator.read"],
+                token: "same-token"
+            )
+        )
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: credentialStore
+        )
+
+        let assembled = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(token: "same-token"),
+            challenge: challenge
+        )
+
+        XCTAssertFalse(assembled.usedStoredCredential)
+        try await assembler.invalidateStoredCredentialIfUsed(assembled)
+
+        let remaining = try await credentialStore.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        XCTAssertEqual(remaining?.token, "same-token")
     }
 
 }

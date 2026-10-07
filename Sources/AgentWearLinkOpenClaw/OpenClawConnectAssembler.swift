@@ -27,6 +27,7 @@ public struct OpenClawAssembledConnect: Sendable, CustomStringConvertible, Custo
     public let identity: OpenClawDeviceIdentity
     public let storedCredential: OpenClawDeviceCredential?
     public let effectiveToken: String?
+    public let usedStoredCredential: Bool
     public let usedBootstrapToken: Bool
 
     public var description: String { "OpenClawAssembledConnect(<redacted>)" }
@@ -67,14 +68,18 @@ public struct OpenClawConnectAssembler: Sendable {
             credentials.explicitDeviceToken ??
             stored?.token
 
+        let usedStoredCredential =
+            credentials.token == nil &&
+            credentials.explicitDeviceToken == nil &&
+            stored != nil &&
+            effectiveToken == stored?.token
+
         let bootstrap = effectiveToken == nil
             ? credentials.bootstrapToken
             : nil
 
         let scopes: [String]
-        if credentials.token == nil,
-           credentials.explicitDeviceToken == nil,
-           effectiveToken == stored?.token,
+        if usedStoredCredential,
            let stored {
             scopes = stored.scopes
         } else {
@@ -107,7 +112,20 @@ public struct OpenClawConnectAssembler: Sendable {
             identity: identity,
             storedCredential: stored,
             effectiveToken: effectiveToken,
+            usedStoredCredential: usedStoredCredential,
             usedBootstrapToken: bootstrap != nil
+        )
+    }
+
+    public func invalidateStoredCredentialIfUsed(
+        _ assembled: OpenClawAssembledConnect
+    ) async throws {
+        guard assembled.usedStoredCredential,
+              let stored = assembled.storedCredential else { return }
+
+        try await credentialStore.remove(
+            deviceID: stored.deviceID,
+            role: stored.role
         )
     }
 
