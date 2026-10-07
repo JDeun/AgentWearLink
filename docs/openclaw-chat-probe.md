@@ -11,6 +11,9 @@ Required:
 - `AWL_OPENCLAW_URL`
 - `AWL_OPENCLAW_CHAT_MESSAGE`
 - `AWL_ALLOW_MUTATING_PROBE=1`
+- `AWL_OPENCLAW_EXPOSURE` for every non-loopback Gateway URL
+
+Supported exposure values are `tailnet-direct`, `tailnet-serve`, and `private-reverse-proxy`. Loopback URLs may omit the exposure variable.
 
 Optional:
 
@@ -22,6 +25,7 @@ Example:
 
     AWL_ALLOW_MUTATING_PROBE=1 \
     AWL_OPENCLAW_URL=wss://<mac-mini>.ts.net \
+    AWL_OPENCLAW_EXPOSURE=tailnet-serve \
     AWL_OPENCLAW_SESSION_KEY=<existing-session> \
     AWL_OPENCLAW_CHAT_MESSAGE="Reply with AWL P0-B OK" \
     swift run awl-openclaw-chat-probe
