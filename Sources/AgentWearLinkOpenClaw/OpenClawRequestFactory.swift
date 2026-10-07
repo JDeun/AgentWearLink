@@ -6,6 +6,7 @@ enum OpenClawRequestFactory {
         configuration: OpenClawConfiguration,
         request: AgentRequest
     ) throws -> URLRequest {
+        try configuration.validateBearerTransport()
         try request.validateMaximumTextBytes(configuration.maximumRequestBytes)
 
         let endpoint = configuration.baseURL
