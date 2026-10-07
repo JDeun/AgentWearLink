@@ -11,10 +11,11 @@ public protocol SpeechSynthesizing: Sendable {
 /// The concrete AVSpeechSynthesizer bridge lives in the iOS host. This actor
 /// deliberately keeps only the latest pending text and cancels active speech
 /// before a replacement, preventing an unbounded spoken-response queue.
-public actor AppleSpeechOutput {
+public actor AppleSpeechOutput: InteractionOutputSink {
     public static let defaultMaximumBufferedTextBytes = 64 * 1024
     private static let maximumTerminalHistory = 64
 
+    public nonisolated let capabilities: CapabilitySet = [.speakerOutput]
     private let synthesizer: any SpeechSynthesizing
     private let maximumBufferedTextBytes: Int
     private var activeInteractionID: InteractionID?
@@ -30,6 +31,25 @@ public actor AppleSpeechOutput {
         precondition(maximumBufferedTextBytes > 0)
         self.synthesizer = synthesizer
         self.maximumBufferedTextBytes = maximumBufferedTextBytes
+    }
+
+    public func consume(_ event: InteractionEvent) async {
+        switch event {
+        case let .text(id, text):
+            await consume(.textDelta(id, text))
+        case let .turnCompleted(id):
+            await consume(.completed(id))
+        case let .interrupted(id), let .sessionEnded(id):
+            await interrupt(interactionID: id)
+        case let .failed(id?, error):
+            await consume(.failed(id, error))
+        case let .failed(nil, error):
+            if case .device = error {
+                await interrupt()
+            }
+        case .sessionStarted, .invocation:
+            break
+        }
     }
 
     public func consume(_ response: AgentResponse) async {
