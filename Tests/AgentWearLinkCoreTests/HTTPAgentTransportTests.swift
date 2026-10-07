@@ -31,7 +31,7 @@ private final class StreamingURLProtocolStub: URLProtocol, @unchecked Sendable {
     private static let metricsLock = NSLock()
     private nonisolated(unsafe) static var chunksSentStorage = 0
     private nonisolated(unsafe) static var onStopStorage: (() -> Void)?
-    static let totalChunks = 64
+    static let overflowChunkCount = 3
 
     private let stateLock = NSLock()
     private var stopped = false
@@ -89,8 +89,12 @@ private final class StreamingURLProtocolStub: URLProtocol, @unchecked Sendable {
             self.stateLock.unlock()
             guard !isStopped else { return }
 
-            guard index < Self.totalChunks else {
-                self.client?.urlProtocolDidFinishLoading(self)
+            guard index < Self.overflowChunkCount else {
+                // Intentionally keep the chunked response open. The third
+                // 4-byte chunk crosses the transport's 8-byte ceiling, so the
+                // transport must fail and cancel this URLProtocol source
+                // without waiting for end-of-response. This makes the test
+                // prove incremental enforcement rather than scheduler timing.
                 return
             }
 
@@ -99,20 +103,7 @@ private final class StreamingURLProtocolStub: URLProtocol, @unchecked Sendable {
                 self,
                 didLoad: Data(repeating: 65, count: 4)
             )
-
-            // The third 4-byte chunk is the first one that crosses the
-            // transport's 8-byte test ceiling. Give URLSession cancellation a
-            // deterministic handoff window before the producer emits more
-            // bytes. Without this pause, a synthetic URLProtocol can outrun
-            // Foundation's asynchronous task cancellation on loaded CI
-            // runners and make the test measure scheduler latency rather than
-            // the transport's incremental bound.
-            let nextDelay: TimeInterval = index == 2 ? 0.5 : 0
-            DispatchQueue.global().asyncAfter(
-                deadline: .now() + nextDelay
-            ) { [weak self] in
-                self?.sendChunk(at: index + 1)
-            }
+            self.sendChunk(at: index + 1)
         }
     }
 
@@ -307,9 +298,9 @@ final class HTTPAgentTransportTests: XCTestCase {
         }
 
         await fulfillment(of: [stopped], timeout: 1.0)
-        XCTAssertLessThan(
+        XCTAssertEqual(
             StreamingURLProtocolStub.chunksSent(),
-            StreamingURLProtocolStub.totalChunks
+            StreamingURLProtocolStub.overflowChunkCount
         )
     }
 
