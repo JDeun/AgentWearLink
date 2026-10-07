@@ -10,6 +10,10 @@ let package = Package(
         .library(
             name: "AgentWearLinkMetaDATIntegration",
             targets: ["AgentWearLinkMetaDATIntegration"]
+        ),
+        .library(
+            name: "AgentWearLinkMetaDATTestSupport",
+            targets: ["AgentWearLinkMetaDATTestSupport"]
         )
     ],
     dependencies: [
@@ -27,15 +31,24 @@ let package = Package(
                 .product(name: "AgentWearLinkMetaDAT", package: "AgentWearLink"),
                 .product(name: "MWDATCore", package: "meta-wearables-dat-ios"),
                 .product(name: "MWDATCamera", package: "meta-wearables-dat-ios"),
-                .product(name: "MWDATSpeech", package: "meta-wearables-dat-ios"),
-                .product(name: "MWDATMockDevice", package: "meta-wearables-dat-ios")
+                .product(name: "MWDATSpeech", package: "meta-wearables-dat-ios")
             ],
             path: "Sources"
+        ),
+        .target(
+            name: "AgentWearLinkMetaDATTestSupport",
+            dependencies: [
+                "AgentWearLinkMetaDATIntegration",
+                .product(name: "MWDATCore", package: "meta-wearables-dat-ios"),
+                .product(name: "MWDATMockDevice", package: "meta-wearables-dat-ios")
+            ],
+            path: "TestSupport"
         ),
         .testTarget(
             name: "AgentWearLinkMetaDATIntegrationTests",
             dependencies: [
                 "AgentWearLinkMetaDATIntegration",
+                "AgentWearLinkMetaDATTestSupport",
                 .product(name: "MWDATMockDevice", package: "meta-wearables-dat-ios")
             ],
             path: "Tests"
