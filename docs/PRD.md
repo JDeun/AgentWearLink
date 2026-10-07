@@ -92,11 +92,11 @@ Current capability vocabulary includes text input, speech input, raw audio input
 
 ### FR-2 Interaction lifecycle
 
-AWL must represent stable interaction IDs, start, text/invocation, interruption, completion, cancellation and typed failure.
+AWL must represent stable interaction correlation IDs, start, text/invocation, interruption, completion, cancellation and typed failure. A Core `InteractionID` is not itself a runtime idempotency key: a later logical agent submission may reuse the same interaction correlation ID after the prior submission has terminated.
 
 ### FR-3 Agent boundary
 
-Agent requests/responses are distinct from wearable events. Incremental output is supported where the runtime provides it.
+Agent requests/responses are distinct from wearable events. Incremental output is supported where the runtime provides it. Runtime adapters must give each logical mutating submission its own stable idempotency identity: the same submission keeps that identity for reconciliation, while a genuinely new submission receives a fresh identity.
 
 ### FR-4 Runtime lifecycle
 

@@ -77,7 +77,9 @@ Private media crosses AWL boundaries only through explicit bounded contracts. Im
 
 ## Session invariants
 
-- One interaction has one stable ID.
+- One interaction has one stable correlation ID.
+- An interaction may produce a later, distinct agent submission after a prior submission has terminated; only one submission for the same interaction is admitted concurrently by the coordinator.
+- Each logical runtime submission owns a separate adapter/runtime idempotency identity. Reconciliation of the same submission reuses that identity, while a new submission receives a fresh identity even when its Core `InteractionID` is unchanged.
 - Cancellation is idempotent.
 - Late responses from a cancelled interaction are ignored.
 - Device reconnect does not silently create duplicate agent requests.

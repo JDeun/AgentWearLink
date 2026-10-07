@@ -1,6 +1,20 @@
 import AgentWearLinkCore
 import Foundation
 
+/// Identifies one logical OpenClaw agent submission independently from Core's
+/// longer-lived interaction correlation identity.
+struct OpenClawSubmissionIdentity: Sendable, Equatable {
+    let rawValue: UUID
+
+    init(rawValue: UUID = UUID()) {
+        self.rawValue = rawValue
+    }
+
+    var idempotencyKey: String {
+        rawValue.uuidString
+    }
+}
+
 public actor OpenClawNativeAgentAdapter: AgentAdapter {
     private let supervisor: OpenClawGatewaySupervisor
     private let dispatcher: OpenClawRPCDispatcher
@@ -41,13 +55,20 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         let client = runClient
         let sessionKey = sessionKey
 
+        // A Core InteractionID is a correlation identity and may produce a
+        // later, distinct logical agent turn after a prior turn completes.
+        // Capture a fresh submission identity once for this stream so any
+        // reconciliation of this same submission keeps one idempotency key,
+        // while a later responses(for:) call receives a different key.
+        let submissionIdentity = OpenClawSubmissionIdentity()
+
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     let accepted = try await client.submit(
                         message: request.text,
                         sessionKey: sessionKey,
-                        idempotencyKey: request.interactionID.rawValue.uuidString
+                        idempotencyKey: submissionIdentity.idempotencyKey
                     )
                     await self.remember(
                         RunContext(
