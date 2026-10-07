@@ -86,6 +86,62 @@ final class OpenClawAdapterTests: XCTestCase {
         XCTAssertEqual(json["stream"] as? Bool, true)
     }
 
+    func testCompatibilityRequestFactoryRejectsOversizedTextBeforeEncodingBody() {
+        let configuration = OpenClawConfiguration(
+            baseURL: URL(string: "https://gateway.example.test")!,
+            bearerToken: "secret",
+            conversationID: "compat-test",
+            maximumRequestBytes: 8
+        )
+
+        XCTAssertThrowsError(
+            try OpenClawRequestFactory.makeRequest(
+                configuration: configuration,
+                request: AgentRequest(
+                    interactionID: InteractionID(),
+                    text: "123456789"
+                )
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? AgentRequestValidationError,
+                .payloadTooLarge(actual: 9, maximum: 8)
+            )
+        }
+    }
+
+    func testCompatibilityAdapterPreservesTypedOversizedRequestFailure() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OpenClawURLProtocolStub.self]
+        let adapter = OpenClawChatCompletionsAdapter(
+            configuration: OpenClawConfiguration(
+                baseURL: URL(string: "https://gateway.example.test")!,
+                bearerToken: "secret",
+                conversationID: "compat-test",
+                maximumRequestBytes: 8
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let id = InteractionID()
+
+        do {
+            for try await _ in await adapter.responses(
+                for: AgentRequest(interactionID: id, text: "123456789")
+            ) {}
+            XCTFail("Expected typed request-size failure")
+        } catch let error as AgentRequestValidationError {
+            XCTAssertEqual(
+                error,
+                .payloadTooLarge(actual: 9, maximum: 8)
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let count = await adapter.taskCount()
+        XCTAssertEqual(count, 0)
+    }
+
     func testSSEParserDecodesTextDelta() throws {
         let line = #"data: {"choices":[{"delta":{"content":"안녕하세요"},"finish_reason":null}]}"#
 
