@@ -53,8 +53,8 @@ final class OpenClawAgentRunTests: XCTestCase {
     func testWaitTimeoutRemainsNonTerminalRepresentation() throws {
         let data = Data(#"""
         {
-          "runId":"run-1",
-          "status":"timeout"
+          "status":"timeout",
+          "timeoutPhase":"provider"
         }
         """#.utf8)
 
