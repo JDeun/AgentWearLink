@@ -50,4 +50,55 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
             .object(["sourceReplyDelivered": .bool(true)])
         )
     }
+    func testAssistantProjectionEmitsOnlyExplicitAppendDelta() {
+        let payload = JSONValue.object([
+            "text": .string("hello"),
+            "delta": .string("lo"),
+            "replace": .bool(false)
+        ])
+
+        XCTAssertEqual(
+            OpenClawNativeAgentAdapter.extractTextDelta(payload),
+            "lo"
+        )
+    }
+
+    func testAssistantProjectionSuppressesReplacementSnapshot() {
+        let payload = JSONValue.object([
+            "text": .string("corrected full reply"),
+            "delta": .string(""),
+            "replace": .bool(true)
+        ])
+
+        XCTAssertNil(OpenClawNativeAgentAdapter.extractTextDelta(payload))
+    }
+
+    func testAssistantProjectionSuppressesReplacementEvenWithDelta() {
+        let payload = JSONValue.object([
+            "text": .string("corrected full reply"),
+            "delta": .string("corrected"),
+            "replace": .bool(true)
+        ])
+
+        XCTAssertNil(OpenClawNativeAgentAdapter.extractTextDelta(payload))
+    }
+
+    func testAssistantProjectionSuppressesSnapshotOnlyAndRepeatedSnapshots() {
+        let snapshot = JSONValue.object([
+            "text": .string("cumulative reply")
+        ])
+
+        XCTAssertNil(OpenClawNativeAgentAdapter.extractTextDelta(snapshot))
+        XCTAssertNil(OpenClawNativeAgentAdapter.extractTextDelta(snapshot))
+    }
+
+    func testAssistantProjectionSuppressesEmptyDelta() {
+        let payload = JSONValue.object([
+            "text": .string("cumulative reply"),
+            "delta": .string("")
+        ])
+
+        XCTAssertNil(OpenClawNativeAgentAdapter.extractTextDelta(payload))
+    }
+
 }

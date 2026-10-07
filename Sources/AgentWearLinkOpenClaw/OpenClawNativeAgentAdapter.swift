@@ -157,17 +157,27 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         }
     }
 
-    nonisolated private static func extractTextDelta(
+    /// Projects only explicit append semantics into Core's textDelta event.
+    ///
+    /// OpenClaw may also send cumulative `text` snapshots and `replace:true`
+    /// corrections. Core currently has no replacement/reset event, so treating
+    /// either shape as an append would duplicate or corrupt visible/TTS output.
+    /// Final snapshot reconciliation is owned separately by the terminal-reply
+    /// path (#285).
+    nonisolated static func extractTextDelta(
         _ payload: JSONValue?
     ) -> String? {
         guard case let .object(object)? = payload else { return nil }
 
-        for key in ["delta", "text"] {
-            if case let .string(value)? = object[key], !value.isEmpty {
-                return value
-            }
+        if case .bool(true)? = object["replace"] {
+            return nil
         }
-        return nil
+
+        guard case let .string(delta)? = object["delta"],
+              !delta.isEmpty else {
+            return nil
+        }
+        return delta
     }
 }
 
