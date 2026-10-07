@@ -351,14 +351,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         }
 
         let generation = generationFence.current
-        let cameraStatus: PermissionStatus
+        let cameraGranted: Bool
         do {
-            cameraStatus = try await wearables.checkPermissionStatus(.camera)
+            cameraGranted = try await wearables.checkPermissionStatus(.camera) == .granted
         } catch {
             liveCapabilities.update(cameraReady: false)
             throw error
         }
-        guard cameraStatus == .granted else {
+        guard cameraGranted else {
             liveCapabilities.update(cameraReady: false)
             throw AWLError.capabilityUnavailable(
                 "Meta DAT camera permission is not granted"
