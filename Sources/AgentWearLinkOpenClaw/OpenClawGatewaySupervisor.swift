@@ -49,6 +49,10 @@ public actor OpenClawGatewaySupervisor {
         stopped = false
         transportGeneration &+= 1
 
+        await dispatcher.setReceiveFailureHandler { [weak self] in
+            await self?.dispatcherReceiveLoopFailed()
+        }
+
         do {
             let hello = try await connection.connect(
                 appVersion: appVersion,
@@ -73,6 +77,7 @@ public actor OpenClawGatewaySupervisor {
         transportGeneration &+= 1
         watchdogTask?.cancel()
         watchdogTask = nil
+        await dispatcher.setReceiveFailureHandler(nil)
 
         // Invalidate ownership before awaiting transport teardown. A reconnect
         // suspended in sleep/connect may resume while this actor is re-entrant,
@@ -93,6 +98,15 @@ public actor OpenClawGatewaySupervisor {
             await inFlightReconnect.value
         }
         stopping = false
+    }
+
+    private func dispatcherReceiveLoopFailed() async {
+        guard !stopped, !stopping else { return }
+
+        await reconnect(
+            closeCode: 1_001,
+            closeReason: "transport receive loop failed"
+        )
     }
 
     private func startWatchdog() {
