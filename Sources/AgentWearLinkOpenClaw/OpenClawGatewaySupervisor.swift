@@ -1,5 +1,17 @@
 import Foundation
 
+enum OpenClawGatewayTiming {
+    static func duration(milliseconds: Int) -> Duration {
+        .milliseconds(Int64(max(0, milliseconds)))
+    }
+
+    static func doubledMilliseconds(_ milliseconds: Int) -> Int {
+        let value = max(0, milliseconds)
+        let (doubled, overflow) = value.multipliedReportingOverflow(by: 2)
+        return overflow ? Int.max : doubled
+    }
+}
+
 public actor OpenClawGatewaySupervisor {
     private let connection: OpenClawGatewayConnection
     private let dispatcher: OpenClawRPCDispatcher
@@ -87,7 +99,7 @@ public actor OpenClawGatewaySupervisor {
 
             do {
                 try await Task.sleep(
-                    nanoseconds: UInt64(interval) * 1_000_000
+                    for: OpenClawGatewayTiming.duration(milliseconds: interval)
                 )
             } catch {
                 return
@@ -97,7 +109,7 @@ public actor OpenClawGatewaySupervisor {
 
             let running = await dispatcher.isRunning
             let stale = await dispatcher.isStale(
-                timeoutMilliseconds: interval * 2
+                timeoutMilliseconds: OpenClawGatewayTiming.doubledMilliseconds(interval)
             )
 
             if !running || stale {
@@ -138,7 +150,7 @@ public actor OpenClawGatewaySupervisor {
             serverMinimumDelay = 0
             do {
                 try await Task.sleep(
-                    nanoseconds: UInt64(delay) * 1_000_000
+                    for: OpenClawGatewayTiming.duration(milliseconds: delay)
                 )
             } catch {
                 return
