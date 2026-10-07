@@ -15,6 +15,10 @@ public enum InteractionEvent: Sendable, Equatable, CustomStringConvertible, Cust
     case interrupted(InteractionID)
     case turnCompleted(InteractionID)
     case sessionEnded(InteractionID)
+
+    /// An ID-scoped failure terminates that interaction. A nil ID is a terminal
+    /// adapter/session failure: Core cancels every in-flight interaction and
+    /// the owning runtime tears the active device/agent generation down.
     case failed(InteractionID?, AWLError)
 
     public var interactionID: InteractionID? {
