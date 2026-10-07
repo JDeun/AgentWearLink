@@ -27,7 +27,9 @@ private final class ConnectEmittingDevice: DeviceAdapter, @unchecked Sendable {
 
     init() {
         var captured: AsyncStream<InteractionEvent>.Continuation!
-        self.stream = AsyncStream { captured = $0 }
+        self.stream = AsyncStream(
+            bufferingPolicy: .bufferingOldest(1)
+        ) { captured = $0 }
         self.continuation = captured
     }
 
@@ -37,6 +39,34 @@ private final class ConnectEmittingDevice: DeviceAdapter, @unchecked Sendable {
 
     func disconnect() async { continuation.finish() }
     func events() -> AsyncStream<InteractionEvent> { stream }
+}
+
+private final class ConnectEmittingFailingDevice: DeviceAdapter, @unchecked Sendable {
+    let capabilities: CapabilitySet = [.textInput]
+    private let stream: AsyncStream<InteractionEvent>
+    private let continuation: AsyncStream<InteractionEvent>.Continuation
+    let emittedID = InteractionID()
+
+    init() {
+        var captured: AsyncStream<InteractionEvent>.Continuation!
+        self.stream = AsyncStream(
+            bufferingPolicy: .bufferingOldest(1)
+        ) { captured = $0 }
+        self.continuation = captured
+    }
+
+    func connect() async throws {
+        continuation.yield(.text(emittedID, "failed-generation"))
+        throw AWLError.device("connect failed after event")
+    }
+
+    func disconnect() async {
+        continuation.finish()
+    }
+
+    func events() -> AsyncStream<InteractionEvent> {
+        stream
+    }
 }
 
 private final class StartupTrackingDevice: DeviceAdapter, @unchecked Sendable {
@@ -417,6 +447,28 @@ final class RuntimeTests: XCTestCase {
         let events = await recorder.events
         XCTAssertTrue(events.contains(.text(device.emittedID, "echo: during-connect")))
         await runtime.stop()
+    }
+
+    func testFailedConnectDoesNotForwardRetainedStartupEvent() async {
+        let device = ConnectEmittingFailingDevice()
+        let agent = MockAgentAdapter()
+        let recorder = RuntimeRecorder()
+        let runtime = AgentWearLinkRuntime(
+            device: device,
+            agent: agent
+        ) { event in
+            await recorder.append(event)
+        }
+
+        do {
+            try await runtime.start()
+            XCTFail("Expected device connect failure")
+        } catch {}
+
+        // The bounded stream retained the connect-time event, but the runtime
+        // never commits a failed startup generation to the coordinator.
+        let events = await recorder.events
+        XCTAssertTrue(events.isEmpty)
     }
 
     func testAgentConnectFailureRollsBackPreSubscribedDeviceAndCanRestart() async throws {
