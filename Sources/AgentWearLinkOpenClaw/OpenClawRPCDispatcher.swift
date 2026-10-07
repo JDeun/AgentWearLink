@@ -1,6 +1,11 @@
 import Foundation
 
 public actor OpenClawRPCDispatcher {
+    private struct ReceiveTaskEntry {
+        let generation: UInt64
+        let task: Task<Void, Never>
+    }
+
     private let socket: any OpenClawWebSocket
     private let state: OpenClawGatewayState
     private let registry: OpenClawRPCRegistry
@@ -11,10 +16,11 @@ public actor OpenClawRPCDispatcher {
     private var eventContinuations: [
         UUID: AsyncThrowingStream<OpenClawEventEnvelope, Error>.Continuation
     ] = [:]
-    private var receiveTask: Task<Void, Never>?
+    private var receiveTask: ReceiveTaskEntry?
     private var requestTasks: [String: Task<Void, Never>] = [:]
     private var sendStarted: Set<String> = []
     private var generation: UInt64 = 0
+    private var stopping = false
     private var lastActivityMilliseconds: Int64?
     private let nowMilliseconds: @Sendable () -> Int64
     private let requestTimeout: Duration
@@ -51,16 +57,21 @@ public actor OpenClawRPCDispatcher {
     }
 
     public func start() {
-        guard receiveTask == nil else { return }
+        guard !stopping, receiveTask == nil else { return }
         generation &+= 1
+        let receiveGeneration = generation
         lastActivityMilliseconds = nowMilliseconds()
-        receiveTask = Task { [weak self] in
-            await self?.receiveLoop()
+        let task = Task { [weak self] in
+            await self?.receiveLoop(generation: receiveGeneration)
         }
+        receiveTask = ReceiveTaskEntry(
+            generation: receiveGeneration,
+            task: task
+        )
     }
 
     public var isRunning: Bool {
-        receiveTask != nil
+        !stopping && receiveTask != nil
     }
 
     public func isStale(
@@ -79,7 +90,8 @@ public actor OpenClawRPCDispatcher {
         method: String,
         params: Params
     ) async throws -> OpenClawResponseEnvelope {
-        guard receiveTask != nil else {
+        guard !stopping,
+              receiveTask != nil else {
             throw AWLOpenClawError.notReady
         }
         let requestGeneration = generation
@@ -179,6 +191,10 @@ public actor OpenClawRPCDispatcher {
     }
 
     public func stop() async {
+        guard !stopping else { return }
+        stopping = true
+        defer { stopping = false }
+
         generation &+= 1
 
         let ownedRequestTasks = Array(requestTasks.values)
@@ -187,14 +203,21 @@ public actor OpenClawRPCDispatcher {
             task.cancel()
         }
 
-        receiveTask?.cancel()
-        receiveTask = nil
+        let retiringReceiveTask = receiveTask
+        retiringReceiveTask?.task.cancel()
         lastActivityMilliseconds = nil
 
         // Wait until every owned send task has observed cancellation or returned
         // from its generation-bound socket send before classifying outcomes.
         for task in ownedRequestTasks {
             await task.value
+        }
+
+        // Preserve the retiring receive-task handle until that exact reader exits.
+        // start() remains fenced while stop() is suspended here, guaranteeing that
+        // one physical socket never has two concurrent dispatcher readers.
+        if let retiringReceiveTask {
+            await retiringReceiveTask.task.value
         }
 
         await failAll(AWLOpenClawError.disconnected)
@@ -204,16 +227,31 @@ public actor OpenClawRPCDispatcher {
         eventContinuations.removeAll(keepingCapacity: false)
     }
 
-    private func receiveLoop() async {
+    private func receiveLoop(generation receiveGeneration: UInt64) async {
         do {
             while !Task.isCancelled {
                 let text = try await socket.receive()
+
+                guard isCurrentReceiveGeneration(receiveGeneration) else {
+                    break
+                }
+
                 lastActivityMilliseconds = nowMilliseconds()
-                let frame = try router.decode(Data(text.utf8), maximumBytes: inboundMaximumBytes)
+                let frame = try router.decode(
+                    Data(text.utf8),
+                    maximumBytes: inboundMaximumBytes
+                )
 
                 switch frame {
                 case let .response(response):
                     try await state.observeSequence(nil)
+                    guard isCurrentReceiveGeneration(receiveGeneration) else {
+                        break
+                    }
+
+                    // A response that resolves the old registry wins its race with
+                    // stop(). stop() cannot install a newer reader until this loop
+                    // has actually returned.
                     _ = try await registry.resolve(id: response.id)
                     sendStarted.remove(response.id)
                     requestTasks.removeValue(forKey: response.id)?.cancel()
@@ -222,6 +260,9 @@ public actor OpenClawRPCDispatcher {
 
                 case let .event(event):
                     try await state.observeSequence(event.seq)
+                    guard isCurrentReceiveGeneration(receiveGeneration) else {
+                        break
+                    }
                     for continuation in eventContinuations.values {
                         continuation.yield(event)
                     }
@@ -230,18 +271,35 @@ public actor OpenClawRPCDispatcher {
         } catch is CancellationError {
             // stop() owns terminal signaling.
         } catch {
-            await state.disconnect()
-            await failAll(error)
-            for continuation in eventContinuations.values {
-                continuation.finish(throwing: error)
+            if isCurrentReceiveGeneration(receiveGeneration) {
+                await state.disconnect()
+
+                if isCurrentReceiveGeneration(receiveGeneration) {
+                    await failAll(error)
+                    for continuation in eventContinuations.values {
+                        continuation.finish(throwing: error)
+                    }
+                    eventContinuations.removeAll(keepingCapacity: false)
+                }
             }
-            eventContinuations.removeAll(keepingCapacity: false)
         }
+
+        finishReceiveLoop(generation: receiveGeneration)
+    }
+
+    private func isCurrentReceiveGeneration(_ expected: UInt64) -> Bool {
+        generation == expected && receiveTask?.generation == expected
+    }
+
+    private func finishReceiveLoop(generation completed: UInt64) {
+        guard receiveTask?.generation == completed else { return }
         receiveTask = nil
     }
 
     private func isActive(generation expected: UInt64) -> Bool {
-        generation == expected && receiveTask != nil
+        !stopping &&
+            generation == expected &&
+            receiveTask?.generation == expected
     }
 
     private func markSendStarted(
