@@ -294,6 +294,13 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         runs.removeValue(forKey: interactionID)
     }
 
+    // Internal-only deterministic evidence for adapter lifecycle tests.
+    // Keeping this out of the public API lets tests prove run retirement
+    // without timing sleeps or exposing OpenClaw bookkeeping to Core.
+    func activeRunCountForTesting() -> Int {
+        runs.count
+    }
+
     private func waitUntilTerminal(
         client: OpenClawAgentRunClient,
         runID: String
