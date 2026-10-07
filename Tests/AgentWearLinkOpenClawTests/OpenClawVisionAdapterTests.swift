@@ -12,12 +12,35 @@ final class OpenClawVisionAdapterTests: XCTestCase {
             maximumBytes: 4
         )
 
-        let attachment = OpenClawNativeAgentAdapter.makeImageAttachment(image)
+        let attachment = try OpenClawNativeAgentAdapter.makeImageAttachment(image)
         XCTAssertEqual(attachment.mimeType, "image/jpeg")
         XCTAssertEqual(attachment.fileName, "capture.jpg")
         XCTAssertEqual(attachment.content, bytes)
         XCTAssertEqual(attachment.rawByteCount, 4)
         XCTAssertEqual(attachment.base64EncodedByteCount, 8)
+    }
+
+    func testVisionMappingReenforcesCoreCanonicalImageCeiling() throws {
+        let oversized = Data(
+            repeating: 0,
+            count: ImageAttachment.defaultMaximumBytes + 1
+        )
+        let image = try ImageAttachment(
+            data: oversized,
+            format: .jpeg,
+            maximumBytes: oversized.count
+        )
+
+        XCTAssertThrowsError(
+            try OpenClawNativeAgentAdapter.makeImageAttachment(image)
+        ) { error in
+            XCTAssertEqual(
+                error as? AWLError,
+                .capabilityUnavailable(
+                    "image payload exceeds configured limit"
+                )
+            )
+        }
     }
 
     func testAgentParamsEncodeAttachmentContentAsBase64() throws {
