@@ -45,6 +45,95 @@ final class OpenClawAdapterTests: XCTestCase {
         super.tearDown()
     }
 
+    func testCompatibilityBearerTransportAllowsHTTPS() throws {
+        let configuration = OpenClawConfiguration(
+            baseURL: URL(string: "https://gateway.example.test:18789")!,
+            bearerToken: "secret",
+            conversationID: "secure"
+        )
+        let request = try OpenClawRequestFactory.makeRequest(
+            configuration: configuration,
+            request: AgentRequest(interactionID: InteractionID(), text: "hello")
+        )
+        XCTAssertEqual(request.url?.scheme, "https")
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Authorization"),
+            "Bearer secret"
+        )
+    }
+
+    func testCompatibilityBearerTransportAllowsLoopbackHTTPVariants() throws {
+        for rawURL in [
+            "http://localhost:18789",
+            "http://127.0.0.1:18789",
+            "http://[::1]:18789",
+        ] {
+            let configuration = OpenClawConfiguration(
+                baseURL: URL(string: rawURL)!,
+                bearerToken: "secret",
+                conversationID: "loopback"
+            )
+            XCTAssertNoThrow(
+                try OpenClawRequestFactory.makeRequest(
+                    configuration: configuration,
+                    request: AgentRequest(
+                        interactionID: InteractionID(),
+                        text: "hello"
+                    )
+                ),
+                rawURL
+            )
+        }
+    }
+
+    func testCompatibilityBearerTransportRejectsRemoteHTTPBeforeRequestCreation() {
+        let configuration = OpenClawConfiguration(
+            baseURL: URL(string: "http://100.64.0.10:18789")!,
+            bearerToken: "secret",
+            conversationID: "remote"
+        )
+        XCTAssertThrowsError(
+            try OpenClawRequestFactory.makeRequest(
+                configuration: configuration,
+                request: AgentRequest(
+                    interactionID: InteractionID(),
+                    text: "hello"
+                )
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? AWLError,
+                .transport(
+                    "OpenClaw bearer credentials require HTTPS outside loopback"
+                )
+            )
+        }
+    }
+
+    func testCompatibilityEndpointRejectsNonHTTPTransport() {
+        let configuration = OpenClawConfiguration(
+            baseURL: URL(string: "ftp://gateway.example.test")!,
+            bearerToken: "secret",
+            conversationID: "invalid-scheme"
+        )
+        XCTAssertThrowsError(
+            try OpenClawRequestFactory.makeRequest(
+                configuration: configuration,
+                request: AgentRequest(
+                    interactionID: InteractionID(),
+                    text: "hello"
+                )
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? AWLError,
+                .transport(
+                    "OpenClaw compatibility endpoint must use HTTP or HTTPS"
+                )
+            )
+        }
+    }
+
     func testRequestUsesStableConversationAndOperatorToken() throws {
         let config = OpenClawConfiguration(
             baseURL: URL(string: "https://gateway.example.test:18789")!,
