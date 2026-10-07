@@ -47,7 +47,7 @@ This catches SDK/API drift. It does not prove runtime behavior.
 The generated Meta iOS test host uses **XcodeGen 2.46.0**. Install the repository-pinned, checksum-verified release before generating the project:
 
 ```bash
-./scripts/install-xcodegen.sh
+bash scripts/install-xcodegen.sh
 export PATH="$PWD/.build/tools:$PATH"
 xcodegen --version
 ```
