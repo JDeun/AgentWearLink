@@ -6,6 +6,7 @@ import Darwin
 struct AgentWearLinkOpenClawProbe {
     static func main() async {
         let environment = ProcessInfo.processInfo.environment
+        let profile = OpenClawValidationProfile.readOnly
         let endpoint = configuredEndpoint(environment: environment)
 
         let token = nonEmpty(environment["AWL_OPENCLAW_TOKEN"])
@@ -20,10 +21,10 @@ struct AgentWearLinkOpenClawProbe {
 
         let state = OpenClawGatewayState()
         let identityStore = KeychainOpenClawDeviceIdentityStore(
-            service: "dev.agentwearlink.openclaw.probe"
+            service: profile.keychainService
         )
         let credentialStore = KeychainOpenClawDeviceCredentialStore(
-            service: "dev.agentwearlink.openclaw.probe"
+            service: profile.keychainService
         )
         let assembler = OpenClawConnectAssembler(
             identityManager: .init(store: identityStore),
@@ -47,12 +48,12 @@ struct AgentWearLinkOpenClawProbe {
             state: state,
             socket: socket,
             appVersion: "0.1.0-probe",
-            scopes: ["operator.read"],
+            scopes: profile.scopes,
             credentials: .init(
                 token: token,
                 bootstrapToken: bootstrapToken
             ),
-            clientIdentity: .probe
+            clientIdentity: profile.clientIdentity
         )
 
         do {

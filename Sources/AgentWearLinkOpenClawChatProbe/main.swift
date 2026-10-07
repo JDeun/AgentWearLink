@@ -7,6 +7,7 @@ import Darwin
 struct AgentWearLinkOpenClawChatProbe {
     static func main() async {
         let env = ProcessInfo.processInfo.environment
+        let profile = OpenClawValidationProfile.mutating
         guard env["AWL_ALLOW_MUTATING_PROBE"] == "1" else {
             fail("Refusing to submit an agent run. Set AWL_ALLOW_MUTATING_PROBE=1 explicitly.", code: 2)
         }
@@ -24,8 +25,14 @@ struct AgentWearLinkOpenClawChatProbe {
 
         let state = OpenClawGatewayState()
         let assembler = OpenClawConnectAssembler(
-            identityManager: .init(store: KeychainOpenClawDeviceIdentityStore(service: "dev.agentwearlink.openclaw.chat-probe")),
-            credentialStore: KeychainOpenClawDeviceCredentialStore(service: "dev.agentwearlink.openclaw.chat-probe"),
+            identityManager: .init(
+                store: KeychainOpenClawDeviceIdentityStore(
+                    service: profile.keychainService
+                )
+            ),
+            credentialStore: KeychainOpenClawDeviceCredentialStore(
+                service: profile.keychainService
+            ),
             gatewayNamespace: endpoint.credentialNamespace,
             bootstrapHandoffPersistenceAllowed:
                 endpoint.allowsBootstrapHandoffPersistence
@@ -38,11 +45,12 @@ struct AgentWearLinkOpenClawChatProbe {
             state: state,
             socket: socket,
             appVersion: "0.1.0-chat-probe",
-            scopes: ["operator.read", "operator.write"],
+            scopes: profile.scopes,
             credentials: .init(
                 token: nonEmpty(env["AWL_OPENCLAW_TOKEN"]),
                 bootstrapToken: nonEmpty(env["AWL_OPENCLAW_BOOTSTRAP_TOKEN"])
-            )
+            ),
+            clientIdentity: profile.clientIdentity
         )
         let client = OpenClawAgentRunClient(dispatcher: dispatcher)
         let adapter = OpenClawNativeAgentAdapter(
@@ -68,6 +76,20 @@ struct AgentWearLinkOpenClawChatProbe {
                 }
             }
             await adapter.disconnect()
+        } catch let OpenClawHandshakeError.pairingRequired(pairing) {
+            await adapter.disconnect()
+            var lines = [
+                "OpenClaw mutating validation identity requires its own pairing approval.",
+                "The read-only health probe identity is intentionally separate and does not authorize this profile."
+            ]
+            if let requestID = pairing.requestID {
+                lines.append("requestId: \(requestID)")
+                lines.append("Approve on the Mac mini: openclaw devices approve \(requestID)")
+            }
+            if let reason = pairing.reason {
+                lines.append("reason: \(reason)")
+            }
+            fail(lines.joined(separator: "\n"), code: 3)
         } catch {
             await adapter.disconnect()
             fail("OpenClaw chat probe failed: \(String(describing: error))", code: 1)
