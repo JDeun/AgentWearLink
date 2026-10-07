@@ -164,7 +164,8 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
     private nonisolated let eventSource = MetaDATInteractionEventSource()
     private var eventTask: Task<Void, Never>?
     private var invocationTask: Task<Void, Never>?
-    private var snapshotInFlight = false
+    private var snapshotGeneration: UInt64 = 0
+    private var activeSnapshotGeneration: UInt64?
 
     public nonisolated var capabilities: CapabilitySet { mappedCapabilities }
 
@@ -234,15 +235,31 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
         guard let snapshotSession = session as? any MetaDATSnapshotSession else {
             throw AWLError.capabilityUnavailable("Meta DAT camera snapshot bridge is unavailable")
         }
-        guard !snapshotInFlight else {
+        guard activeSnapshotGeneration == nil else {
             throw AWLError.device("Meta DAT snapshot capture is already in progress")
         }
 
-        snapshotInFlight = true
-        defer { snapshotInFlight = false }
+        snapshotGeneration &+= 1
+        let generation = snapshotGeneration
+        activeSnapshotGeneration = generation
+        defer {
+            if activeSnapshotGeneration == generation {
+                activeSnapshotGeneration = nil
+            }
+        }
 
         let snapshot = try await snapshotSession.captureSnapshotData()
         try Task.checkCancellation()
+
+        // disconnect()/lifecycle teardown invalidates ownership immediately, but
+        // intentionally does not clear the in-flight slot. A cancellation-
+        // insensitive vendor transfer must finish before a new capture can be
+        // admitted, preventing overlap with a stale generation.
+        guard snapshotGeneration == generation,
+              activeSnapshotGeneration == generation else {
+            throw CancellationError()
+        }
+
         return try ImageAttachment(data: snapshot.data, format: snapshot.format)
     }
 
@@ -254,7 +271,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
 
         eventTask?.cancel()
         invocationTask?.cancel()
-        snapshotInFlight = false
+        snapshotGeneration &+= 1
         eventTask = nil
         invocationTask = nil
         await session.disconnect()

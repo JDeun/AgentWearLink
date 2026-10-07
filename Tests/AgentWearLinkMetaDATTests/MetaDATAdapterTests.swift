@@ -185,6 +185,49 @@ final class MetaDATAdapterTests: XCTestCase {
         _ = try await first.value
     }
 
+    func testDisconnectInvalidatesBlockedSnapshotWithoutAdmittingOverlap() async throws {
+        let session = BlockingSnapshotSession()
+        let adapter = MetaDATAdapter(session: session)
+
+        let staleCapture = Task {
+            try await adapter.captureSnapshot(
+                interactionID: InteractionID(rawValue: UUID())
+            )
+        }
+        await session.waitUntilCaptureStarted()
+
+        await adapter.disconnect()
+
+        do {
+            _ = try await adapter.captureSnapshot(
+                interactionID: InteractionID(rawValue: UUID())
+            )
+            XCTFail("Expected stale generation to retain capture ownership")
+        } catch {
+            guard case AWLError.device = error else {
+                await session.release()
+                _ = try? await staleCapture.value
+                return XCTFail("Unexpected overlap error: \(error)")
+            }
+        }
+
+        await session.release()
+
+        do {
+            _ = try await staleCapture.value
+            XCTFail("Expected stale capture result to be discarded")
+        } catch is CancellationError {
+            // Expected: teardown invalidated the capture generation.
+        } catch {
+            XCTFail("Unexpected stale capture error: \(error)")
+        }
+
+        let fresh = try await adapter.captureSnapshot(
+            interactionID: InteractionID(rawValue: UUID())
+        )
+        XCTAssertEqual(fresh.data, Data([1]))
+    }
+
     func testNormalizesSessionEvents() async throws {
         let session = StubSession(capabilities: [.speech])
         let adapter = MetaDATAdapter(session: session)
