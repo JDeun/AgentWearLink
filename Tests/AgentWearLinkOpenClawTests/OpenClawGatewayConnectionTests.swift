@@ -469,6 +469,184 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
         XCTAssertEqual(remaining?.token, "stored")
     }
 
+    func testSharedTokenRejectionRetriesOnceWithStoredDeviceGrant() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        try await store.save(
+            .init(
+                deviceID: deviceID,
+                role: "operator",
+                scopes: ["operator.read"],
+                token: "stored-device-token"
+            )
+        )
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: store
+        )
+        let socket = DeviceTokenRecoveryHandshakeSocket(secondAttemptSucceeds: true)
+        let connection = OpenClawGatewayConnection(socket: socket, assembler: assembler)
+
+        _ = try await connection.connect(
+            appVersion: "0.1.0",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(token: "bad-shared-token")
+        )
+
+        let frames = await socket.sentFramesSnapshot()
+        XCTAssertEqual(frames.count, 2)
+
+        let first = try decodedConnectParams(frames[0])
+        XCTAssertEqual(first.auth?.token, "bad-shared-token")
+        XCTAssertNil(first.auth?.deviceToken)
+
+        let second = try decodedConnectParams(frames[1])
+        XCTAssertNil(second.auth?.token)
+        XCTAssertEqual(second.auth?.deviceToken, "stored-device-token")
+        XCTAssertEqual(second.scopes, ["operator.read"])
+    }
+
+    func testRetryHintWithoutStoredGrantDoesNotReplayConnect() async throws {
+        let socket = DeviceTokenRecoveryHandshakeSocket(secondAttemptSucceeds: true)
+        let connection = OpenClawGatewayConnection(
+            socket: socket,
+            assembler: makeAssembler()
+        )
+
+        do {
+            _ = try await connection.connect(
+                appVersion: "0.1.0",
+                credentials: .init(token: "bad-shared-token")
+            )
+            XCTFail("Expected authentication failure")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(
+                error,
+                .gateway(
+                    code: "AUTH_FAILED",
+                    retryable: false,
+                    retryAfterMilliseconds: nil
+                )
+            )
+        }
+
+        XCTAssertEqual(await socket.sentCount(), 1)
+    }
+
+    func testFailedDeviceTokenRecoveryIsNotRetriedAgain() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        try await store.save(
+            .init(
+                deviceID: try identity.deviceID,
+                role: "operator",
+                scopes: ["operator.read"],
+                token: "stored-device-token"
+            )
+        )
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: store
+        )
+        let socket = DeviceTokenRecoveryHandshakeSocket(secondAttemptSucceeds: false)
+        let connection = OpenClawGatewayConnection(socket: socket, assembler: assembler)
+
+        do {
+            _ = try await connection.connect(
+                appVersion: "0.1.0",
+                credentials: .init(token: "bad-shared-token")
+            )
+            XCTFail("Expected authentication failure")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(
+                error,
+                .gateway(
+                    code: "DEVICE_TOKEN_REJECTED",
+                    retryable: false,
+                    retryAfterMilliseconds: nil
+                )
+            )
+        }
+
+        XCTAssertEqual(await socket.sentCount(), 2)
+    }
+
+    private func decodedConnectParams(_ frame: String) throws -> OpenClawConnectParamsDecoded {
+        let data = try XCTUnwrap(frame.data(using: .utf8))
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let params = try XCTUnwrap(object["params"] as? [String: Any])
+        let auth = params["auth"] as? [String: Any]
+        return OpenClawConnectParamsDecoded(
+            scopes: params["scopes"] as? [String] ?? [],
+            auth: auth.map {
+                .init(
+                    token: $0["token"] as? String,
+                    deviceToken: $0["deviceToken"] as? String
+                )
+            }
+        )
+    }
+
+}
+
+private struct OpenClawConnectParamsDecoded {
+    struct Auth {
+        let token: String?
+        let deviceToken: String?
+    }
+    let scopes: [String]
+    let auth: Auth?
+}
+
+private actor DeviceTokenRecoveryHandshakeSocket: OpenClawWebSocket {
+    private let secondAttemptSucceeds: Bool
+    private var sentFrames: [String] = []
+    private var receiveCount = 0
+
+    init(secondAttemptSucceeds: Bool) {
+        self.secondAttemptSucceeds = secondAttemptSucceeds
+    }
+
+    func connect() async {}
+
+    func send(text: String) async throws {
+        sentFrames.append(text)
+    }
+
+    func receive() async throws -> String {
+        defer { receiveCount += 1 }
+        if receiveCount == 0 {
+            return #"{\"type\":\"event\",\"event\":\"connect.challenge\",\"payload\":{\"nonce\":\"auth-retry\",\"ts\":1737264000000}}"#
+        }
+
+        guard let sent = sentFrames.last,
+              let data = sent.data(using: .utf8),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = json["id"] as? String else {
+            throw OpenClawFrameError.malformedFrame
+        }
+
+        if receiveCount == 1 {
+            return #"{\"type\":\"res\",\"id\":\"\#(id)\",\"ok\":false,\"error\":{\"code\":\"AUTH_FAILED\",\"message\":\"shared token rejected\",\"retryable\":false,\"details\":{\"code\":\"TOKEN_MISMATCH\",\"reason\":\"shared-token-invalid\",\"canRetryWithDeviceToken\":true,\"recommendedNextStep\":\"retry_with_device_token\"}}}"#
+        }
+
+        if secondAttemptSucceeds {
+            return #"{\"type\":\"res\",\"id\":\"\#(id)\",\"ok\":true,\"payload\":{\"type\":\"hello-ok\",\"protocol\":4,\"server\":{\"version\":\"2026.10\",\"connId\":\"recovered\"},\"features\":{\"methods\":[],\"events\":[]},\"auth\":{\"role\":\"operator\",\"scopes\":[\"operator.read\"],\"deviceToken\":\"stored-device-token\"},\"policy\":{\"maxPayload\":26214400,\"maxBufferedBytes\":52428800,\"tickIntervalMs\":15000}}}"#
+        }
+
+        return #"{\"type\":\"res\",\"id\":\"\#(id)\",\"ok\":false,\"error\":{\"code\":\"DEVICE_TOKEN_REJECTED\",\"message\":\"device token rejected\",\"retryable\":false}}"#
+    }
+
+    func close() async {}
+    func sentCount() -> Int { sentFrames.count }
+    func sentFramesSnapshot() -> [String] { sentFrames }
 }
 
 private actor AdaptiveHandshakeSocket: OpenClawWebSocket {
