@@ -85,4 +85,5 @@ public enum AWLOpenClawError: Error, Sendable, Equatable {
     case payloadTooLarge(actual: Int, maximum: Int)
     case gateway(code: String, retryable: Bool, retryAfterMilliseconds: Int? = nil)
     case disconnected
+    case deliveryUncertain
 }
