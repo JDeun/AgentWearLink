@@ -190,14 +190,17 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         // start() racing an active reconnect must remain idempotent and must not
         // create another handshake.
         try await fixture.supervisor.start()
-        XCTAssertEqual(await fixture.socket.connectionCount(), 2)
+        let connectionCountDuringReconnect = await fixture.socket.connectionCount()
+        XCTAssertEqual(connectionCountDuringReconnect, 2)
 
         await fixture.socket.releaseBlockedConnect()
         await first.value
         await second.value
 
-        XCTAssertEqual(await fixture.socket.connectionCount(), 2)
-        XCTAssertEqual(await fixture.state.connectionState, .ready)
+        let finalConnectionCount = await fixture.socket.connectionCount()
+        let finalState = await fixture.state.connectionState
+        XCTAssertEqual(finalConnectionCount, 2)
+        XCTAssertEqual(finalState, .ready)
 
         await fixture.supervisor.stop()
     }
@@ -231,9 +234,12 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         await stop.value
         await reconnect.value
 
-        XCTAssertEqual(await fixture.state.connectionState, .disconnected)
-        XCTAssertFalse(await fixture.dispatcher.isRunning)
-        XCTAssertEqual(await fixture.socket.connectionCount(), 2)
+        let finalState = await fixture.state.connectionState
+        let dispatcherRunning = await fixture.dispatcher.isRunning
+        let finalConnectionCount = await fixture.socket.connectionCount()
+        XCTAssertEqual(finalState, .disconnected)
+        XCTAssertFalse(dispatcherRunning)
+        XCTAssertEqual(finalConnectionCount, 2)
     }
 
     func testReconnectBudgetExhaustionIsTerminalUntilExplicitRestart() async throws {
