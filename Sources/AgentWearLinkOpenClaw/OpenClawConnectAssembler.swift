@@ -141,6 +141,50 @@ public struct OpenClawConnectAssembler: Sendable {
         )
     }
 
+    /// Builds the one bounded recovery attempt explicitly requested by the
+    /// Gateway's retry_with_device_token guidance. The retry uses only the
+    /// previously approved device grant and its stored scopes.
+    public func assembleStoredDeviceTokenRetry(
+        version: String,
+        challenge: OpenClawConnectChallenge,
+        clientIdentity: OpenClawGatewayClientIdentity = .backend,
+        locale: String = "en-US"
+    ) async throws -> OpenClawAssembledConnect? {
+        let identity = try await identityManager.loadOrCreate()
+        let deviceID = try identity.deviceID
+        guard let stored = try await credentialStore.load(
+            deviceID: deviceID,
+            role: "operator"
+        ) else {
+            return nil
+        }
+
+        let proof = try proofBuilder.makeProof(
+            identity: identity,
+            client: clientIdentity,
+            scopes: stored.scopes,
+            token: stored.token,
+            challenge: challenge
+        )
+        let auth = OpenClawConnectParams.Auth(deviceToken: stored.token)
+
+        return OpenClawAssembledConnect(
+            params: OpenClawConnectParams(
+                version: version,
+                clientIdentity: clientIdentity,
+                scopes: stored.scopes,
+                auth: auth,
+                locale: locale,
+                device: proof
+            ),
+            identity: identity,
+            storedCredential: stored,
+            effectiveToken: stored.token,
+            usedStoredCredential: true,
+            usedBootstrapToken: false
+        )
+    }
+
     public func invalidateStoredCredentialIfUsed(
         _ assembled: OpenClawAssembledConnect
     ) async throws {
