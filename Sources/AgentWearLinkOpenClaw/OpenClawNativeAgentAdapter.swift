@@ -41,6 +41,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         let events = await dispatcher.events()
         let client = runClient
         let sessionKey = sessionKey
+        let idempotencyKey = request.interactionID.rawValue.uuidString
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -48,7 +49,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                     let accepted = try await client.submit(
                         message: request.text,
                         sessionKey: sessionKey,
-                        idempotencyKey: request.interactionID.rawValue.uuidString
+                        idempotencyKey: idempotencyKey
                     )
                     await self.remember(
                         RunContext(
@@ -106,6 +107,20 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                 } catch is CancellationError {
                     await self.cancel(interactionID: request.interactionID)
                     continuation.finish()
+                } catch let error as OpenClawAgentSubmissionError {
+                    await self.forget(request.interactionID)
+
+                    switch error {
+                    case .executionUncertain:
+                        continuation.finish(
+                            throwing: OpenClawNativeAdapterError.uncertainExecution(
+                                interactionID: request.interactionID,
+                                idempotencyKey: idempotencyKey
+                            )
+                        )
+                    case .definitelyNotSent:
+                        continuation.finish(throwing: error)
+                    }
                 } catch {
                     await self.forget(request.interactionID)
                     continuation.finish(throwing: error)
@@ -174,4 +189,11 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
 
 public enum OpenClawNativeAdapterError: Error, Sendable, Equatable {
     case unexpectedWaitStatus(String)
+
+    /// The agent mutation may already be running remotely, but no accepted run
+    /// identifier was observed. Correlation is retained without inventing runId.
+    case uncertainExecution(
+        interactionID: InteractionID,
+        idempotencyKey: String
+    )
 }
