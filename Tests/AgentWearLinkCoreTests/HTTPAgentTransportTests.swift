@@ -171,6 +171,48 @@ final class HTTPAgentTransportTests: XCTestCase {
         }
     }
 
+    func testResponseLoaderCancelsBeforeOversizedChunkCanBeAccumulated() {
+        let lock = NSLock()
+        var events: [String] = []
+        var terminalError: AWLError?
+
+        let request = URLRequest(
+            url: URL(string: "https://example.invalid")!
+        )
+        let loader = BoundedHTTPResponseLoader(
+            configuration: .ephemeral,
+            request: request,
+            maximumResponseBytes: 8
+        ) { result in
+            lock.lock()
+            defer { lock.unlock() }
+
+            events.append("completion")
+            if case let .failure(error as AWLError) = result {
+                terminalError = error
+            }
+        }
+
+        loader.receiveBodyChunk(Data(repeating: 65, count: 4)) {
+            XCTFail("first chunk must not cancel")
+        }
+        loader.receiveBodyChunk(Data(repeating: 66, count: 4)) {
+            XCTFail("chunk at the exact limit must not cancel")
+        }
+        loader.receiveBodyChunk(Data(repeating: 67, count: 4)) {
+            lock.lock()
+            events.append("cancel")
+            lock.unlock()
+        }
+
+        XCTAssertEqual(loader.bufferedResponseByteCount(), 8)
+        XCTAssertEqual(
+            terminalError,
+            .transport("response exceeds configured byte limit")
+        )
+        XCTAssertEqual(events, ["cancel", "completion"])
+    }
+
     func testCancellingUnknownInteractionDoesNotCreateState() async {
         let transport = HTTPAgentTransport(
             configuration: .init(
