@@ -6,10 +6,23 @@ private actor DispatcherSocket: OpenClawWebSocket {
     private var inbound: [String] = []
     private var waiter: CheckedContinuation<String, Error>?
     private var sentFrames: [String] = []
+    private var generation: UInt64 = 1
 
     func connect() async {}
 
     func send(text: String) async throws {
+        sentFrames.append(text)
+    }
+
+    func transportGeneration() async -> UInt64? { generation }
+
+    func send(
+        text: String,
+        expectedGeneration: UInt64
+    ) async throws {
+        guard expectedGeneration == generation else {
+            throw OpenClawTransportSendError.staleGeneration
+        }
         sentFrames.append(text)
     }
 
@@ -45,6 +58,70 @@ private actor DispatcherSocket: OpenClawWebSocket {
         }
         return id
     }
+}
+
+
+private actor GenerationGateSocket: OpenClawWebSocket {
+    private var generation: UInt64 = 1
+    private var sendEntered = false
+    private var sendReleased = false
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+    private var sentFrames: [String] = []
+
+    func connect() async {}
+
+    func transportGeneration() async -> UInt64? { generation }
+
+    func send(text: String) async throws {
+        sentFrames.append(text)
+    }
+
+    func send(
+        text: String,
+        expectedGeneration: UInt64
+    ) async throws {
+        sendEntered = true
+
+        if !sendReleased {
+            await withCheckedContinuation { continuation in
+                releaseWaiter = continuation
+            }
+        }
+
+        guard expectedGeneration == generation else {
+            throw OpenClawTransportSendError.staleGeneration
+        }
+
+        // Deliberately record even if the caller task was cancelled. This models
+        // a send already handed to the transport and lets the dispatcher prove
+        // that cancellation after handoff is surfaced as delivery-uncertain.
+        sentFrames.append(text)
+    }
+
+    func receive() async throws -> String {
+        try await Task.sleep(for: .seconds(3_600))
+        throw AWLOpenClawError.disconnected
+    }
+
+    func close() async {}
+
+    func waitUntilSendEntered() async {
+        while !sendEntered {
+            await Task.yield()
+        }
+    }
+
+    func reconnect() {
+        generation &+= 1
+    }
+
+    func releaseSend() {
+        sendReleased = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+
+    func sentCount() -> Int { sentFrames.count }
 }
 
 final class OpenClawRPCDispatcherTests: XCTestCase {
@@ -201,6 +278,86 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         XCTAssertEqual(event.seq, 1)
         await dispatcher.stop()
     }
+    func testRetiredGenerationCannotGhostSendAfterReconnect() async throws {
+        let socket = GenerationGateSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+        await dispatcher.start()
+
+        let requestTask = Task {
+            try await dispatcher.request(
+                method: "mutate",
+                params: EmptyParams()
+            )
+        }
+
+        await socket.waitUntilSendEntered()
+
+        let stopTask = Task {
+            await dispatcher.stop()
+        }
+        await Task.yield()
+
+        // Reuse the same socket object for a new transport generation before the
+        // delayed old-generation send is allowed to enter its critical section.
+        await socket.reconnect()
+        await socket.releaseSend()
+        await stopTask.value
+
+        do {
+            _ = try await requestTask.value
+            XCTFail("Expected the retired generation to reject the send")
+        } catch let error as OpenClawTransportSendError {
+            XCTAssertEqual(error, .staleGeneration)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(await socket.sentCount(), 0)
+    }
+
+    func testStopAfterSendHandoffReportsDeliveryUncertain() async throws {
+        let socket = GenerationGateSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+        await dispatcher.start()
+
+        let requestTask = Task {
+            try await dispatcher.request(
+                method: "mutate",
+                params: EmptyParams()
+            )
+        }
+
+        await socket.waitUntilSendEntered()
+
+        let stopTask = Task {
+            await dispatcher.stop()
+        }
+        await Task.yield()
+
+        // No generation change: releasing the gate models a frame that reached
+        // the old transport before stop could classify the pending RPC.
+        await socket.releaseSend()
+        await stopTask.value
+
+        do {
+            _ = try await requestTask.value
+            XCTFail("Expected uncertain delivery after send handoff")
+        } catch let error as OpenClawTransportSendError {
+            XCTAssertEqual(error, .deliveryUncertain)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(await socket.sentCount(), 1)
+    }
+
+
 }
 
 private struct EmptyParams: Encodable, Sendable {}
