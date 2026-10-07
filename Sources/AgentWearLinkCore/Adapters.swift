@@ -22,6 +22,16 @@ public protocol DeviceAdapter: Sendable {
     func events() -> AsyncStream<InteractionEvent>
 }
 
+public enum AgentCancellationOutcome: Sendable, Equatable {
+    /// The adapter completed its cancellation handling with no known
+    /// uncertainty that needs to be surfaced by Core.
+    case handled
+
+    /// Local cleanup completed, but remote execution may still be active or
+    /// the adapter could not prove that the remote abort took effect.
+    case uncertain(AWLError)
+}
+
 public protocol AgentAdapter: Sendable {
     /// Establishes the agent-side connection.
     ///
@@ -43,4 +53,20 @@ public protocol AgentAdapter: Sendable {
     /// later presenting a successful terminal response after data loss.
     func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error>
     func cancel(interactionID: InteractionID) async
+
+    /// Performs cancellation and reports whether remote execution is known to
+    /// be handled. Existing adapters remain source-compatible through the
+    /// default implementation below.
+    func cancellationOutcome(
+        interactionID: InteractionID
+    ) async -> AgentCancellationOutcome
+}
+
+public extension AgentAdapter {
+    func cancellationOutcome(
+        interactionID: InteractionID
+    ) async -> AgentCancellationOutcome {
+        await cancel(interactionID: interactionID)
+        return .handled
+    }
 }
