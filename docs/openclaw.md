@@ -59,11 +59,19 @@ For the native adapter, the session key returned by an accepted run is retained 
 
 Telegram is optional visibility only. It is never required as AWL transport.
 
-## Credentials and diagnostics
+## Credentials, diagnostics, and least privilege
 
-Reusable Gateway credentials and device private material belong in Keychain or equivalent secure storage. They must not be committed, logged, or exposed through diagnostic descriptions. Configuration diagnostics redact bearer credentials.
+Reusable Gateway credentials and device private material belong in Keychain or equivalent secure storage. They must not be committed, logged, or exposed through diagnostic descriptions. Configuration diagnostics redact bearer credentials, stable conversation/session routing identifiers, private text, and private media payloads. Test and CI fixtures must use synthetic, non-sensitive values.
 
 Tailnet reachability is not authorization. Gateway authentication remains required by the selected OpenClaw deployment mode.
+
+Request only the scopes required by the active workflow:
+
+- read-only validation/probes use `operator.read`;
+- interactive agent submission/cancellation requires the write capability in addition to the read capability used by the reference flow;
+- do not request broader scopes merely because the Gateway account can grant them.
+
+A persisted device credential keeps the exact scopes that were previously approved. When AWL reconnects with that stored credential, a caller asking for additional scopes does **not** silently widen the grant: the assembler reuses the stored scope set. A broader grant must therefore go through an explicit authorization/pairing or credential-replacement flow accepted by the Gateway. Native mutating RPCs (`agent`, `agent.wait`, and `chat.abort`) also require an authenticated `operator` role plus `operator.write` (or `operator.admin`) before any socket send, so a reduced grant is rejected locally as well as remaining subject to Gateway authorization.
 
 ## Validation status
 
