@@ -79,8 +79,10 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         let client = runClient
         let sessionKey = sessionKey
 
-        return makeResponseStream(interactionID: request.interactionID) {
-            idempotencyKey in
+        return makeResponseStream(
+            interactionID: request.interactionID,
+            fallbackSessionKey: sessionKey
+        ) { idempotencyKey in
             try await client.submit(
                 message: request.text,
                 sessionKey: sessionKey,
@@ -109,8 +111,10 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         let sessionKey = sessionKey
         let attachment = Self.makeImageAttachment(request.image)
 
-        return makeResponseStream(interactionID: request.interactionID) {
-            idempotencyKey in
+        return makeResponseStream(
+            interactionID: request.interactionID,
+            fallbackSessionKey: sessionKey
+        ) { idempotencyKey in
             try await client.submit(
                 message: request.prompt,
                 sessionKey: sessionKey,
@@ -143,6 +147,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
 
     private func makeResponseStream(
         interactionID: InteractionID,
+        fallbackSessionKey: String?,
         submit: @escaping @Sendable (String) async throws -> OpenClawAgentAccepted
     ) -> AsyncThrowingStream<AgentResponse, Error> {
         let client = runClient
@@ -168,7 +173,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
                     await self.remember(
                         RunContext(
                             runID: accepted.runId,
-                            sessionKey: accepted.sessionKey,
+                            sessionKey: accepted.sessionKey ?? fallbackSessionKey,
                             agentID: accepted.agentId
                         ),
                         for: interactionID
