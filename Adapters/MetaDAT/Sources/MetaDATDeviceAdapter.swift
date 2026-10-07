@@ -601,12 +601,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public func applicationPhaseDidChange(
         _ phase: MetaDATApplicationPhase
     ) async {
+        guard phase != applicationOwnership.phase else { return }
         let shouldRetireSession = applicationOwnership.transition(
             to: phase
         )
-        guard shouldRetireSession || applicationOwnership.phase == phase else {
-            return
-        }
 
         await foregroundReadiness.handle(phase)
 
