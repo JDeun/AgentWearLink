@@ -110,7 +110,7 @@ public actor AgentWearLinkRuntime {
                 guard !Task.isCancelled else { break }
                 await coordinator.handle(event, runtimeGeneration: generation)
 
-                if case .failed(nil, _) = event {
+                if event.isTerminalGlobalDeviceFailure {
                     await self.forwardingDidReceiveGlobalFailure(
                         generation: generation
                     )
