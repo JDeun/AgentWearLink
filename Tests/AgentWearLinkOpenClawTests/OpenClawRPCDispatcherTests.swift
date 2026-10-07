@@ -893,6 +893,51 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
     }
 
 
+    func testGatewaySequenceGapRetiresCurrentReceiveGeneration() async throws {
+        let socket = DispatcherSocket()
+        let state = try await readyState()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: state
+        )
+        let events = await dispatcher.events()
+        await dispatcher.start()
+
+        await socket.push(
+            #"{"type":"event","event":"tick","payload":{},"seq":1}"#
+        )
+        await socket.push(
+            #"{"type":"event","event":"tick","payload":{},"seq":3}"#
+        )
+        try await socket.waitUntilReceived(2)
+
+        var iterator = events.makeAsyncIterator()
+        let first = try await iterator.next()
+        XCTAssertEqual(first?.seq, 1)
+
+        do {
+            _ = try await iterator.next()
+            XCTFail("Expected sequence-gap retirement")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(
+                error,
+                .sequenceGap(expected: 2, actual: 3)
+            )
+        }
+
+        try await waitUntilOpenClawTestCondition(
+            "sequence gap retired dispatcher generation"
+        ) {
+            await state.connectionState == .disconnected
+        }
+        let running = await dispatcher.isRunning
+        XCTAssertFalse(running)
+
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+
     func testDropsDuplicateAndStaleRunLocalAgentSequences() async throws {
         let socket = DispatcherSocket()
         let dispatcher = OpenClawRPCDispatcher(

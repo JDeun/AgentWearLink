@@ -16,6 +16,10 @@ The primary adapter is `OpenClawNativeAgentAdapter`. It uses the native Gateway 
 - preservation of accepted OpenClaw session keys
 
 A reconnect restores transport readiness. It does **not** silently replay an in-flight request whose delivery or completion is uncertain.
+
+The current Gateway `hello-ok` control-plane snapshot is decoded with typed `stateVersion.presence` / `stateVersion.health` counters, while presence and health payloads remain vendor-owned JSON at the adapter boundary. Gateway event `stateVersion` uses the same object shape. Sequence values are validated as non-negative and progression is overflow-safe.
+
+Gateway events are not replayable. When the outer Gateway event sequence is stale, duplicated, gapped, or exhausted, AWL deliberately retires that receive generation instead of issuing a synchronous refresh RPC from inside the sole receive loop. The supervisor then reconnects and the new `hello-ok.snapshot` becomes the authoritative control-plane refresh. Pending RPCs fail through the existing delivery-certainty boundary; AWL never replays mutating agent requests merely to recover control-plane state.
 For a mutating `agent` submission, cancellation or transport retirement before socket handoff remains a definite non-execution path. If the frame crossed the local transport handoff but the accepted run response is lost, the native adapter surfaces `submissionExecutionUncertain` with the submission idempotency key as safe correlation metadata. It does not invent a `runId`, report clean cancellation, or automatically replay the mutation.
 Production native WebSocket construction accepts a validated `OpenClawEndpoint`, not an arbitrary raw URL. The endpoint binds transport policy to an explicit exposure profile: loopback, Tailnet-direct, Tailscale Serve, or private reverse proxy. Loopback/Tailnet-direct hosts are validated against their expected address families, while Serve/reverse-proxy paths require `wss://`. This prevents a caller from bypassing transport policy by handing credentials to an arbitrary public `ws://` URL.
 

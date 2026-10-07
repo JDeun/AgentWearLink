@@ -50,13 +50,14 @@ final class OpenClawProtocolTests: XCTestCase {
         XCTAssertEqual(response.id, "1")
     }
 
-    func testDecodesGatewayEventEnvelope() throws {
+    func testDecodesGatewayEventEnvelopeWithObjectStateVersion() throws {
         let data = Data(#"""
         {
           "type":"event",
           "event":"agent",
           "payload":{"text":"hello"},
-          "seq":7
+          "seq":7,
+          "stateVersion":{"presence":11,"health":12}
         }
         """#.utf8)
 
@@ -67,6 +68,10 @@ final class OpenClawProtocolTests: XCTestCase {
 
         XCTAssertEqual(event.event, "agent")
         XCTAssertEqual(event.seq, 7)
+        XCTAssertEqual(
+            event.stateVersion,
+            OpenClawStateVersion(presence: 11, health: 12)
+        )
     }
 
     func testJSONValuePreservesIntegerPrecisionAcrossRoundTrip() throws {

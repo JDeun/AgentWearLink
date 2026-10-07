@@ -38,6 +38,14 @@ public actor OpenClawGatewayState {
                 throw AWLOpenClawError.invalidPolicy
             }
         }
+
+        if let snapshot = hello.snapshot {
+            guard snapshot.uptimeMs >= 0,
+                  snapshot.stateVersion.presence >= 0,
+                  snapshot.stateVersion.health >= 0 else {
+                throw AWLOpenClawError.invalidSnapshot
+            }
+        }
     }
 
     public func acceptHello(_ hello: OpenClawHelloOK) throws {
@@ -48,10 +56,19 @@ public actor OpenClawGatewayState {
 
     public func observeSequence(_ sequence: Int?) throws {
         guard let sequence else { return }
+        guard sequence >= 0 else {
+            throw AWLOpenClawError.invalidSequence(sequence)
+        }
+
         if let lastSequence {
-            guard sequence == lastSequence + 1 else {
+            guard lastSequence != Int.max else {
+                throw AWLOpenClawError.sequenceExhausted(last: lastSequence)
+            }
+
+            let expected = lastSequence + 1
+            guard sequence == expected else {
                 throw AWLOpenClawError.sequenceGap(
-                    expected: lastSequence + 1,
+                    expected: expected,
                     actual: sequence
                 )
             }
@@ -95,6 +112,9 @@ public enum AWLOpenClawError: Error, Sendable, Equatable {
     case notReady
     case protocolMismatch
     case invalidPolicy
+    case invalidSnapshot
+    case invalidSequence(Int)
+    case sequenceExhausted(last: Int)
     case sequenceGap(expected: Int, actual: Int)
     case payloadTooLarge(actual: Int, maximum: Int)
     case bufferBudgetExceeded(actual: Int, maximum: Int)

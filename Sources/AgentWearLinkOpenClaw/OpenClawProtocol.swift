@@ -175,12 +175,22 @@ public struct OpenClawResponseEnvelope: Decodable, Sendable, Equatable {
     public let error: GatewayError?
 }
 
+public struct OpenClawStateVersion: Decodable, Sendable, Equatable {
+    public let presence: Int
+    public let health: Int
+
+    public init(presence: Int, health: Int) {
+        self.presence = presence
+        self.health = health
+    }
+}
+
 public struct OpenClawEventEnvelope: Decodable, Sendable, Equatable {
     public let type: String
     public let event: String
     public let payload: JSONValue?
     public let seq: Int?
-    public let stateVersion: Int?
+    public let stateVersion: OpenClawStateVersion?
 }
 
 /// Minimal recursive JSON value used only at the OpenClaw protocol edge.
