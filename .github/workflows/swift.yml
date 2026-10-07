@@ -8,7 +8,9 @@ on:
 
 concurrency:
   group: swift-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Cancel obsolete first-attempt runs after a newer commit, but do not let a
+  # manual rerun cancel itself inside the same PR concurrency group.
+  cancel-in-progress: ${{ github.run_attempt == 1 }}
 
 permissions:
   contents: read
