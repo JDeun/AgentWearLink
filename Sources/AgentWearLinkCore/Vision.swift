@@ -63,5 +63,9 @@ public protocol VisionAgentAdapter: AgentAdapter {
     /// Runtime-negotiated support. Implementations must return false when the
     /// selected endpoint/model cannot accept image input.
     var supportsVisionInput: Bool { get }
+
+    /// Uses the same finite-buffer and explicit-overload semantics required by
+    /// `AgentAdapter.responses(for:)`; image-aware responses must never fall
+    /// back to the default unbounded `AsyncThrowingStream` policy.
     func responses(for request: VisionRequest) async -> AsyncThrowingStream<AgentResponse, Error>
 }

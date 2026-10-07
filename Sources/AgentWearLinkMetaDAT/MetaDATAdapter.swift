@@ -10,6 +10,10 @@ public protocol MetaDATSession: Sendable {
     var capabilities: MetaDATCapabilities { get }
     func connect() async throws
     func disconnect() async
+
+    /// Returns a finite-buffer session event stream. Concrete hosts must choose
+    /// an explicit bounded/coalescing policy and must not use the default
+    /// unbounded `AsyncStream` buffering policy.
     func events() -> AsyncStream<MetaDATEvent>
 }
 
@@ -20,6 +24,9 @@ public protocol MetaDATSession: Sendable {
 /// The concrete host must acknowledge Meta AI's invocation before yielding it
 /// here so slow agent work never holds the platform response handle open.
 public protocol MetaDATVoiceInvocationSource: Sendable {
+    /// Returns a finite-buffer invocation stream. Producers must bound or
+    /// coalesce pending invocations so a stalled consumer cannot grow memory
+    /// without limit; invocation acknowledgement still happens before yield.
     func invocationEvents() -> AsyncStream<MetaDATInvocation>
 }
 
