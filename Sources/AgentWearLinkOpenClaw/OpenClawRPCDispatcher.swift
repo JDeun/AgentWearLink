@@ -109,6 +109,7 @@ public actor OpenClawRPCDispatcher {
                 continuation.finish(
                     throwing: OpenClawAgentEventRoutingError.pendingBufferOverflow(runID)
                 )
+                rememberFinishedAgentRun(runID)
                 return
             }
 
@@ -318,7 +319,7 @@ public actor OpenClawRPCDispatcher {
 
                 case let .event(event):
                     try await state.observeSequence(event.seq)
-                    if let agentEvent = Self.decodeAgentEvent(event) {
+                    if let agentEvent = decodeAgentEvent(event) {
                         routeAgentEvent(agentEvent)
                     }
                     for continuation in eventContinuations.values {
@@ -526,6 +527,145 @@ public actor OpenClawRPCDispatcher {
         }
         sendStarted.insert(id)
         return true
+    }
+
+    private func decodeAgentEvent(
+        _ event: OpenClawEventEnvelope
+    ) -> OpenClawAgentEvent? {
+        guard event.event == "agent",
+              let payload = event.payload,
+              let data = try? JSONEncoder().encode(payload) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(OpenClawAgentEvent.self, from: data)
+    }
+
+    private func routeAgentEvent(_ event: OpenClawAgentEvent) {
+        let runID = event.runId
+        guard !finishedAgentRunIDs.contains(runID) else { return }
+
+        if var subscribers = agentEventContinuations[runID],
+           !subscribers.isEmpty {
+            var delivered = false
+            var overflowed = false
+
+            for (id, subscriber) in subscribers {
+                guard subscriber.generation == generation else {
+                    subscriber.continuation.finish()
+                    subscribers[id] = nil
+                    continue
+                }
+
+                delivered = true
+                if case .dropped = subscriber.continuation.yield(event) {
+                    overflowed = true
+                }
+            }
+
+            if subscribers.isEmpty {
+                agentEventContinuations[runID] = nil
+            } else {
+                agentEventContinuations[runID] = subscribers
+            }
+
+            if overflowed {
+                failAgentRunSubscribers(
+                    runID: runID,
+                    error: OpenClawAgentEventRoutingError.bufferOverflow(runID)
+                )
+                return
+            }
+            if delivered {
+                return
+            }
+        }
+
+        guard !pendingAgentOverflowRunIDs.contains(runID) else { return }
+
+        guard pendingAgentEvents.count < pendingAgentEventLimit else {
+            pendingAgentEvents.removeAll { $0.runId == runID }
+            rememberPendingAgentOverflow(runID)
+            return
+        }
+
+        pendingAgentEvents.append(event)
+    }
+
+    private func removeAgentEventSubscriber(
+        runID: String,
+        id: UUID,
+        generation expectedGeneration: UInt64
+    ) {
+        guard var subscribers = agentEventContinuations[runID],
+              let subscriber = subscribers[id],
+              subscriber.generation == expectedGeneration else {
+            return
+        }
+
+        subscribers[id] = nil
+        if subscribers.isEmpty {
+            agentEventContinuations[runID] = nil
+        } else {
+            agentEventContinuations[runID] = subscribers
+        }
+    }
+
+    private func failAgentRunSubscribers(
+        runID: String,
+        error: Error
+    ) {
+        if let subscribers = agentEventContinuations.removeValue(forKey: runID) {
+            for subscriber in subscribers.values {
+                subscriber.continuation.finish(throwing: error)
+            }
+        }
+        pendingAgentEvents.removeAll { $0.runId == runID }
+        pendingAgentOverflowRunIDs.remove(runID)
+        pendingAgentOverflowOrder.removeAll { $0 == runID }
+        rememberFinishedAgentRun(runID)
+    }
+
+    private func finishAllAgentEventSubscribers(
+        throwing error: Error? = nil
+    ) {
+        let allSubscribers = agentEventContinuations.values.flatMap { $0.values }
+        agentEventContinuations.removeAll(keepingCapacity: false)
+
+        for subscriber in allSubscribers {
+            if let error {
+                subscriber.continuation.finish(throwing: error)
+            } else {
+                subscriber.continuation.finish()
+            }
+        }
+    }
+
+    private func rememberPendingAgentOverflow(_ runID: String) {
+        guard pendingAgentOverflowRunIDs.insert(runID).inserted else { return }
+        pendingAgentOverflowOrder.append(runID)
+
+        while pendingAgentOverflowOrder.count > pendingAgentEventLimit {
+            let evicted = pendingAgentOverflowOrder.removeFirst()
+            pendingAgentOverflowRunIDs.remove(evicted)
+        }
+    }
+
+    private func rememberFinishedAgentRun(_ runID: String) {
+        guard finishedAgentRunIDs.insert(runID).inserted else { return }
+        finishedAgentRunOrder.append(runID)
+
+        while finishedAgentRunOrder.count > pendingAgentEventLimit {
+            let evicted = finishedAgentRunOrder.removeFirst()
+            finishedAgentRunIDs.remove(evicted)
+        }
+    }
+
+    private func resetAgentRoutingBuffers() {
+        pendingAgentEvents.removeAll(keepingCapacity: false)
+        pendingAgentOverflowRunIDs.removeAll(keepingCapacity: false)
+        pendingAgentOverflowOrder.removeAll(keepingCapacity: false)
+        finishedAgentRunIDs.removeAll(keepingCapacity: false)
+        finishedAgentRunOrder.removeAll(keepingCapacity: false)
     }
 
     private func removeEventSubscriber(_ id: UUID) {
