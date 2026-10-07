@@ -48,20 +48,27 @@ public extension OpenClawWebSocket {
 }
 
 public actor URLSessionOpenClawWebSocket: OpenClawWebSocket {
-    private let url: URL
+    private let endpoint: OpenClawEndpoint
     private let session: URLSession
     private var task: URLSessionWebSocketTask?
     private var generation: UInt64 = 0
 
-    public init(url: URL, session: URLSession = .shared) {
-        self.url = url
+    public init(
+        endpoint: OpenClawEndpoint,
+        session: URLSession = .shared
+    ) throws {
+        guard let scheme = endpoint.gatewayURL.scheme?.lowercased(),
+              scheme == "ws" || scheme == "wss" else {
+            throw OpenClawEndpointError.webSocketSchemeRequired
+        }
+        self.endpoint = endpoint
         self.session = session
     }
 
     public func connect() async {
         guard task == nil else { return }
         generation &+= 1
-        let socket = session.webSocketTask(with: url)
+        let socket = session.webSocketTask(with: endpoint.gatewayURL)
         task = socket
         socket.resume()
     }

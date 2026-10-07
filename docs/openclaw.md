@@ -16,6 +16,8 @@ The primary adapter is `OpenClawNativeAgentAdapter`. It uses the native Gateway 
 - preservation of accepted OpenClaw session keys
 
 A reconnect restores transport readiness. It does **not** silently replay an in-flight request whose delivery or completion is uncertain.
+Production native WebSocket construction accepts a validated `OpenClawEndpoint`, not an arbitrary raw URL. The endpoint binds transport policy to an explicit exposure profile: loopback, Tailnet-direct, Tailscale Serve, or private reverse proxy. Loopback/Tailnet-direct hosts are validated against their expected address families, while Serve/reverse-proxy paths require `wss://`. This prevents a caller from bypassing transport policy by handing credentials to an arbitrary public `ws://` URL.
+
 
 Accepted native runs also have a bounded terminal-wait policy: by default AWL performs at most 10 `agent.wait` polls with a 30-second Gateway timeout per poll. Repeated `pending`/`timeout` results therefore end in a typed local failure instead of retaining an interaction indefinitely. Expiry cleans the local run/update context and never resubmits the accepted run.
 

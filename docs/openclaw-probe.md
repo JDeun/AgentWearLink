@@ -31,11 +31,23 @@ Direct private-tailnet `ws://100.x.y.z:18789` can be useful for diagnostics, but
 
 ## Environment
 
-Set the Gateway URL:
+Set the Gateway URL and its exposure profile:
 
 ```bash
 export AWL_OPENCLAW_URL='wss://<mac-mini>.ts.net'
+export AWL_OPENCLAW_EXPOSURE='tailnet-serve'
 ```
+
+For every non-loopback endpoint, `AWL_OPENCLAW_EXPOSURE` is mandatory. Supported values are `tailnet-direct`, `tailnet-serve`, and `private-reverse-proxy`. Loopback URLs (`localhost`, `127.0.0.0/8`, or `::1`) may omit the variable because they are validated locally.
+
+A direct private Tailnet diagnostic can be declared explicitly:
+
+```bash
+export AWL_OPENCLAW_URL='ws://100.64.0.10:18789'
+export AWL_OPENCLAW_EXPOSURE='tailnet-direct'
+```
+
+The probe rejects a public/plain `ws://` endpoint that is mislabeled as loopback or Tailnet-direct, and Tailscale Serve/private reverse-proxy profiles require secure `wss://`.
 
 If the Gateway uses shared-token auth:
 
