@@ -571,15 +571,6 @@ public actor OpenClawRPCDispatcher {
             return
         }
 
-        let maximumBufferedBytes = try await state.negotiatedMaximumBufferedBytes()
-        let projectedBytes = pendingAgentBufferedBytes + frameBytes
-        guard projectedBytes <= maximumBufferedBytes else {
-            throw AWLOpenClawError.bufferBudgetExceeded(
-                actual: projectedBytes,
-                maximum: maximumBufferedBytes
-            )
-        }
-
         if pendingAgentEvents.count >= pendingAgentEventLimit {
             let dropped = pendingAgentEvents.removeFirst()
             pendingAgentBufferedBytes -= dropped.bytes
@@ -589,6 +580,15 @@ public actor OpenClawRPCDispatcher {
         guard !pendingAgentOverflowRunIDs.contains(runID),
               !finishedAgentRunIDs.contains(runID) else {
             return
+        }
+
+        let maximumBufferedBytes = try await state.negotiatedMaximumBufferedBytes()
+        let projectedBytes = pendingAgentBufferedBytes + frameBytes
+        guard projectedBytes <= maximumBufferedBytes else {
+            throw AWLOpenClawError.bufferBudgetExceeded(
+                actual: projectedBytes,
+                maximum: maximumBufferedBytes
+            )
         }
 
         pendingAgentEvents.append(
