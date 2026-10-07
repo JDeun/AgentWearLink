@@ -44,7 +44,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
             generation &+= 1
             let token = generation
             activeCapture = token
-            return (token, camera)
+            return (token, self.camera)
         }
 
         defer { finishCapture(token) }
