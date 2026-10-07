@@ -26,7 +26,7 @@ public actor OpenClawGatewayState {
         }
         let policy = hello.policy
         guard policy.maxPayload > 0,
-              policy.maxBufferedBytes >= policy.maxPayload,
+              policy.maxBufferedBytes > 0,
               policy.tickIntervalMs > 0,
               policy.tickIntervalMs <= maximumTickIntervalMilliseconds else {
             throw AWLOpenClawError.invalidPolicy
@@ -34,8 +34,7 @@ public actor OpenClawGatewayState {
 
         if let attachments = policy.attachments {
             guard attachments.maxBytes > 0,
-                  attachments.maxImageBytes > 0,
-                  attachments.maxImageBytes <= attachments.maxBytes else {
+                  attachments.maxImageBytes > 0 else {
                 throw AWLOpenClawError.invalidPolicy
             }
         }
