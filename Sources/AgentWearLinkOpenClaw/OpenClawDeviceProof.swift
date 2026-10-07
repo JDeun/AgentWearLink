@@ -46,8 +46,12 @@ public struct OpenClawDeviceProofBuilder: Sendable {
             String(signedAt),
             token ?? "",
             nonce,
-            platform.trimmingCharacters(in: .whitespacesAndNewlines),
-            deviceFamily.trimmingCharacters(in: .whitespacesAndNewlines)
+            platform
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(),
+            deviceFamily
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
         ]
         return Data(fields.joined(separator: "|").utf8)
     }

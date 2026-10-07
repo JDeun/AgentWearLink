@@ -26,6 +26,7 @@ jobs:
       meta_host: ${{ steps.filter.outputs.meta_host }}
       meta_ui: ${{ steps.filter.outputs.meta_ui }}
       ios_reference: ${{ steps.filter.outputs.ios_reference }}
+      openclaw_contract: ${{ steps.filter.outputs.openclaw_contract }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
@@ -72,6 +73,11 @@ jobs:
               - 'Package.resolved'
               - 'scripts/install-xcodegen.sh'
               - '.github/workflows/swift.yml'
+            openclaw_contract:
+              - 'Sources/AgentWearLinkOpenClaw/**'
+              - 'Tests/AgentWearLinkOpenClawTests/**'
+              - 'scripts/verify-openclaw-protocol-contract.py'
+              - 'docs/openclaw-protocol-contract.md'
 
   core-test:
     needs: changes
@@ -85,6 +91,9 @@ jobs:
       - name: Test core package
         if: needs.changes.outputs.swift == 'true'
         run: swift test
+      - name: Verify pinned OpenClaw protocol contract
+        if: needs.changes.outputs.openclaw_contract == 'true'
+        run: python3 scripts/verify-openclaw-protocol-contract.py
       - name: Fast-pass non-code changes
         if: needs.changes.outputs.swift != 'true'
         run: echo "No Swift/package/workflow changes; required gate passes without compiling."
