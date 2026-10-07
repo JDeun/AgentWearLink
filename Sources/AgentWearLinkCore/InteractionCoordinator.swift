@@ -2,6 +2,7 @@ import Foundation
 
 public actor InteractionCoordinator {
     public static let defaultMaximumInFlightInteractions = 8
+    public static let defaultMaximumRequestTextBytes = AgentRequest.defaultMaximumTextBytes
     private struct TaskEntry {
         let generation: UUID
         let task: Task<Void, Never>
@@ -9,6 +10,7 @@ public actor InteractionCoordinator {
 
     private let agent: any AgentAdapter
     private let maximumInFlightInteractions: Int
+    private let maximumRequestTextBytes: Int
     private var tasks: [InteractionID: TaskEntry] = [:]
     private let output: @Sendable (InteractionEvent) async -> Void
     private var activeRuntimeGeneration: UInt64?
@@ -16,11 +18,14 @@ public actor InteractionCoordinator {
     public init(
         agent: any AgentAdapter,
         maximumInFlightInteractions: Int = InteractionCoordinator.defaultMaximumInFlightInteractions,
+        maximumRequestTextBytes: Int = InteractionCoordinator.defaultMaximumRequestTextBytes,
         output: @escaping @Sendable (InteractionEvent) async -> Void
     ) {
         precondition(maximumInFlightInteractions > 0)
+        precondition(maximumRequestTextBytes > 0)
         self.agent = agent
         self.maximumInFlightInteractions = maximumInFlightInteractions
+        self.maximumRequestTextBytes = maximumRequestTextBytes
         self.output = output
     }
 
@@ -68,6 +73,17 @@ public actor InteractionCoordinator {
     private func submit(_ request: AgentRequest) async {
         let id = request.interactionID
         guard tasks[id] == nil else { return }
+
+        guard request.textUTF8ByteCount <= maximumRequestTextBytes else {
+            await output(
+                .failed(
+                    id,
+                    .overloaded("agent request text exceeds configured byte limit")
+                )
+            )
+            return
+        }
+
         guard tasks.count < maximumInFlightInteractions else {
             await output(.failed(id, .overloaded("maximum in-flight interaction capacity reached")))
             return

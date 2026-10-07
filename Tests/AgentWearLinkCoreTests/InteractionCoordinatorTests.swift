@@ -58,6 +58,34 @@ final class InteractionCoordinatorTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
+    func testOversizedTextIsRejectedBeforeAgentDispatch() async throws {
+        let agent = StubAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(
+            agent: agent,
+            maximumRequestTextBytes: 8
+        ) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "123456789"))
+        try await recorded.waitUntilCount(1)
+
+        let requestCount = await agent.requests()
+        XCTAssertEqual(requestCount, 0)
+        let events = await recorded.values
+        XCTAssertEqual(
+            events,
+            [
+                .failed(
+                    id,
+                    .overloaded("agent request text exceeds configured byte limit")
+                )
+            ]
+        )
+    }
+
     func testDuplicateRequestForInteractionIsSuppressed() async throws {
         let agent = CapacityHoldingAgent()
         let recorded = RecordedEvents()

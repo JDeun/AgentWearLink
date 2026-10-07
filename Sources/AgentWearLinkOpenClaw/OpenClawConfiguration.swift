@@ -8,6 +8,7 @@ public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertibl
     public let sessionKey: String?
     public let messageChannel: String?
     public let timeout: TimeInterval
+    public let maximumRequestBytes: Int
     public let maximumEventBytes: Int
 
     public init(
@@ -18,11 +19,13 @@ public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertibl
         sessionKey: String? = nil,
         messageChannel: String? = nil,
         timeout: TimeInterval = 120,
+        maximumRequestBytes: Int = 262_144,
         maximumEventBytes: Int = 262_144
     ) {
         precondition(!bearerToken.isEmpty)
         precondition(!conversationID.isEmpty)
         precondition(timeout.isFinite && timeout > 0)
+        precondition(maximumRequestBytes > 0)
         precondition(maximumEventBytes > 0)
 
         self.baseURL = baseURL
@@ -32,6 +35,7 @@ public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertibl
         self.sessionKey = sessionKey
         self.messageChannel = messageChannel
         self.timeout = timeout
+        self.maximumRequestBytes = maximumRequestBytes
         self.maximumEventBytes = maximumEventBytes
     }
 
@@ -39,7 +43,7 @@ public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertibl
         let sessionKeyDescription = sessionKey == nil ? "nil" : "<redacted>"
         let messageChannelDescription = messageChannel == nil ? "nil" : "<redacted>"
 
-        return "OpenClawConfiguration(baseURL: \(baseURL), bearerToken: <redacted>, model: \(model), conversationID: <redacted>, sessionKey: \(sessionKeyDescription), messageChannel: \(messageChannelDescription), timeout: \(timeout), maximumEventBytes: \(maximumEventBytes))"
+        return "OpenClawConfiguration(baseURL: \(baseURL), bearerToken: <redacted>, model: \(model), conversationID: <redacted>, sessionKey: \(sessionKeyDescription), messageChannel: \(messageChannelDescription), timeout: \(timeout), maximumRequestBytes: \(maximumRequestBytes), maximumEventBytes: \(maximumEventBytes))"
     }
 
     public var debugDescription: String { description }

@@ -233,6 +233,7 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         role: String = "operator",
         scopes: [String] = ["operator.read"],
         methods: [String] = ["health"],
+        maxPayload: Int = 4_096,
         maxBufferedBytes: Int = 8_192
     ) async throws -> OpenClawGatewayState {
         let scopesData = try JSONSerialization.data(withJSONObject: scopes)
@@ -251,7 +252,7 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
               "server":{"version":"x","connId":"c"},
               "features":{"methods":\(methodsJSON),"events":["tick"]},
               "auth":{"role":"\(role)","scopes":\(scopesJSON)},
-              "policy":{"maxPayload":4096,"maxBufferedBytes":\(maxBufferedBytes),"tickIntervalMs":15000}
+              "policy":{"maxPayload":\(maxPayload),"maxBufferedBytes":\(maxBufferedBytes),"tickIntervalMs":15000}
             }
             """.utf8)
         )
@@ -390,6 +391,39 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
 
         let sentCount = await socket.sentCount()
 
+        XCTAssertEqual(sentCount, 0)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testOversizedAgentTextIsRejectedBeforeSocketSend() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(
+                scopes: ["operator.write"],
+                methods: [],
+                maxPayload: 32
+            )
+        )
+        await dispatcher.start()
+
+        do {
+            _ = try await dispatcher.request(
+                method: "agent",
+                params: OpenClawAgentParams(
+                    message: String(repeating: "x", count: 33),
+                    idempotencyKey: "idempotency"
+                )
+            )
+            XCTFail("Expected negotiated request limit rejection")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(error, .payloadTooLarge(actual: 33, maximum: 32))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let sentCount = await socket.sentCount()
         XCTAssertEqual(sentCount, 0)
         await dispatcher.stop()
         await socket.close()

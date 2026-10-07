@@ -92,6 +92,8 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
                 }
             } catch is CancellationError {
                 terminalError = AWLError.cancelled
+            } catch let error as AgentRequestValidationError {
+                terminalError = error
             } catch let error as AWLError {
                 terminalError = error
             } catch {

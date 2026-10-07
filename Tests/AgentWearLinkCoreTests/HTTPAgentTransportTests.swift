@@ -83,11 +83,13 @@ final class HTTPAgentTransportTests: XCTestCase {
         let configuration = HTTPAgentTransportConfiguration(
             endpoint: endpoint,
             timeout: 12,
-            maximumResponseBytes: 4096
+            maximumRequestBytes: 2_048,
+            maximumResponseBytes: 4_096
         )
         XCTAssertEqual(configuration.endpoint, endpoint)
         XCTAssertEqual(configuration.timeout, 12)
-        XCTAssertEqual(configuration.maximumResponseBytes, 4096)
+        XCTAssertEqual(configuration.maximumRequestBytes, 2_048)
+        XCTAssertEqual(configuration.maximumResponseBytes, 4_096)
     }
 
     func testConfigurationDescriptionsRedactBearerToken() {
@@ -140,6 +142,35 @@ final class HTTPAgentTransportTests: XCTestCase {
         } catch let error as AWLError {
             XCTAssertEqual(error, .authentication)
         }
+    }
+
+    func testRejectsOversizedRequestBeforeOperationIsCreated() async throws {
+        let transport = HTTPAgentTransport(
+            configuration: .init(
+                endpoint: URL(string: "https://example.invalid")!,
+                maximumRequestBytes: 32
+            ),
+            session: makeSession()
+        )
+        let request = AgentRequest(
+            interactionID: InteractionID(),
+            text: String(repeating: "x", count: 33)
+        )
+
+        do {
+            for try await _ in await transport.send(request) {}
+            XCTFail("Expected request byte limit failure")
+        } catch let error as AgentRequestValidationError {
+            XCTAssertEqual(
+                error,
+                .payloadTooLarge(actual: 33, maximum: 32)
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let operationCount = await transport.operationCount()
+        XCTAssertEqual(operationCount, 0)
     }
 
     func testRejectsOversizedBufferedResponse() async throws {

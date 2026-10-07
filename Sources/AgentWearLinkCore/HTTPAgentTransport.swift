@@ -4,19 +4,23 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable, CustomString
     public let endpoint: URL
     public let bearerToken: String?
     public let timeout: TimeInterval
+    public let maximumRequestBytes: Int
     public let maximumResponseBytes: Int
 
     public init(
         endpoint: URL,
         bearerToken: String? = nil,
         timeout: TimeInterval = 30,
+        maximumRequestBytes: Int = AgentRequest.defaultMaximumTextBytes,
         maximumResponseBytes: Int = 1_048_576
     ) {
         precondition(timeout.isFinite && timeout > 0)
+        precondition(maximumRequestBytes > 0)
         precondition(maximumResponseBytes > 0)
         self.endpoint = endpoint
         self.bearerToken = bearerToken
         self.timeout = timeout
+        self.maximumRequestBytes = maximumRequestBytes
         self.maximumResponseBytes = maximumResponseBytes
     }
 
@@ -35,6 +39,7 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable, CustomString
         "endpoint: \(endpoint), " +
         "bearerToken: \(bearerToken == nil ? "nil" : "<redacted>"), " +
         "timeout: \(timeout), " +
+        "maximumRequestBytes: \(maximumRequestBytes), " +
         "maximumResponseBytes: \(maximumResponseBytes))"
     }
 
@@ -279,7 +284,15 @@ public actor HTTPAgentTransport: AgentTransport {
         }
 
         do {
-            urlRequest.httpBody = try JSONEncoder().encode(request)
+            try request.validateMaximumTextBytes(configuration.maximumRequestBytes)
+            let body = try JSONEncoder().encode(request)
+            guard body.count <= configuration.maximumRequestBytes else {
+                throw AgentRequestValidationError.payloadTooLarge(
+                    actual: body.count,
+                    maximum: configuration.maximumRequestBytes
+                )
+            }
+            urlRequest.httpBody = body
         } catch {
             return AsyncThrowingStream { continuation in
                 continuation.finish(throwing: error)
