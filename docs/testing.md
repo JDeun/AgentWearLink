@@ -50,9 +50,11 @@ xcodebuild \
   test
 ```
 
-The second command executes the deterministic package-hosted Meta integration/helper XCTest target, including lifecycle, readiness, camera-ignition, listener-generation, and mock-host contract regressions. The MockDeviceKit test that requires a linked-app Keychain context is intentionally skipped here and remains part of the app-hosted XCUITest layer below.
+CI separates the fast compatibility gate from the behavioral gate. Any Core/package change that can affect the Meta adapter still resolves the pinned SDK, verifies its immutable revision, lists schemes, and compiles the concrete integration against an iOS Simulator destination. Simulator boot and the deterministic package-hosted Meta integration/helper XCTest target run only when Meta adapter/test paths (or this workflow) change.
 
-This catches SDK/API drift and proves the deterministic helper assertions actually execute. It still does not prove physical wearable behavior.
+The behavioral XCTest target covers lifecycle, readiness, camera-ignition, listener-generation, and mock-host contract regressions. The MockDeviceKit test that requires a linked-app Keychain context is intentionally skipped here and remains part of the app-hosted XCUITest layer below.
+
+This preserves SDK/API compatibility coverage for Core-only changes without paying the simulator behavioral-test cost on every unrelated Core PR. A Meta implementation change still receives the full deterministic behavioral gate. Neither path proves physical wearable behavior.
 
 ## 3. Simulator/vendor behavioral integration
 
@@ -104,7 +106,7 @@ A hardware-dependent feature remains unvalidated until this layer passes, even w
 
 ## CI interpretation
 
-The root job protects vendor-neutral contracts. The Meta integration job uses its own vendor-compatible Apple toolchain, compiles the pinned SDK integration, executes the deterministic `AgentWearLinkMetaDATIntegrationTests` target on iOS Simulator, and separately runs the app-hosted MockDeviceKit/XCUITest contract when its path gate is active. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
+The root job protects vendor-neutral contracts. The Meta integration job uses its own vendor-compatible Apple toolchain and has three path-sensitive depths: (1) Core/package changes that can affect Meta receive the pinned-SDK compatibility compile gate, (2) Meta adapter/test or workflow changes additionally boot an iOS Simulator and execute `AgentWearLinkMetaDATIntegrationTests`, and (3) app-host/UI paths additionally run the generated-host and MockDeviceKit/XCUITest gates. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
 
 ## Test-data policy
 
