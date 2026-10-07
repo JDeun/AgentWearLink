@@ -41,7 +41,7 @@ public actor AppleSpeechOutput: InteractionOutputSink {
         case let .completed(id):
             await consume(.turnCompleted(id))
         case let .failed(id, error):
-            await consume(.failed(id, error))
+            await consume(InteractionEvent.failed(id, error))
         }
     }
 
