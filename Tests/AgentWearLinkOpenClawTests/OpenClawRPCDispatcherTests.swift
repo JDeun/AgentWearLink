@@ -254,7 +254,9 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
                 XCTFail("Unexpected error for \(method): \(error)")
             }
 
-            XCTAssertEqual(await socket.sentCount(), 0)
+            let sentCount = await socket.sentCount()
+
+            XCTAssertEqual(sentCount, 0)
             await dispatcher.stop()
             await socket.close()
         }
@@ -287,7 +289,9 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertEqual(await socket.sentCount(), 0)
+        let sentCount = await socket.sentCount()
+
+        XCTAssertEqual(sentCount, 0)
         await dispatcher.stop()
         await socket.close()
     }
@@ -316,7 +320,8 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         )
 
         _ = try await requestTask.value
-        XCTAssertEqual(await socket.sentCount(), 1)
+        let sentCount = await socket.sentCount()
+        XCTAssertEqual(sentCount, 1)
         await dispatcher.stop()
         await socket.close()
     }
@@ -354,7 +359,9 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertEqual(await socket.sentCount(), 0)
+        let sentCount = await socket.sentCount()
+
+        XCTAssertEqual(sentCount, 0)
         await dispatcher.stop()
         await socket.close()
     }
