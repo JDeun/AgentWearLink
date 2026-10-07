@@ -265,8 +265,10 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertTrue(await socket.closed())
-        XCTAssertEqual(await state.connectionState, .disconnected)
+        let closed = await socket.closed()
+        let connectionState = await state.connectionState
+        XCTAssertTrue(closed)
+        XCTAssertEqual(connectionState, .disconnected)
     }
 
     func testMissingChallengeClosesSocket() async {
