@@ -53,4 +53,12 @@ final class OpenClawFrameRouterTests: XCTestCase {
         }
     }
 
+    func testRejectsOversizedPostAuthFrameBeforeJSONParsing() {
+        let maximum = 32
+        let data = Data(repeating: 65, count: maximum + 1)
+        XCTAssertThrowsError(try OpenClawFrameRouter().decode(data, maximumBytes: maximum)) { error in
+            XCTAssertEqual(error as? OpenClawFrameError, .oversizedInboundFrame(actual: maximum + 1, maximum: maximum))
+        }
+    }
+
 }
