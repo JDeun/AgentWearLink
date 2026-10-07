@@ -69,7 +69,7 @@ public actor OpenClawGatewayConnection {
             await state.beginAuthentication()
             try ensureActiveConnect(generation)
 
-            let assembled = try await assembler.assemble(
+            var assembled = try await assembler.assemble(
                 version: appVersion,
                 scopes: scopes,
                 credentials: credentials,
@@ -79,41 +79,27 @@ public actor OpenClawGatewayConnection {
             )
             try ensureActiveConnect(generation)
 
-            let requestID = UUID().uuidString
-            let request = OpenClawRequestFrame(
-                id: requestID,
-                method: "connect",
-                params: assembled.params
-            )
-            let requestData = try encoder.encode(request)
-
-            guard requestData.count <= OpenClawProtocol.preAuthMaximumBytes else {
-                throw OpenClawFrameError.oversizedPreAuthFrame(
-                    actual: requestData.count,
-                    maximum: OpenClawProtocol.preAuthMaximumBytes
-                )
-            }
-            guard let requestText = String(data: requestData, encoding: .utf8) else {
-                throw OpenClawFrameError.malformedFrame
-            }
-
-            try ensureActiveConnect(generation)
-            try await socket.send(text: requestText)
-            try ensureActiveConnect(generation)
-
-            let responseText = try await receiveHandshakeFrame(
-                timeoutError: .helloTimeout,
+            var response = try await sendConnectRequest(
+                assembled,
                 generation: generation
             )
-            try ensureActiveConnect(generation)
 
-            let responseFrame = try frameRouter.decodePreAuth(
-                Data(responseText.utf8)
-            )
-
-            guard case let .response(response) = responseFrame,
-                  response.id == requestID else {
-                throw OpenClawHandshakeError.unexpectedConnectResponse
+            if !response.ok,
+               let error = response.error,
+               OpenClawDeviceTokenRetryHint(error: error) != nil,
+               !assembled.usedStoredCredential,
+               let retryAssembly = try await assembler.assembleStoredDeviceTokenRetry(
+                   version: appVersion,
+                   challenge: challenge,
+                   clientIdentity: clientIdentity,
+                   locale: locale
+               ) {
+                try ensureActiveConnect(generation)
+                assembled = retryAssembly
+                response = try await sendConnectRequest(
+                    retryAssembly,
+                    generation: generation
+                )
             }
 
             guard response.ok else {
@@ -241,6 +227,47 @@ public actor OpenClawGatewayConnection {
                 throw error
             }
         }
+    }
+
+
+    private func sendConnectRequest(
+        _ assembled: OpenClawAssembledConnect,
+        generation: UInt64
+    ) async throws -> OpenClawResponseEnvelope {
+        let requestID = UUID().uuidString
+        let request = OpenClawRequestFrame(
+            id: requestID,
+            method: "connect",
+            params: assembled.params
+        )
+        let requestData = try encoder.encode(request)
+
+        guard requestData.count <= OpenClawProtocol.preAuthMaximumBytes else {
+            throw OpenClawFrameError.oversizedPreAuthFrame(
+                actual: requestData.count,
+                maximum: OpenClawProtocol.preAuthMaximumBytes
+            )
+        }
+        guard let requestText = String(data: requestData, encoding: .utf8) else {
+            throw OpenClawFrameError.malformedFrame
+        }
+
+        try ensureActiveConnect(generation)
+        try await socket.send(text: requestText)
+        try ensureActiveConnect(generation)
+
+        let responseText = try await receiveHandshakeFrame(
+            timeoutError: .helloTimeout,
+            generation: generation
+        )
+        try ensureActiveConnect(generation)
+
+        let responseFrame = try frameRouter.decodePreAuth(Data(responseText.utf8))
+        guard case let .response(response) = responseFrame,
+              response.id == requestID else {
+            throw OpenClawHandshakeError.unexpectedConnectResponse
+        }
+        return response
     }
 
     private func decodeChallenge(
