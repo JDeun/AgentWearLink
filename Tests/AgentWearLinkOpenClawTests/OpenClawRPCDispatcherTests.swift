@@ -232,7 +232,8 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
     private func readyState(
         role: String = "operator",
         scopes: [String] = ["operator.read"],
-        methods: [String] = ["health"]
+        methods: [String] = ["health"],
+        maxBufferedBytes: Int = 8_192
     ) async throws -> OpenClawGatewayState {
         let scopesData = try JSONSerialization.data(withJSONObject: scopes)
         let methodsData = try JSONSerialization.data(withJSONObject: methods)
@@ -250,7 +251,7 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
               "server":{"version":"x","connId":"c"},
               "features":{"methods":\(methodsJSON),"events":["tick"]},
               "auth":{"role":"\(role)","scopes":\(scopesJSON)},
-              "policy":{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000}
+              "policy":{"maxPayload":4096,"maxBufferedBytes":\(maxBufferedBytes),"tickIntervalMs":15000}
             }
             """.utf8)
         )
@@ -470,6 +471,95 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
 
         XCTAssertFalse(atBoundary)
         XCTAssertTrue(pastBoundary)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testPendingAgentBufferEnforcesNegotiatedByteBudget() async throws {
+        let first = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"one"},"seq":1},"seq":1}"#
+        let second = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"two"},"seq":2},"seq":2}"#
+        let totalBytes = first.utf8.count + second.utf8.count
+        let maximumBufferedBytes = totalBytes - 1
+
+        let socket = DispatcherSocket()
+        let state = try await readyState(maxBufferedBytes: maximumBufferedBytes)
+        let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
+        let events = await dispatcher.events()
+        await dispatcher.start()
+
+        let terminalErrorTask = Task { () -> AWLOpenClawError? in
+            do {
+                for try await _ in events {}
+                return nil
+            } catch let error as AWLOpenClawError {
+                return error
+            } catch {
+                return nil
+            }
+        }
+
+        await socket.push(first)
+        await socket.push(second)
+
+        try await waitUntilOpenClawTestCondition(
+            "pending buffer budget retired transport"
+        ) {
+            await state.connectionState == .disconnected
+        }
+
+        let terminalError = await terminalErrorTask.value
+        XCTAssertEqual(
+            terminalError,
+            .bufferBudgetExceeded(
+                actual: totalBytes,
+                maximum: maximumBufferedBytes
+            )
+        )
+        let running = await dispatcher.isRunning
+        XCTAssertFalse(running)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testPendingAgentBufferUsesFreshReconnectBudget() async throws {
+        let first = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"one"},"seq":1},"seq":1}"#
+        let second = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"two"},"seq":2},"seq":2}"#
+        let totalBytes = first.utf8.count + second.utf8.count
+
+        let socket = DispatcherSocket()
+        let state = try await readyState(maxBufferedBytes: first.utf8.count)
+        let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
+        await dispatcher.start()
+
+        let refreshed = try await readyState(maxBufferedBytes: totalBytes)
+        guard let refreshedHello = await refreshed.hello else {
+            XCTFail("Expected refreshed hello")
+            return
+        }
+        await state.beginReconnect(attempt: 1)
+        try await state.acceptHello(refreshedHello)
+
+        let observedEvents = await dispatcher.events()
+        let observedTwoEvents = Task {
+            var iterator = observedEvents.makeAsyncIterator()
+            _ = try await iterator.next()
+            _ = try await iterator.next()
+        }
+
+        await socket.push(first)
+        await socket.push(second)
+        try await observedTwoEvents.value
+
+        let stream = await dispatcher.agentEvents(runID: "r")
+        var iterator = stream.makeAsyncIterator()
+        let firstBuffered = try await iterator.next()
+        let secondBuffered = try await iterator.next()
+
+        XCTAssertEqual(firstBuffered?.seq, 1)
+        XCTAssertEqual(secondBuffered?.seq, 2)
+        let currentState = await state.connectionState
+        XCTAssertEqual(currentState, .ready)
+
         await dispatcher.stop()
         await socket.close()
     }

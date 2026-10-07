@@ -82,6 +82,13 @@ public actor OpenClawGatewayState {
             )
         }
     }
+
+    public func negotiatedMaximumBufferedBytes() throws -> Int {
+        guard let policy = hello?.policy else {
+            throw AWLOpenClawError.notReady
+        }
+        return policy.maxBufferedBytes
+    }
 }
 
 public enum AWLOpenClawError: Error, Sendable, Equatable {
@@ -90,6 +97,7 @@ public enum AWLOpenClawError: Error, Sendable, Equatable {
     case invalidPolicy
     case sequenceGap(expected: Int, actual: Int)
     case payloadTooLarge(actual: Int, maximum: Int)
+    case bufferBudgetExceeded(actual: Int, maximum: Int)
     case gateway(code: String, retryable: Bool, retryAfterMilliseconds: Int? = nil)
     case disconnected
 }

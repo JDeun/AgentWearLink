@@ -25,8 +25,14 @@ public actor OpenClawRPCDispatcher {
         let continuation: AsyncThrowingStream<OpenClawAgentEvent, Error>.Continuation
     }
 
+    private struct PendingAgentEvent {
+        let event: OpenClawAgentEvent
+        let bytes: Int
+    }
+
     private var agentEventContinuations: [String: [UUID: AgentEventSubscriber]] = [:]
-    private var pendingAgentEvents: [OpenClawAgentEvent] = []
+    private var pendingAgentEvents: [PendingAgentEvent] = []
+    private var pendingAgentBufferedBytes = 0
     private var pendingAgentOverflowRunIDs: Set<String> = []
     private var pendingAgentOverflowOrder: [String] = []
     private var finishedAgentRunIDs: Set<String> = []
@@ -110,7 +116,7 @@ public actor OpenClawRPCDispatcher {
 
             if pendingAgentOverflowRunIDs.remove(runID) != nil {
                 pendingAgentOverflowOrder.removeAll { $0 == runID }
-                pendingAgentEvents.removeAll { $0.runId == runID }
+                _ = removePendingAgentEvents(runID: runID)
                 continuation.finish(
                     throwing: OpenClawAgentEventRoutingError.pendingBufferOverflow(runID)
                 )
@@ -123,10 +129,9 @@ public actor OpenClawRPCDispatcher {
                 continuation: continuation
             )
 
-            let buffered = pendingAgentEvents.filter { $0.runId == runID }
-            pendingAgentEvents.removeAll { $0.runId == runID }
-            for event in buffered {
-                if case .dropped = continuation.yield(event) {
+            let buffered = removePendingAgentEvents(runID: runID)
+            for entry in buffered {
+                if case .dropped = continuation.yield(entry.event) {
                     failAgentRunSubscribers(
                         runID: runID,
                         error: OpenClawAgentEventRoutingError.bufferOverflow(runID)
@@ -143,7 +148,7 @@ public actor OpenClawRPCDispatcher {
                 subscriber.continuation.finish()
             }
         }
-        pendingAgentEvents.removeAll { $0.runId == runID }
+        _ = removePendingAgentEvents(runID: runID)
         pendingAgentOverflowRunIDs.remove(runID)
         pendingAgentOverflowOrder.removeAll { $0 == runID }
         rememberFinishedAgentRun(runID)
@@ -348,8 +353,9 @@ public actor OpenClawRPCDispatcher {
                 }
 
                 lastActivityMilliseconds = nowMilliseconds()
+                let frameData = Data(text.utf8)
                 let frame = try router.decode(
-                    Data(text.utf8),
+                    frameData,
                     maximumBytes: inboundMaximumBytes
                 )
 
@@ -375,7 +381,11 @@ public actor OpenClawRPCDispatcher {
                         break
                     }
                     if let agentEvent = Self.decodeAgentEvent(event) {
-                        routeAgentEvent(agentEvent, generation: receiveGeneration)
+                        try await routeAgentEvent(
+                            agentEvent,
+                            frameBytes: frameData.count,
+                            generation: receiveGeneration
+                        )
                     }
                     for continuation in eventContinuations.values {
                         continuation.yield(event)
@@ -503,8 +513,9 @@ public actor OpenClawRPCDispatcher {
 
     private func routeAgentEvent(
         _ event: OpenClawAgentEvent,
+        frameBytes: Int,
         generation receiveGeneration: UInt64
-    ) {
+    ) async throws {
         let runID = event.runId
         guard !finishedAgentRunIDs.contains(runID),
               !pendingAgentOverflowRunIDs.contains(runID) else {
@@ -547,10 +558,13 @@ public actor OpenClawRPCDispatcher {
             if delivered { return }
         }
 
-        bufferPendingAgentEvent(event)
+        try await bufferPendingAgentEvent(event, frameBytes: frameBytes)
     }
 
-    private func bufferPendingAgentEvent(_ event: OpenClawAgentEvent) {
+    private func bufferPendingAgentEvent(
+        _ event: OpenClawAgentEvent,
+        frameBytes: Int
+    ) async throws {
         let runID = event.runId
         guard !pendingAgentOverflowRunIDs.contains(runID),
               !finishedAgentRunIDs.contains(runID) else {
@@ -559,14 +573,47 @@ public actor OpenClawRPCDispatcher {
 
         if pendingAgentEvents.count >= pendingAgentEventLimit {
             let dropped = pendingAgentEvents.removeFirst()
-            rememberPendingAgentOverflow(dropped.runId)
+            pendingAgentBufferedBytes -= dropped.bytes
+            rememberPendingAgentOverflow(dropped.event.runId)
         }
 
         guard !pendingAgentOverflowRunIDs.contains(runID),
               !finishedAgentRunIDs.contains(runID) else {
             return
         }
-        pendingAgentEvents.append(event)
+
+        let maximumBufferedBytes = try await state.negotiatedMaximumBufferedBytes()
+        let projectedBytes = pendingAgentBufferedBytes + frameBytes
+        guard projectedBytes <= maximumBufferedBytes else {
+            throw AWLOpenClawError.bufferBudgetExceeded(
+                actual: projectedBytes,
+                maximum: maximumBufferedBytes
+            )
+        }
+
+        pendingAgentEvents.append(
+            PendingAgentEvent(event: event, bytes: frameBytes)
+        )
+        pendingAgentBufferedBytes += frameBytes
+    }
+
+    @discardableResult
+    private func removePendingAgentEvents(runID: String) -> [PendingAgentEvent] {
+        var kept: [PendingAgentEvent] = []
+        var removed: [PendingAgentEvent] = []
+        kept.reserveCapacity(pendingAgentEvents.count)
+
+        for entry in pendingAgentEvents {
+            if entry.event.runId == runID {
+                removed.append(entry)
+            } else {
+                kept.append(entry)
+            }
+        }
+
+        pendingAgentEvents = kept
+        pendingAgentBufferedBytes -= removed.reduce(0) { $0 + $1.bytes }
+        return removed
     }
 
     private func removeAgentEventSubscriber(
@@ -590,7 +637,7 @@ public actor OpenClawRPCDispatcher {
                 subscriber.continuation.finish(throwing: error)
             }
         }
-        pendingAgentEvents.removeAll { $0.runId == runID }
+        _ = removePendingAgentEvents(runID: runID)
         pendingAgentOverflowRunIDs.remove(runID)
         pendingAgentOverflowOrder.removeAll { $0 == runID }
         rememberFinishedAgentRun(runID)
@@ -609,7 +656,7 @@ public actor OpenClawRPCDispatcher {
     }
 
     private func rememberPendingAgentOverflow(_ runID: String) {
-        pendingAgentEvents.removeAll { $0.runId == runID }
+        _ = removePendingAgentEvents(runID: runID)
         guard pendingAgentOverflowRunIDs.insert(runID).inserted else { return }
         pendingAgentOverflowOrder.append(runID)
         while pendingAgentOverflowOrder.count > pendingAgentEventLimit {
@@ -627,6 +674,7 @@ public actor OpenClawRPCDispatcher {
 
     private func resetAgentRoutingBuffers() {
         pendingAgentEvents.removeAll(keepingCapacity: false)
+        pendingAgentBufferedBytes = 0
         pendingAgentOverflowRunIDs.removeAll(keepingCapacity: false)
         pendingAgentOverflowOrder.removeAll(keepingCapacity: false)
         finishedAgentRunIDs.removeAll(keepingCapacity: false)
