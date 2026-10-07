@@ -110,4 +110,41 @@ final class AppleSpeechOutputTests: XCTestCase {
         XCTAssertEqual(values.0, ["spoken"])
         XCTAssertEqual(values.1, 1)
     }
+
+    func testTextAtConfiguredUTF8BoundaryIsSpoken() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(
+            synthesizer: spy,
+            maximumBufferedTextBytes: 6
+        )
+        let id = InteractionID()
+
+        await output.consume(.textDelta(id, "가"))
+        await output.consume(.textDelta(id, "나"))
+        await output.consume(.completed(id))
+
+        let values = await spy.values()
+        XCTAssertEqual(values.0, ["가나"])
+        XCTAssertEqual(values.1, 0)
+    }
+
+    func testSustainedDeltasBeyondBufferLimitAreDroppedAndCannotResurrect() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(
+            synthesizer: spy,
+            maximumBufferedTextBytes: 8
+        )
+        let id = InteractionID()
+
+        for _ in 0..<8 {
+            await output.consume(.textDelta(id, "a"))
+        }
+        await output.consume(.textDelta(id, "overflow"))
+        await output.consume(.textDelta(id, "late"))
+        await output.consume(.completed(id))
+
+        let values = await spy.values()
+        XCTAssertTrue(values.0.isEmpty)
+        XCTAssertEqual(values.1, 1)
+    }
 }
