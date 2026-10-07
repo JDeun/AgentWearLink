@@ -37,7 +37,62 @@ private func terminalWaitResult(_ status: String) throws -> OpenClawAgentWaitRes
 
 @testable import AgentWearLinkOpenClaw
 
+
+private actor OwnedUpdateTaskProbe {
+    private(set) var observedCancellation = false
+
+    func waitForCancellation() async throws {
+        do {
+            try await Task.sleep(for: .seconds(3_600))
+        } catch is CancellationError {
+            observedCancellation = true
+            throw CancellationError()
+        }
+    }
+}
+
+private enum OwnedUpdateTaskTestError: Error {
+    case terminalWaitFailed
+}
+
 final class OpenClawNativeAgentAdapterTests: XCTestCase {
+    func testOwnedUpdateTaskIsCancelledWhenTerminalWaitFails() async throws {
+        let probe = OwnedUpdateTaskProbe()
+        let updateTask = Task<Void, Error> {
+            try await probe.waitForCancellation()
+        }
+
+        do {
+            _ = try await OpenClawNativeAgentAdapter.withOwnedUpdateTask(
+                updateTask
+            ) {
+                throw OwnedUpdateTaskTestError.terminalWaitFailed
+            } as Void
+            XCTFail("Expected terminal wait failure")
+        } catch OwnedUpdateTaskTestError.terminalWaitFailed {
+            // Expected. Scope exit must still cancel the update consumer.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        _ = await updateTask.result
+        let observedCancellation = await probe.observedCancellation
+        XCTAssertTrue(observedCancellation)
+    }
+
+    func testOwnedUpdateTaskCanDrainNormallyBeforeScopeExit() async throws {
+        let updateTask = Task<Void, Error> {}
+        let value: Int = try await OpenClawNativeAgentAdapter.withOwnedUpdateTask(
+            updateTask
+        ) {
+            try await updateTask.value
+            return 42
+        }
+
+        XCTAssertEqual(value, 42)
+        XCTAssertFalse(updateTask.isCancelled)
+    }
+
     func testTerminalPollingReturnsAfterPendingTimeoutThenSuccess() async throws {
         let script = TerminalWaitScript(
             results: [
