@@ -111,10 +111,14 @@ public actor OpenClawGatewaySupervisor {
         }
     }
 
-    private func reconnect(
+    func reconnect(
         closeCode: Int,
         closeReason: String
     ) async {
+        // Module-internal so deterministic transition tests can drive the
+        // reconnect state machine without waiting on the watchdog clock.
+        guard !stopped else { return }
+
         // A reconnect advances transport identity only. In-flight RPC/agent work is
         // intentionally not retained or replayed by the supervisor: its outcome is
         // uncertain once the old transport is retired.
@@ -127,6 +131,10 @@ public actor OpenClawGatewaySupervisor {
         while !stopped {
             if let maximum = reconnectPolicy.maximumAttempts,
                attempt > maximum {
+                // Exhausting the configured budget is terminal for this
+                // supervisor generation. Only an explicit start() may create a
+                // fresh recovery generation.
+                stopped = true
                 await state.disconnect()
                 return
             }
