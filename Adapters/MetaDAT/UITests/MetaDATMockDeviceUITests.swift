@@ -18,27 +18,33 @@ final class MetaDATMockDeviceUITests: XCTestCase {
         }
 
         client = MockDeviceTestClient(portFilePath: portFile)
+        let serverReady = await client.waitForServer(timeout: 15)
         XCTAssertTrue(
-            await client.waitForServer(timeout: 15),
+            serverReady,
             "App-hosted MockDeviceKit server did not become ready"
         )
     }
 
     override func tearDown() async throws {
         if let pairedDeviceID {
-            XCTAssertTrue(await client.unpairDevice(deviceId: pairedDeviceID))
+            let unpaired = await client.unpairDevice(deviceId: pairedDeviceID)
+            XCTAssertTrue(unpaired)
         }
         pairedDeviceID = nil
         client = nil
     }
 
     func testPairRayBanMetaAndDriveWearableReadyState() async throws {
-        let deviceID = try XCTUnwrap(await client.pairDevice())
+        let paired = await client.pairDevice()
+        let deviceID = try XCTUnwrap(paired)
         pairedDeviceID = deviceID
 
-        XCTAssertTrue(await client.powerOn(deviceId: deviceID))
-        XCTAssertTrue(await client.unfold(deviceId: deviceID))
-        XCTAssertTrue(await client.don(deviceId: deviceID))
+        let poweredOn = await client.powerOn(deviceId: deviceID)
+        let unfolded = await client.unfold(deviceId: deviceID)
+        let donned = await client.don(deviceId: deviceID)
+        XCTAssertTrue(poweredOn)
+        XCTAssertTrue(unfolded)
+        XCTAssertTrue(donned)
 
         let state = await client.getDeviceState()
         XCTAssertNotNil(state, "Mock server must expose app-visible device state")
