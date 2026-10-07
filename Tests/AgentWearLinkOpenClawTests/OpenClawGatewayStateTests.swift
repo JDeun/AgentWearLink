@@ -3,7 +3,13 @@ import XCTest
 @testable import AgentWearLinkOpenClaw
 
 final class OpenClawGatewayStateTests: XCTestCase {
-    private func hello(maxPayload: Int = 1024) throws -> OpenClawHelloOK {
+    private func hello(
+        maxPayload: Int = 1024,
+        maxBufferedBytes: Int = 2048,
+        tickIntervalMs: Int = 15_000,
+        attachmentMaxBytes: Int = 1000,
+        attachmentMaxImageBytes: Int = 500
+    ) throws -> OpenClawHelloOK {
         let data = Data("""
         {
           "type":"hello-ok",
@@ -13,13 +19,62 @@ final class OpenClawGatewayStateTests: XCTestCase {
           "auth":{"role":"operator","scopes":["operator.read","operator.write"]},
           "policy":{
             "maxPayload":\(maxPayload),
-            "maxBufferedBytes":2048,
-            "tickIntervalMs":15000,
-            "attachments":{"maxBytes":1000,"maxImageBytes":500}
+            "maxBufferedBytes":\(maxBufferedBytes),
+            "tickIntervalMs":\(tickIntervalMs),
+            "attachments":{"maxBytes":\(attachmentMaxBytes),"maxImageBytes":\(attachmentMaxImageBytes)}
           }
         }
         """.utf8)
         return try JSONDecoder().decode(OpenClawHelloOK.self, from: data)
+    }
+
+
+    func testHelloPolicyAcceptsMaximumSupportedTickInterval() throws {
+        XCTAssertNoThrow(
+            try OpenClawGatewayState.validateHello(
+                hello(tickIntervalMs: 3_600_000)
+            )
+        )
+    }
+
+    func testHelloPolicyRejectsInvalidNumericBoundaries() throws {
+        let invalidPolicies: [OpenClawHelloOK] = [
+            try hello(maxPayload: 0),
+            try hello(maxPayload: -1),
+            try hello(maxBufferedBytes: 0),
+            try hello(maxBufferedBytes: -1),
+            try hello(tickIntervalMs: 0),
+            try hello(tickIntervalMs: -1),
+            try hello(tickIntervalMs: 3_600_001),
+            try hello(tickIntervalMs: Int.max),
+            try hello(attachmentMaxBytes: 0),
+            try hello(attachmentMaxBytes: -1),
+            try hello(attachmentMaxImageBytes: 0),
+            try hello(attachmentMaxImageBytes: -1)
+        ]
+
+        for policy in invalidPolicies {
+            XCTAssertThrowsError(
+                try OpenClawGatewayState.validateHello(policy)
+            ) { error in
+                XCTAssertEqual(error as? AWLOpenClawError, .invalidPolicy)
+            }
+        }
+    }
+
+    func testTimingConversionAvoidsNanosecondMultiplicationOverflow() {
+        XCTAssertEqual(
+            OpenClawGatewayTiming.doubledMilliseconds(Int.max),
+            Int.max
+        )
+        XCTAssertEqual(
+            OpenClawGatewayTiming.doubledMilliseconds(3_600_000),
+            7_200_000
+        )
+        XCTAssertEqual(
+            OpenClawGatewayTiming.duration(milliseconds: 1_000),
+            .seconds(1)
+        )
     }
 
     func testHelloMakesConnectionReady() async throws {
