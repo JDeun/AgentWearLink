@@ -2,6 +2,24 @@ import Foundation
 import AgentWearLinkCore
 import MWDATCore
 
+struct MetaDATDeviceSelectionCandidate: Equatable, Sendable {
+    let identifier: String
+    let rank: Int
+}
+
+enum MetaDATDeviceSelectionPolicy {
+    static func selectedIdentifier(
+        from candidates: [MetaDATDeviceSelectionCandidate]
+    ) -> String? {
+        candidates.min { lhs, rhs in
+            if lhs.rank != rhs.rank {
+                return lhs.rank < rhs.rank
+            }
+            return lhs.identifier < rhs.identifier
+        }?.identifier
+    }
+}
+
 /// First concrete device adapter for Meta Wearables DAT.
 ///
 /// This target is intentionally iOS/vendor-specific and must be compiled only
@@ -76,9 +94,16 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         let devices = wearables.devices.compactMap {
             self.wearables.deviceForIdentifier($0)
         }
-        guard let selectedDevice = devices.min(by: {
-            Self.deviceRank($0) < Self.deviceRank($1)
-        }) else {
+        let selectionCandidates = devices.map {
+            MetaDATDeviceSelectionCandidate(
+                identifier: $0.identifier,
+                rank: Self.deviceRank($0)
+            )
+        }
+        guard let selectedIdentifier = MetaDATDeviceSelectionPolicy.selectedIdentifier(
+            from: selectionCandidates
+        ),
+        let selectedDevice = devices.first(where: { $0.identifier == selectedIdentifier }) else {
             tearDownSession()
             throw AWLError.device("Meta DAT has no paired device eligible for session selection")
         }
