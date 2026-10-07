@@ -24,7 +24,7 @@ swift test
 
 The root package's toolchain contract is independent from concrete vendor adapters.
 
-## 2. Pinned integration compile gates
+## 2. Pinned integration compile and deterministic test gates
 
 Concrete vendor code is compiled against the exact dependency it claims to support.
 
@@ -38,9 +38,21 @@ xcodebuild \
   -destination 'generic/platform=iOS Simulator' \
   -skipPackagePluginValidation \
   build
+
+# CI selects and boots an available iPhone Simulator, then runs:
+xcodebuild \
+  -scheme AgentWearLinkMetaDATIntegration \
+  -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
+  -skipPackagePluginValidation \
+  -parallel-testing-enabled NO \
+  -maximum-parallel-testing-workers 1 \
+  -only-testing:AgentWearLinkMetaDATIntegrationTests \
+  test
 ```
 
-This catches SDK/API drift. It does not prove runtime behavior.
+The second command executes the deterministic package-hosted Meta integration/helper XCTest target, including lifecycle, readiness, camera-ignition, listener-generation, and mock-host contract regressions. The MockDeviceKit test that requires a linked-app Keychain context is intentionally skipped here and remains part of the app-hosted XCUITest layer below.
+
+This catches SDK/API drift and proves the deterministic helper assertions actually execute. It still does not prove physical wearable behavior.
 
 ## 3. Simulator/vendor behavioral integration
 
@@ -92,7 +104,7 @@ A hardware-dependent feature remains unvalidated until this layer passes, even w
 
 ## CI interpretation
 
-The root job protects vendor-neutral contracts. The Meta integration job uses its own vendor-compatible Apple toolchain and protects pinned SDK compilation plus the app-hosted simulator contract as it becomes available. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
+The root job protects vendor-neutral contracts. The Meta integration job uses its own vendor-compatible Apple toolchain, compiles the pinned SDK integration, executes the deterministic `AgentWearLinkMetaDATIntegrationTests` target on iOS Simulator, and separately runs the app-hosted MockDeviceKit/XCUITest contract when its path gate is active. A Meta toolchain requirement must not silently raise the root Core minimum. CI output and documentation must state the evidence boundary rather than calling simulator results physical validation.
 
 ## Test-data policy
 
