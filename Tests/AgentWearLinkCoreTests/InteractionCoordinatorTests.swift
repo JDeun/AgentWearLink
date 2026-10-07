@@ -427,6 +427,71 @@ extension InteractionCoordinatorTests {
         await agent.finishAll()
     }
 
+
+    func testAgentTurnCompletionAndLaterDeviceSessionEndRemainDistinct() async throws {
+        let agent = StubAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.sessionStarted(id))
+        await coordinator.handle(.text(id, "hello"))
+        try await recorded.waitUntilCount(3)
+
+        await coordinator.handle(.sessionEnded(id))
+        try await recorded.waitUntilCount(4)
+
+        let events = await recorded.values
+        XCTAssertEqual(
+            events,
+            [
+                .sessionStarted(id),
+                .text(id, "response"),
+                .turnCompleted(id),
+                .sessionEnded(id),
+            ]
+        )
+    }
+
+    func testDeviceSessionEndCancelsTurnBeforeLateAgentCompletion() async throws {
+        let agent = CapacityHoldingAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await agent.waitUntilRequestCount(1)
+
+        await coordinator.handle(.sessionEnded(id))
+        await agent.complete(id)
+
+        let events = await recorded.values
+        XCTAssertEqual(events, [.sessionEnded(id)])
+    }
+
+    func testDeviceFailureWinsOverLaterSessionEndAndRepeatedTerminalEvents() async throws {
+        let agent = CapacityHoldingAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await agent.waitUntilRequestCount(1)
+
+        await coordinator.handle(.failed(id, .device("link lost")))
+        await coordinator.handle(.sessionEnded(id))
+        await coordinator.handle(.sessionEnded(id))
+
+        let events = await recorded.values
+        XCTAssertEqual(events, [.failed(id, .device("link lost"))])
+    }
+
     func testTerminalResponseStopsLateDeltas() async throws {
         let agent = TerminalThenLateAgent()
         let recorded = RecordedEvents()
@@ -439,7 +504,7 @@ extension InteractionCoordinatorTests {
         try await recorded.waitUntilCount(1)
 
         let events = await recorded.values
-        XCTAssertTrue(events.contains(.sessionEnded(id)))
+        XCTAssertTrue(events.contains(.turnCompleted(id)))
         XCTAssertFalse(events.contains(.text(id, "late")))
         XCTAssertFalse(
             events.contains(
