@@ -112,7 +112,6 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             throw AWLError.device("Selected Meta DAT device is not SDK-compatible")
         }
 
-        let selectedIdentifier = selectedDevice.identifier
         selectedDeviceListenerTask = Task { [weak self] in
             await self?.monitorSelectedDeviceSignals(selectedDevice)
         }
