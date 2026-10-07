@@ -315,6 +315,31 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         await fixture.supervisor.stop()
     }
 
+    func testStaleDispatcherWatchdogCheckReconnectsDeterministically() async throws {
+        let fixture = makeSupervisor()
+        try await fixture.supervisor.start()
+
+        let initialGeneration = await fixture.supervisor.transportGeneration
+        await fixture.socket.makeNextHandshakeSucceed()
+
+        // Advance the watchdog's observation point without waiting for the
+        // negotiated real-time tick interval. This drives the same production
+        // stale-dispatcher branch used by watchdogLoop().
+        await fixture.supervisor.runWatchdogCheck(nowMilliseconds: Int64.max)
+
+        let finalGeneration = await fixture.supervisor.transportGeneration
+        let finalConnectionCount = await fixture.socket.connectionCount()
+        let finalState = await fixture.state.connectionState
+        let dispatcherRunning = await fixture.dispatcher.isRunning
+
+        XCTAssertEqual(finalConnectionCount, 2)
+        XCTAssertGreaterThan(finalGeneration, initialGeneration)
+        XCTAssertEqual(finalState, .ready)
+        XCTAssertTrue(dispatcherRunning)
+
+        await fixture.supervisor.stop()
+    }
+
     func testConcurrentReconnectTriggersShareOneOwnedTransition() async throws {
         let fixture = makeSupervisor()
         try await fixture.supervisor.start()
