@@ -8,6 +8,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var handshakeStep = 0
     private var sentFrames: [String] = []
     private var receiveWaiter: CheckedContinuation<String, Error>?
+    private var failNextReceive = false
     private var successfulConnectCalls: Set<Int> = [1]
     private var blockedConnectCall: Int?
     private var blockedConnectStarted = false
@@ -72,6 +73,11 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
             """
         }
 
+        if failNextReceive {
+            failNextReceive = false
+            throw AWLOpenClawError.disconnected
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
             receiveWaiter = continuation
         }
@@ -91,6 +97,16 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
 
     func connectionCount() -> Int { connectCalls }
     func closeCount() -> Int { closeCalls }
+    func sentCount() -> Int { sentFrames.count }
+
+    func failCurrentReceive() {
+        if let receiveWaiter {
+            self.receiveWaiter = nil
+            receiveWaiter.resume(throwing: AWLOpenClawError.disconnected)
+        } else {
+            failNextReceive = true
+        }
+    }
 
     func makeNextHandshakeSucceed() {
         successfulConnectCalls.insert(connectCalls + 1)
@@ -162,6 +178,56 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
             reconnectPolicy: reconnectPolicy
         )
         return (socket, state, dispatcher, supervisor)
+    }
+
+    func testReceiveFailureRevokesAdmissionAndTriggersPromptReconnect() async throws {
+        let fixture = makeSupervisor()
+        try await fixture.supervisor.start()
+
+        await fixture.socket.makeNextHandshakeSucceed()
+        await fixture.socket.blockNextConnect()
+
+        let sentBeforeFailure = await fixture.socket.sentCount()
+        await fixture.socket.failCurrentReceive()
+
+        // The configured gateway tick interval is 15 seconds. Reaching the
+        // second connect inside the bounded test deadline proves recovery came
+        // from the dispatcher failure signal, not the periodic watchdog.
+        try await waitUntilOpenClawTestCondition(
+            "receive failure triggered reconnect immediately"
+        ) {
+            await fixture.socket.connectionCount() >= 2
+        }
+
+        let reconnectingState = await fixture.state.connectionState
+        XCTAssertNotEqual(reconnectingState, .ready)
+
+        do {
+            _ = try await fixture.dispatcher.request(
+                method: "agent",
+                params: EmptyParams()
+            )
+            XCTFail("Expected receive failure to revoke request admission")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(error, .notReady)
+        } catch {
+            XCTFail("Unexpected request rejection: \(error)")
+        }
+
+        let sentWhileReconnectBlocked = await fixture.socket.sentCount()
+        XCTAssertEqual(sentWhileReconnectBlocked, sentBeforeFailure)
+
+        await fixture.socket.releaseBlockedConnect()
+
+        try await waitUntilOpenClawTestCondition(
+            "prompt reconnect restored ready dispatcher"
+        ) {
+            let ready = await fixture.state.connectionState == .ready
+            let running = await fixture.dispatcher.isRunning
+            return ready && running
+        }
+
+        await fixture.supervisor.stop()
     }
 
     func testConcurrentReconnectTriggersShareOneOwnedTransition() async throws {
