@@ -3,6 +3,7 @@ import AgentWearLinkCore
 import AgentWearLinkOpenClaw
 import AgentWearLinkAppleOutput
 import AgentWearLinkMetaDATIntegration
+import AgentWearLinkMetaDATTestSupport
 
 @main
 struct MetaDATTestHostApp: App {
