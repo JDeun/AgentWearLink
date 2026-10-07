@@ -60,19 +60,32 @@ struct AgentWearLinkOpenClawChatProbe {
             sessionKey: nonEmpty(env["AWL_OPENCLAW_SESSION_KEY"])
         )
         let id = InteractionID()
+        let requireDevelopmentEvidence = env["AWL_DEV_GATEWAY_ASSERT"] == "1"
 
         do {
             try await adapter.connect()
             let responses = await adapter.responses(for: AgentRequest(interactionID: id, text: message))
+            var deltaCount = 0
+            var terminalCount = 0
             for try await response in responses {
                 switch response {
                 case let .textDelta(_, text):
+                    deltaCount += 1
                     print(text, terminator: "")
                     fflush(stdout)
                 case .completed:
+                    terminalCount += 1
                     print("")
                 case let .failed(_, error):
                     throw error
+                }
+            }
+            if requireDevelopmentEvidence {
+                guard deltaCount > 0 else {
+                    throw DevelopmentGatewayProbeError.missingIncrementalOutput
+                }
+                guard terminalCount == 1 else {
+                    throw DevelopmentGatewayProbeError.missingTerminalCompletion
                 }
             }
             await adapter.disconnect()
@@ -138,4 +151,9 @@ struct AgentWearLinkOpenClawChatProbe {
         FileHandle.standardError.write(Data((message + "\n").utf8))
         Darwin.exit(code)
     }
+}
+
+private enum DevelopmentGatewayProbeError: Error {
+    case missingIncrementalOutput
+    case missingTerminalCompletion
 }
