@@ -2,6 +2,19 @@
 
 AgentWearLink separates evidence by what a test can actually prove. A green lower layer never upgrades a hardware- or deployment-dependent claim.
 
+## Evidence vocabulary
+
+Use these terms literally in issues, PRs, and documentation:
+
+- **helper implemented** — the code slice exists, but may not be reachable through the production adapter/session
+- **production wired** — the shipping adapter/session composes and exposes the slice
+- **deterministically tested** — automated tests exercise the relevant path without live deployment or hardware
+- **simulator validated** — an iOS simulator/vendor-hosted path executes successfully
+- **deployment validated** — the real network/runtime deployment executes successfully
+- **physical validated** — the target wearable + physical iPhone path executes successfully
+
+A feature may occupy several of these states at once. For example, current Meta camera/Speech/Voice helper slices are implemented and deterministically tested, but full production composition remains tracked by #230.
+
 ## 1. Deterministic Core/runtime tests
 
 No physical wearable and no live deployment are required.
@@ -13,6 +26,7 @@ Examples:
 - bounded stream/media behavior
 - event/request mapping
 - OpenClaw protocol framing, RPC correlation, and reconnect state machines
+- OpenClaw supervisor recovery coverage exercises receive failure, stale-dispatcher watchdog recovery, reconnect coalescing, stop/late-success fencing, pairing pause/retry, retry exhaustion, transport-generation changes, and no replay of uncertain mutating requests
 - existing-session wire fixtures are schema evidence only; `OpenClawExistingSessionAdapterTests` additionally exercises the production GatewayConnection → dispatcher → run client → native adapter path against a deterministic synthetic socket
 - credential/configuration diagnostic redaction
 - Meta helper policies such as final-transcript filtering, capture generations, readiness, and bounded backoff
@@ -62,7 +76,7 @@ xcodebuild \
 
 CI separates the compatibility compile gate from the simulator behavioral gate. Any Core/package change that can affect the Meta adapter still resolves the pinned SDK, verifies its immutable revision, lists schemes, and compiles the concrete integration. Simulator boot and the deterministic package-hosted Meta integration/helper XCTest target run only when Meta adapter/test paths or the workflow itself change.
 
-The behavioral XCTest target covers lifecycle, readiness, camera-ignition, listener-generation, and mock-host contract regressions. The MockDeviceKit test that requires a linked-app Keychain context is intentionally skipped here and remains part of the app-hosted XCUITest layer below.
+The behavioral XCTest target covers lifecycle, readiness, camera-ignition, listener-generation, and mock-host contract regressions. Where a Meta feature is still a helper slice rather than a production-composed session feature, this proves the helper contract only; #230 owns production-path composition. The MockDeviceKit test that requires a linked-app Keychain context is intentionally skipped here and remains part of the app-hosted XCUITest layer below.
 
 This preserves SDK/API compatibility coverage for Core-only changes without paying the simulator behavioral-test cost on every Core PR. Meta implementation changes still receive the full deterministic behavioral gate, while `build-for-testing` / `test-without-building` avoids compiling that test bundle twice. Neither path proves physical wearable behavior.
 
