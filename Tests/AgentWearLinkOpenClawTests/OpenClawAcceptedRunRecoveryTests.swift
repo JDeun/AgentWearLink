@@ -4,7 +4,7 @@ import XCTest
 @testable import AgentWearLinkOpenClaw
 
 private actor AcceptedRunRecoverySocket: OpenClawWebSocket {
-    enum PostReconnectMode: Sendable {
+    enum PostReconnectMode: Sendable, Equatable {
         case success
         case runLost
         case blockForCancellation
@@ -188,7 +188,10 @@ private actor AcceptedRunRecoverySocket: OpenClawWebSocket {
                 )
 
             case .blockForCancellation:
-                XCTFail("Cancelled recovery must not issue a second agent.wait")
+                throw AWLOpenClawError.gateway(
+                    code: "UNEXPECTED_SECOND_WAIT",
+                    retryable: false
+                )
             }
 
         case "chat.abort":
@@ -304,7 +307,8 @@ final class OpenClawAcceptedRunRecoveryTests: XCTestCase {
         try await waitUntilOpenClawTestCondition(
             "accepted run aborted after cancelled recovery"
         ) {
-            await socket.counts().aborts == 1
+            let counts = await socket.counts()
+            return counts.aborts == 1
         }
 
         let counts = await socket.counts()
