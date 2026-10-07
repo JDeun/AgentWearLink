@@ -104,15 +104,18 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         )
 
         try await supervisor.start()
-        XCTAssertEqual(await socket.connectionCount(), 1)
+        let initialConnectionCount = await socket.connectionCount()
+        XCTAssertEqual(initialConnectionCount, 1)
 
         await supervisor.reconnect(
             closeCode: 4_000,
             closeReason: "test retry exhaustion"
         )
 
-        XCTAssertEqual(await socket.connectionCount(), 3)
-        XCTAssertEqual(await state.connectionState, .disconnected)
+        let exhaustedConnectionCount = await socket.connectionCount()
+        let exhaustedState = await state.connectionState
+        XCTAssertEqual(exhaustedConnectionCount, 3)
+        XCTAssertEqual(exhaustedState, .disconnected)
 
         // A later watchdog-style reconnect request cannot manufacture a fresh
         // retry budget after this generation has exhausted its allowance.
@@ -120,13 +123,16 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
             closeCode: 4_000,
             closeReason: "must remain terminal"
         )
-        XCTAssertEqual(await socket.connectionCount(), 3)
+        let terminalConnectionCount = await socket.connectionCount()
+        XCTAssertEqual(terminalConnectionCount, 3)
 
         // Deliberate application restart is the explicit recovery boundary.
         await socket.makeNextHandshakeSucceed()
         try await supervisor.start()
-        XCTAssertEqual(await socket.connectionCount(), 4)
-        XCTAssertEqual(await state.connectionState, .ready)
+        let restartedConnectionCount = await socket.connectionCount()
+        let restartedState = await state.connectionState
+        XCTAssertEqual(restartedConnectionCount, 4)
+        XCTAssertEqual(restartedState, .ready)
 
         await supervisor.stop()
     }
