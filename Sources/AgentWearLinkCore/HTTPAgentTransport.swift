@@ -19,6 +19,16 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable, CustomString
         self.timeout = timeout
         self.maximumResponseBytes = maximumResponseBytes
     }
+    public func validateCredentialTransport() throws {
+        guard bearerToken != nil else { return }
+        if endpoint.scheme?.lowercased() == "https" { return }
+        guard endpoint.scheme?.lowercased() == "http",
+              let host = endpoint.host?.lowercased(),
+              ["localhost", "127.0.0.1", "::1"].contains(host) else {
+            throw AWLError.transport("bearer credentials require HTTPS or an explicit loopback HTTP endpoint")
+        }
+    }
+
     public var description: String {
         "HTTPAgentTransportConfiguration(" +
         "endpoint: \(endpoint), " +
@@ -58,7 +68,9 @@ public actor HTTPAgentTransport: AgentTransport {
         self.session = session
     }
 
-    public func connect() async throws {}
+    public func connect() async throws {
+        try configuration.validateCredentialTransport()
+    }
 
     public func disconnect() async {
         for operation in operations.values {
