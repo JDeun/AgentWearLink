@@ -16,6 +16,7 @@ The primary adapter is `OpenClawNativeAgentAdapter`. It uses the native Gateway 
 - preservation of accepted OpenClaw session keys
 
 A reconnect restores transport readiness. It does **not** silently replay an in-flight request whose delivery or completion is uncertain.
+For a mutating `agent` submission, cancellation or transport retirement before socket handoff remains a definite non-execution path. If the frame crossed the local transport handoff but the accepted run response is lost, the native adapter surfaces `submissionExecutionUncertain` with the submission idempotency key as safe correlation metadata. It does not invent a `runId`, report clean cancellation, or automatically replay the mutation.
 Production native WebSocket construction accepts a validated `OpenClawEndpoint`, not an arbitrary raw URL. The endpoint binds transport policy to an explicit exposure profile: loopback, Tailnet-direct, Tailscale Serve, or private reverse proxy. Loopback/Tailnet-direct hosts are validated against their expected address families, while Serve/reverse-proxy paths require `wss://`. This prevents a caller from bypassing transport policy by handing credentials to an arbitrary public `ws://` URL.
 
 
