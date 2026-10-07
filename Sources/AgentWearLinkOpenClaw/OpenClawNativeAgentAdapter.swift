@@ -102,7 +102,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                     )
 
                     let updates = await client.updates(runID: accepted.runId)
-                    let streamTask = Task {
+                    let streamTask = Task<String, Error> {
+                        var streamedText = ""
                         for try await update in updates {
                             if case let .assistant(_, payload) = update,
                                let delta = Self.extractTextDelta(payload) {
@@ -110,24 +111,38 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                                     .textDelta(request.interactionID, delta),
                                     to: continuation
                                 )
+                                streamedText += delta
                             }
                         }
+                        return streamedText
                     }
 
-                    let terminal = try await Self.withOwnedUpdateTask(
+                    let (terminal, streamedText) = try await Self.withOwnedUpdateTask(
                         streamTask
                     ) {
                         let terminal = try await self.waitUntilTerminal(
                             client: client,
                             runID: accepted.runId
                         )
+                        // Close the per-run dispatcher subscription only after the
+                        // terminal snapshot is known, then drain everything already
+                        // accepted ahead of that boundary.
                         await client.finishUpdates(runID: accepted.runId)
-                        try await streamTask.value
-                        return terminal
+                        let streamedText = try await streamTask.value
+                        return (terminal, streamedText)
                     }
 
                     switch terminal.status {
                     case "ok":
+                        if let suffix = try Self.terminalReplySuffix(
+                            streamedText: streamedText,
+                            terminalReply: terminal.terminalReply
+                        ) {
+                            try Self.yieldResponse(
+                                .textDelta(request.interactionID, suffix),
+                                to: continuation
+                            )
+                        }
                         try Self.yieldResponse(
                             .completed(request.interactionID),
                             to: continuation
@@ -166,8 +181,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         }
     }
 
-    static func withOwnedUpdateTask<T>(
-        _ updateTask: Task<Void, Error>,
+    static func withOwnedUpdateTask<UpdateValue: Sendable, T>(
+        _ updateTask: Task<UpdateValue, Error>,
         operation: () async throws -> T
     ) async rethrows -> T {
         defer { updateTask.cancel() }
@@ -324,6 +339,37 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         )
     }
 
+    /// Returns only the authoritative suffix that was not already emitted.
+    ///
+    /// A terminal reply that exactly matches streamed text is a replay and emits
+    /// nothing. A longer terminal reply repairs missing trailing deltas. A
+    /// non-prefix correction cannot be represented by Core's append-only
+    /// textDelta contract, so fail closed rather than duplicate/corrupt output.
+    nonisolated static func terminalReplySuffix(
+        streamedText: String,
+        terminalReply: JSONValue?
+    ) throws -> String? {
+        guard let terminalText = terminalReplyText(terminalReply) else {
+            return nil
+        }
+        guard terminalText.hasPrefix(streamedText) else {
+            throw OpenClawNativeAdapterError.terminalReplyMismatch
+        }
+
+        let suffix = terminalText.dropFirst(streamedText.count)
+        return suffix.isEmpty ? nil : String(suffix)
+    }
+
+    nonisolated static func terminalReplyText(
+        _ terminalReply: JSONValue?
+    ) -> String? {
+        guard case let .object(object)? = terminalReply,
+              case let .string(text)? = object["text"] else {
+            return nil
+        }
+        return text
+    }
+
     /// Projects only explicit append semantics into Core's textDelta event.
     ///
     /// OpenClaw may also send cumulative `text` snapshots and `replace:true`
@@ -352,6 +398,7 @@ public enum OpenClawNativeAdapterError: Error, Sendable, Equatable {
     case submissionExecutionUncertain(idempotencyKey: String)
     case unexpectedWaitStatus(String)
     case terminalWaitLimitExceeded(maximumPolls: Int)
+    case terminalReplyMismatch
     case terminalRunTimedOut(
         timeoutPhase: String?,
         providerStarted: Bool?,
