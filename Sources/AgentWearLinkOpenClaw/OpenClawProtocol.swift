@@ -6,7 +6,7 @@ public enum OpenClawProtocol {
     public static let preAuthMaximumBytes = 64 * 1024
 }
 
-public struct OpenClawRequestFrame<Params: Encodable & Sendable>: Encodable, Sendable {
+public struct OpenClawRequestFrame<Params: Encodable & Sendable>: Encodable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     public let type = "req"
     public let id: String
     public let method: String
@@ -17,6 +17,14 @@ public struct OpenClawRequestFrame<Params: Encodable & Sendable>: Encodable, Sen
         self.method = method
         self.params = params
     }
+
+    /// Never render generic RPC params: request payloads may transitively contain
+    /// bearer credentials, bootstrap tokens, signatures, or user content.
+    public var description: String {
+        "OpenClawRequestFrame(type: req, id: \(id), method: \(method), params: <redacted>)"
+    }
+
+    public var debugDescription: String { description }
 }
 
 public struct OpenClawGatewayClientIdentity: Sendable, Equatable {
@@ -57,7 +65,7 @@ public struct OpenClawGatewayClientIdentity: Sendable, Equatable {
     )
 }
 
-public struct OpenClawConnectParams: Encodable, Sendable {
+public struct OpenClawConnectParams: Encodable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     public struct Client: Encodable, Sendable {
         public let id: String
         public let version: String
@@ -132,6 +140,19 @@ public struct OpenClawConnectParams: Encodable, Sendable {
         self.locale = locale
         self.device = device
     }
+
+    /// Connect parameters transitively contain authentication material and a
+    /// device proof. Diagnostics expose only non-secret shape/state.
+    public var description: String {
+        let authDescription = auth == nil ? "nil" : "<redacted>"
+        let deviceDescription = device == nil ? "nil" : "<redacted>"
+        return "OpenClawConnectParams(minProtocol: \(minProtocol), maxProtocol: \(maxProtocol), " +
+            "client: <redacted>, role: \(role), scopes: \(scopes), caps: \(caps), " +
+            "commands: \(commands), permissions: \(permissions), auth: \(authDescription), " +
+            "locale: \(locale), device: \(deviceDescription))"
+    }
+
+    public var debugDescription: String { description }
 }
 
 public struct OpenClawResponseEnvelope: Decodable, Sendable, Equatable {
