@@ -15,10 +15,18 @@ public protocol DeviceAdapter: Sendable {
 
     /// Produces a finite-buffer device event stream.
     ///
+    /// Implementations must install the producer-side subscription before
+    /// `events()` returns and retain events emitted after that return even when
+    /// the runtime has not started iterating yet. AgentWearLinkRuntime
+    /// deliberately subscribes before `connect()` so connect-time lifecycle
+    /// events cannot be lost. A zero-buffer/dropping-before-first-consumer
+    /// stream therefore does not satisfy this contract.
+    ///
     /// Implementations must not rely on the default unbounded `AsyncStream`
-    /// buffering policy. If delivery cannot be kept lossless under the chosen
-    /// finite policy, the stream must surface overload explicitly rather than
-    /// allowing memory growth to remain unbounded.
+    /// buffering policy. Use a finite buffer (at least one retained event), or
+    /// an equivalent coalescing strategy. If delivery cannot be kept lossless
+    /// under that policy, surface overload explicitly rather than allowing
+    /// memory growth or silent loss.
     func events() -> AsyncStream<InteractionEvent>
 }
 
