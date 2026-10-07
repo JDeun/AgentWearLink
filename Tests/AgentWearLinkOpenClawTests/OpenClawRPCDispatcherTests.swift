@@ -45,10 +45,6 @@ private actor DispatcherSocket: OpenClawWebSocket {
         }
     }
 
-    func sentCount() -> Int {
-        sentFrames.count
-    }
-
     func lastRequestID() async throws -> String {
         while sentFrames.isEmpty {
             await Task.yield()
@@ -64,36 +60,6 @@ private actor DispatcherSocket: OpenClawWebSocket {
     }
 }
 
-
-private actor RegistrationGate {
-    private var entered = false
-    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
-
-    func block() async {
-        await withCheckedContinuation { continuation in
-            releaseContinuation = continuation
-            entered = true
-            let waiters = enteredWaiters
-            enteredWaiters.removeAll(keepingCapacity: false)
-            for waiter in waiters {
-                waiter.resume()
-            }
-        }
-    }
-
-    func waitUntilEntered() async {
-        if entered { return }
-        await withCheckedContinuation { continuation in
-            enteredWaiters.append(continuation)
-        }
-    }
-
-    func open() {
-        releaseContinuation?.resume()
-        releaseContinuation = nil
-    }
-}
 
 private actor GenerationGateSocket: OpenClawWebSocket {
     private var generation: UInt64 = 1
@@ -156,6 +122,38 @@ private actor GenerationGateSocket: OpenClawWebSocket {
     }
 
     func sentCount() -> Int { sentFrames.count }
+}
+
+
+private actor DelayedRetirementSocket: OpenClawWebSocket {
+    private var receiveCalls = 0
+    private var receiveWaiters: [CheckedContinuation<String, Error>] = []
+
+    func connect() async {}
+    func send(text: String) async throws {}
+
+    func receive() async throws -> String {
+        receiveCalls += 1
+        return try await withCheckedThrowingContinuation { continuation in
+            receiveWaiters.append(continuation)
+        }
+    }
+
+    func close() async {}
+
+    func waitUntilReceiveCount(_ count: Int) async {
+        while receiveCalls < count {
+            await Task.yield()
+        }
+    }
+
+    func releaseOldestReceive() {
+        guard !receiveWaiters.isEmpty else { return }
+        let waiter = receiveWaiters.removeFirst()
+        waiter.resume(throwing: AWLOpenClawError.disconnected)
+    }
+
+    func receiveCount() -> Int { receiveCalls }
 }
 
 final class OpenClawRPCDispatcherTests: XCTestCase {
@@ -393,46 +391,48 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         XCTAssertEqual(sentCount, 1)
     }
 
-    func testStopDuringRegistryRegistrationCannotResurrectRequest() async throws {
-        let socket = DispatcherSocket()
-        let registrationGate = RegistrationGate()
-        let registry = OpenClawRPCRegistry(
-            beforeRegister: {
-                await registrationGate.block()
-            }
-        )
+
+    func testStopOwnsDelayedReceiverUntilItActuallyExits() async throws {
+        let socket = DelayedRetirementSocket()
         let dispatcher = OpenClawRPCDispatcher(
             socket: socket,
-            state: try await readyState(),
-            registry: registry
+            state: try await readyState()
         )
+
         await dispatcher.start()
+        await socket.waitUntilReceiveCount(1)
 
-        let requestTask = Task {
-            try await dispatcher.request(
-                method: "mutate",
-                params: EmptyParams()
-            )
+        let stopTask = Task {
+            await dispatcher.stop()
         }
+        await Task.yield()
 
-        await registrationGate.waitUntilEntered()
-        await dispatcher.stop()
-        await registrationGate.open()
+        // start() during receiver retirement must not create a second reader.
+        await dispatcher.start()
+        let countWhileStopping = await socket.receiveCount()
+        XCTAssertEqual(countWhileStopping, 1)
 
-        do {
-            _ = try await requestTask.value
-            XCTFail("Expected retired registration to fail")
-        } catch let error as AWLOpenClawError {
-            XCTAssertEqual(error, .disconnected)
-        } catch {
-            XCTFail("Unexpected error: \(error)")
+        await socket.releaseOldestReceive()
+        await stopTask.value
+
+        let runningAfterStop = await dispatcher.isRunning
+        XCTAssertFalse(runningAfterStop)
+
+        // A fresh reader is allowed only after the prior stop fully retires.
+        await dispatcher.start()
+        await socket.waitUntilReceiveCount(2)
+        let countAfterRestart = await socket.receiveCount()
+        XCTAssertEqual(countAfterRestart, 2)
+
+        let finalStop = Task {
+            await dispatcher.stop()
         }
+        await Task.yield()
+        await socket.releaseOldestReceive()
+        await finalStop.value
 
-        let pendingCount = await registry.count
-        let sentCount = await socket.sentCount()
-        XCTAssertEqual(pendingCount, 0)
-        XCTAssertEqual(sentCount, 0)
-        await socket.close()
+        let finalRunning = await dispatcher.isRunning
+        XCTAssertFalse(finalRunning)
     }
 
 
