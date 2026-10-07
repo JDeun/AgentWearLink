@@ -73,12 +73,17 @@ final class GatewayConnectionStateTests: XCTestCase {
 
     func testHelloValidationRejectsUnsafePolicyBoundaries() throws {
         let policies = [
+            #"{"maxPayload":0,"maxBufferedBytes":8192,"tickIntervalMs":15000}"#,
+            #"{"maxPayload":-1,"maxBufferedBytes":8192,"tickIntervalMs":15000}"#,
+            #"{"maxPayload":4096,"maxBufferedBytes":0,"tickIntervalMs":15000}"#,
+            #"{"maxPayload":4096,"maxBufferedBytes":-1,"tickIntervalMs":15000}"#,
             #"{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":0}"#,
             #"{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":-1}"#,
             "{\"maxPayload\":4096,\"maxBufferedBytes\":8192,\"tickIntervalMs\":\(Int.max)}",
-            #"{"maxPayload":4096,"maxBufferedBytes":1024,"tickIntervalMs":15000}"#,
-            #"{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000,"attachments":{"maxBytes":1000,"maxImageBytes":1001}}"#,
-            #"{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000,"attachments":{"maxBytes":0,"maxImageBytes":0}}"#
+            #"{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000,"attachments":{"maxBytes":0,"maxImageBytes":1}}"#,
+            #"{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000,"attachments":{"maxBytes":-1,"maxImageBytes":1}}"#,
+            #"{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000,"attachments":{"maxBytes":1,"maxImageBytes":0}}"#,
+            #"{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000,"attachments":{"maxBytes":1,"maxImageBytes":-1}}"#
         ]
 
         for policy in policies {
