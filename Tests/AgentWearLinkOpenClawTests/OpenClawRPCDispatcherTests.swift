@@ -539,8 +539,16 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         await state.beginReconnect(attempt: 1)
         try await state.acceptHello(refreshedHello)
 
+        let observedEvents = await dispatcher.events()
+        let observedTwoEvents = Task {
+            var iterator = observedEvents.makeAsyncIterator()
+            _ = try await iterator.next()
+            _ = try await iterator.next()
+        }
+
         await socket.push(first)
         await socket.push(second)
+        try await observedTwoEvents.value
 
         let stream = await dispatcher.agentEvents(runID: "r")
         var iterator = stream.makeAsyncIterator()
@@ -549,7 +557,8 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
 
         XCTAssertEqual(firstBuffered?.seq, 1)
         XCTAssertEqual(secondBuffered?.seq, 2)
-        XCTAssertEqual(await state.connectionState, .ready)
+        let currentState = await state.connectionState
+        XCTAssertEqual(currentState, .ready)
 
         await dispatcher.stop()
         await socket.close()
