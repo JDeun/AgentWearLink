@@ -6,12 +6,14 @@ private actor DispatcherSocket: OpenClawWebSocket {
     private var inbound: [String] = []
     private var waiter: CheckedContinuation<String, Error>?
     private var sentFrames: [String] = []
+    private let sentSignal = OpenClawTestCountSignal()
     private var generation: UInt64 = 1
 
     func connect() async {}
 
     func send(text: String) async throws {
         sentFrames.append(text)
+        await sentSignal.increment()
     }
 
     func transportGeneration() async -> UInt64? { generation }
@@ -24,6 +26,7 @@ private actor DispatcherSocket: OpenClawWebSocket {
             throw OpenClawTransportSendError.staleGeneration
         }
         sentFrames.append(text)
+        await sentSignal.increment()
     }
 
     func receive() async throws -> String {
@@ -60,9 +63,10 @@ private actor DispatcherSocket: OpenClawWebSocket {
     }
 
     func lastRequestID() async throws -> String {
-        while sentFrames.isEmpty {
-            await Task.yield()
-        }
+        try await sentSignal.wait(
+            until: 1,
+            label: "dispatcher socket sent frame"
+        )
 
         guard let text = sentFrames.last,
               let data = text.data(using: .utf8),
@@ -108,8 +112,10 @@ private actor RegistrationGate {
 private actor GenerationGateSocket: OpenClawWebSocket {
     private var generation: UInt64 = 1
     private var sendEntered = false
+    private let sendEnteredSignal = OpenClawTestCountSignal()
     private var sendReleased = false
     private var releaseWaiter: CheckedContinuation<Void, Never>?
+    private var receiveWaiter: CheckedContinuation<String, Error>?
     private var sentFrames: [String] = []
 
     func connect() async {}
@@ -125,6 +131,7 @@ private actor GenerationGateSocket: OpenClawWebSocket {
         expectedGeneration: UInt64
     ) async throws {
         sendEntered = true
+        await sendEnteredSignal.increment()
 
         if !sendReleased {
             await withCheckedContinuation { continuation in
@@ -143,16 +150,30 @@ private actor GenerationGateSocket: OpenClawWebSocket {
     }
 
     func receive() async throws -> String {
-        try await Task.sleep(for: .seconds(3_600))
-        throw AWLOpenClawError.disconnected
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                receiveWaiter = continuation
+            }
+        } onCancel: {
+            Task { await self.cancelPendingReceive() }
+        }
     }
 
-    func close() async {}
+    private func cancelPendingReceive() {
+        receiveWaiter?.resume(throwing: CancellationError())
+        receiveWaiter = nil
+    }
 
-    func waitUntilSendEntered() async {
-        while !sendEntered {
-            await Task.yield()
-        }
+    func close() async {
+        receiveWaiter?.resume(throwing: AWLOpenClawError.disconnected)
+        receiveWaiter = nil
+    }
+
+    func waitUntilSendEntered() async throws {
+        try await sendEnteredSignal.wait(
+            until: 1,
+            label: "generation-gated send entry"
+        )
     }
 
     func reconnect() {
@@ -171,6 +192,7 @@ private actor GenerationGateSocket: OpenClawWebSocket {
 
 private actor DelayedRetirementSocket: OpenClawWebSocket {
     private var receiveCalls = 0
+    private let receiveSignal = OpenClawTestCountSignal()
     private var receiveWaiters: [CheckedContinuation<String, Error>] = []
 
     func connect() async {}
@@ -180,15 +202,21 @@ private actor DelayedRetirementSocket: OpenClawWebSocket {
         receiveCalls += 1
         return try await withCheckedThrowingContinuation { continuation in
             receiveWaiters.append(continuation)
+            Task { await self.signalReceiveEntry() }
         }
+    }
+
+    private func signalReceiveEntry() async {
+        await receiveSignal.increment()
     }
 
     func close() async {}
 
-    func waitUntilReceiveCount(_ count: Int) async {
-        while receiveCalls < count {
-            await Task.yield()
-        }
+    func waitUntilReceiveCount(_ count: Int) async throws {
+        try await receiveSignal.wait(
+            until: count,
+            label: "delayed receiver count \(count)"
+        )
     }
 
     func releaseOldestReceive() {
@@ -516,12 +544,16 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
             )
         }
 
-        await socket.waitUntilSendEntered()
+        try await socket.waitUntilSendEntered()
 
         let stopTask = Task {
             await dispatcher.stop()
         }
-        await Task.yield()
+        try await waitUntilOpenClawTestCondition(
+            "dispatcher entered stop"
+        ) {
+            !(await dispatcher.isRunning)
+        }
 
         // Reuse the same socket object for a new transport generation before the
         // delayed old-generation send is allowed to enter its critical section.
@@ -557,12 +589,16 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
             )
         }
 
-        await socket.waitUntilSendEntered()
+        try await socket.waitUntilSendEntered()
 
         let stopTask = Task {
             await dispatcher.stop()
         }
-        await Task.yield()
+        try await waitUntilOpenClawTestCondition(
+            "dispatcher entered stop"
+        ) {
+            !(await dispatcher.isRunning)
+        }
 
         // No generation change: releasing the gate models a frame that reached
         // the old transport before stop could classify the pending RPC.
@@ -633,12 +669,16 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         )
 
         await dispatcher.start()
-        await socket.waitUntilReceiveCount(1)
+        try await socket.waitUntilReceiveCount(1)
 
         let stopTask = Task {
             await dispatcher.stop()
         }
-        await Task.yield()
+        try await waitUntilOpenClawTestCondition(
+            "dispatcher entered stop"
+        ) {
+            !(await dispatcher.isRunning)
+        }
 
         // A restart attempt while stop() still owns the old reader must be ignored.
         await dispatcher.start()
@@ -653,14 +693,18 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
 
         // A new reader is admitted only after the prior one has actually exited.
         await dispatcher.start()
-        await socket.waitUntilReceiveCount(2)
+        try await socket.waitUntilReceiveCount(2)
         let countAfterRestart = await socket.receiveCount()
         XCTAssertEqual(countAfterRestart, 2)
 
         let finalStop = Task {
             await dispatcher.stop()
         }
-        await Task.yield()
+        try await waitUntilOpenClawTestCondition(
+            "dispatcher entered final stop"
+        ) {
+            !(await dispatcher.isRunning)
+        }
         await socket.releaseOldestReceive()
         await finalStop.value
 
