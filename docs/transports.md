@@ -37,9 +37,13 @@ A streaming transport must define:
 - handling of late frames after cancellation
 - behavior for mutating requests (never silently replay)
 
+## Buffered HTTP memory bound
+
+The baseline HTTP transport is still semantically buffered: it emits the response only after the HTTP body completes. Its memory bound is enforced incrementally while downloading, however. `maximumResponseBytes` is therefore a hard response-body accumulation ceiling rather than a post-download validation limit. Known oversized `Content-Length` values are rejected before body consumption, and chunked/unknown-length responses are cancelled as soon as the next byte would exceed the configured ceiling.
+
 ## Planned transports
 
-- buffered HTTP: baseline/simple compatibility
+- buffered HTTP: baseline/simple compatibility with incrementally enforced response bounds
 - SSE: when the target runtime exposes server-sent streaming
 - WebSocket: bidirectional low-latency sessions
 - local transport: future same-device/runtime integration
