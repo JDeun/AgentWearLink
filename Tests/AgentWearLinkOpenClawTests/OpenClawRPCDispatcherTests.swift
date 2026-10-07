@@ -124,6 +124,38 @@ private actor GenerationGateSocket: OpenClawWebSocket {
     func sentCount() -> Int { sentFrames.count }
 }
 
+
+private actor DelayedRetirementSocket: OpenClawWebSocket {
+    private var receiveCalls = 0
+    private var receiveWaiters: [CheckedContinuation<String, Error>] = []
+
+    func connect() async {}
+    func send(text: String) async throws {}
+
+    func receive() async throws -> String {
+        receiveCalls += 1
+        return try await withCheckedThrowingContinuation { continuation in
+            receiveWaiters.append(continuation)
+        }
+    }
+
+    func close() async {}
+
+    func waitUntilReceiveCount(_ count: Int) async {
+        while receiveCalls < count {
+            await Task.yield()
+        }
+    }
+
+    func releaseOldestReceive() {
+        guard !receiveWaiters.isEmpty else { return }
+        let waiter = receiveWaiters.removeFirst()
+        waiter.resume(throwing: AWLOpenClawError.disconnected)
+    }
+
+    func receiveCount() -> Int { receiveCalls }
+}
+
 final class OpenClawRPCDispatcherTests: XCTestCase {
     private func readyState() async throws -> OpenClawGatewayState {
         let state = OpenClawGatewayState()
@@ -357,6 +389,50 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
 
         let sentCount = await socket.sentCount()
         XCTAssertEqual(sentCount, 1)
+    }
+
+
+    func testStopOwnsDelayedReceiverUntilItActuallyExits() async throws {
+        let socket = DelayedRetirementSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+
+        await dispatcher.start()
+        await socket.waitUntilReceiveCount(1)
+
+        let stopTask = Task {
+            await dispatcher.stop()
+        }
+        await Task.yield()
+
+        // start() during receiver retirement must not create a second reader.
+        await dispatcher.start()
+        let countWhileStopping = await socket.receiveCount()
+        XCTAssertEqual(countWhileStopping, 1)
+
+        await socket.releaseOldestReceive()
+        await stopTask.value
+
+        let runningAfterStop = await dispatcher.isRunning
+        XCTAssertFalse(runningAfterStop)
+
+        // A fresh reader is allowed only after the prior stop fully retires.
+        await dispatcher.start()
+        await socket.waitUntilReceiveCount(2)
+        let countAfterRestart = await socket.receiveCount()
+        XCTAssertEqual(countAfterRestart, 2)
+
+        let finalStop = Task {
+            await dispatcher.stop()
+        }
+        await Task.yield()
+        await socket.releaseOldestReceive()
+        await finalStop.value
+
+        let finalRunning = await dispatcher.isRunning
+        XCTAssertFalse(finalRunning)
     }
 
 
