@@ -43,7 +43,7 @@ public struct HTTPAgentTransportConfiguration: Sendable, Equatable, CustomString
 
 /// Receives an HTTP response incrementally and owns the URLSession task that
 /// must be cancelled as soon as the response exceeds its configured ceiling.
-private final class BoundedHTTPResponseLoader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+final class BoundedHTTPResponseLoader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     typealias Completion = @Sendable (Result<(HTTPURLResponse, Data), Error>) -> Void
 
     private let maximumResponseBytes: Int
@@ -125,6 +125,21 @@ private final class BoundedHTTPResponseLoader: NSObject, URLSessionDataDelegate,
         dataTask: URLSessionDataTask,
         didReceive data: Data
     ) {
+        receiveBodyChunk(data) {
+            dataTask.cancel()
+        }
+    }
+
+    /// Applies one body chunk to the bounded accumulator.
+    ///
+    /// cancelSource is invoked synchronously before terminal completion when
+    /// the next chunk would cross the configured ceiling. Keeping this logic
+    /// independent from URLSession scheduling makes the memory-bound invariant
+    /// deterministic and directly testable.
+    func receiveBodyChunk(
+        _ data: Data,
+        cancelSource: () -> Void
+    ) {
         var exceeded = false
 
         lock.lock()
@@ -139,13 +154,16 @@ private final class BoundedHTTPResponseLoader: NSObject, URLSessionDataDelegate,
 
         guard exceeded else { return }
 
-        // Cancel the source before reporting failure. This is the key memory
-        // bound: no subsequent body callback is admitted after the ceiling is
-        // crossed.
-        dataTask.cancel()
+        cancelSource()
         finish(.failure(
             AWLError.transport("response exceeds configured byte limit")
         ))
+    }
+
+    func bufferedResponseByteCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return buffer.count
     }
 
     func urlSession(
