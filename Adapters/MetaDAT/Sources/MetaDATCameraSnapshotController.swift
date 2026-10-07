@@ -34,43 +34,37 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
     }
 
     public func capture(from session: DeviceSession) async throws -> ImageAttachment {
-        let token: UInt64
-        let existingCamera: Camera?
-
-        (token, existingCamera) = try lock.withLock {
+        let token: UInt64 = try lock.withLock {
             guard activeCapture == nil else {
                 throw AWLError.device("Meta DAT snapshot capture is already in progress")
             }
             generation &+= 1
-            let token = generation
-            activeCapture = token
-            return (token, self.camera)
+            activeCapture = generation
+            return generation
         }
 
+        // A photo-only camera must not survive across captures. The pinned DAT
+        // release has an upstream report of retained camera-stream heap buffers;
+        // even a stopped stream may retain vendor-owned allocations. Always
+        // tear down Camera ownership at this one-shot boundary.
         defer { finishCapture(token) }
 
-        let camera: Camera
-        if let existingCamera {
-            camera = existingCamera
-        } else {
-            guard let attached = try MetaDATCameraConfiguration.attach(to: session) else {
-                throw AWLError.capabilityUnavailable(
-                    "Meta DAT camera is unavailable for the selected device"
-                )
-            }
+        guard let camera = try MetaDATCameraConfiguration.attach(to: session) else {
+            throw AWLError.capabilityUnavailable(
+                "Meta DAT camera is unavailable for the selected device"
+            )
+        }
 
-            let accepted = lock.withLock {
-                guard generation == token, activeCapture == token else {
-                    return false
-                }
-                self.camera = attached
-                return true
+        let accepted = lock.withLock {
+            guard generation == token, activeCapture == token else {
+                return false
             }
-            guard accepted else {
-                attached.stop()
-                throw CancellationError()
-            }
-            camera = attached
+            self.camera = camera
+            return true
+        }
+        guard accepted else {
+            camera.stop()
+            throw CancellationError()
         }
 
         try ensureCurrent(token)
@@ -234,11 +228,18 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
     }
 
     private func finishCapture(_ token: UInt64) {
-        lock.withLock {
-            if activeCapture == token {
-                activeCapture = nil
-            }
+        let retiredCamera: Camera? = lock.withLock {
+            guard activeCapture == token else { return nil }
+            activeCapture = nil
+            let retired = camera
+            camera = nil
+            return retired
         }
+        // Idempotent with invalidate(): whichever boundary retires Camera
+        // first owns the stop, so late capture completion cannot stop a new
+        // generation's camera or keep a previous one alive between captures.
+        retiredCamera?.stream.stop()
+        retiredCamera?.stop()
     }
 }
 
