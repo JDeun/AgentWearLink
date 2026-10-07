@@ -429,6 +429,156 @@ extension InteractionCoordinatorTests {
 }
 
 
+private actor CapacityHoldingAgent: AgentAdapter {
+    private var requestedIDs: [InteractionID] = []
+    private var continuations: [
+        InteractionID: AsyncThrowingStream<AgentResponse, Error>.Continuation
+    ] = [:]
+    private var requestWaiters: [
+        (count: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    func connect() async throws {}
+    func disconnect() async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        requestedIDs.append(request.interactionID)
+
+        var readyWaiters: [CheckedContinuation<Void, Never>] = []
+        var pendingWaiters: [
+            (count: Int, continuation: CheckedContinuation<Void, Never>)
+        ] = []
+        for waiter in requestWaiters {
+            if requestedIDs.count >= waiter.count {
+                readyWaiters.append(waiter.continuation)
+            } else {
+                pendingWaiters.append(waiter)
+            }
+        }
+        requestWaiters = pendingWaiters
+        for waiter in readyWaiters { waiter.resume() }
+
+        var captured: AsyncThrowingStream<AgentResponse, Error>.Continuation?
+        let stream = AsyncThrowingStream<AgentResponse, Error> { continuation in
+            captured = continuation
+        }
+        continuations[request.interactionID] = captured
+        return stream
+    }
+
+    func cancel(interactionID: InteractionID) async {
+        continuations.removeValue(forKey: interactionID)?.finish()
+    }
+
+    func waitUntilRequestCount(_ count: Int) async {
+        if requestedIDs.count >= count { return }
+        await withCheckedContinuation { continuation in
+            requestWaiters.append((count, continuation))
+        }
+    }
+
+    func requests() -> [InteractionID] { requestedIDs }
+
+    func complete(_ id: InteractionID) {
+        guard let continuation = continuations.removeValue(forKey: id) else { return }
+        continuation.yield(.completed(id))
+        continuation.finish()
+    }
+}
+
+extension InteractionCoordinatorTests {
+    func testCapacityRejectsNewestAndCancellationReleasesSlot() async {
+        let agent = CapacityHoldingAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(
+            agent: agent,
+            maximumInFlightInteractions: 2
+        ) { event in
+            await recorded.append(event)
+        }
+
+        let first = InteractionID()
+        let second = InteractionID()
+        let rejected = InteractionID()
+        let admittedAfterCancel = InteractionID()
+
+        await coordinator.handle(.text(first, "first"))
+        await coordinator.handle(.text(second, "second"))
+        await agent.waitUntilRequestCount(2)
+
+        let fullCount = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(fullCount, 2)
+
+        await coordinator.handle(.text(rejected, "third"))
+        let eventsAfterReject = await recorded.values
+        XCTAssertTrue(
+            eventsAfterReject.contains(
+                .failed(
+                    rejected,
+                    .overloaded("maximum in-flight interaction capacity reached")
+                )
+            )
+        )
+
+        await coordinator.cancel(first)
+        let afterCancelCount = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(afterCancelCount, 1)
+
+        await coordinator.handle(.text(admittedAfterCancel, "replacement"))
+        await agent.waitUntilRequestCount(3)
+
+        let finalCount = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(finalCount, 2)
+
+        let requests = await agent.requests()
+        XCTAssertFalse(requests.contains(rejected))
+        XCTAssertTrue(requests.contains(admittedAfterCancel))
+
+        await coordinator.cancelAll()
+        let afterCancelAll = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(afterCancelAll, 0)
+    }
+
+    func testBurstNeverReservesMoreThanConfiguredCapacity() async {
+        let capacity = 4
+        let agent = CapacityHoldingAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(
+            agent: agent,
+            maximumInFlightInteractions: capacity
+        ) { event in
+            await recorded.append(event)
+        }
+
+        let ids = (0..<100).map { _ in InteractionID() }
+        for id in ids {
+            await coordinator.handle(.text(id, "burst"))
+        }
+
+        let inFlight = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(inFlight, capacity)
+
+        await agent.waitUntilRequestCount(capacity)
+        let requests = await agent.requests()
+        XCTAssertEqual(requests.count, capacity)
+
+        let events = await recorded.values
+        let overloads = events.filter { event in
+            guard case let .failed(_, error) = event else { return false }
+            guard case .overloaded = error else { return false }
+            return true
+        }
+        XCTAssertEqual(overloads.count, ids.count - capacity)
+
+        await coordinator.cancelAll()
+        let afterCancelAll = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(afterCancelAll, 0)
+    }
+}
+
+
 private actor WrongIDAgent: AgentAdapter {
     private var cancelled: [InteractionID] = []
     func connect() async throws {}
