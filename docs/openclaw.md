@@ -47,7 +47,7 @@ The same client ID, mode, platform, and device family are used both in the emitt
 }
 ```
 
-The compatibility adapter requests streaming responses, bounds individual SSE events, and maps content deltas into AWL response deltas. Do not confuse this HTTP/SSE path with the preferred native Gateway transport.
+The compatibility adapter requests streaming responses, bounds individual SSE events, and maps content deltas into AWL response deltas. Because this path always carries a bearer credential, plain `http://` is accepted only for explicit loopback hosts (`localhost`, `127.0.0.0/8`, or `::1`); every non-loopback endpoint must use `https://`, including direct Tailnet addresses. Transport validation happens before the Authorization header can be sent. Do not confuse this HTTP/SSE path with the preferred native Gateway transport.
 
 ## Deployment
 
