@@ -157,6 +157,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private let finalTranscriptFilter = MetaDATFinalTranscriptFilter()
     private let cameraSnapshotController: MetaDATCameraSnapshotController
     private nonisolated let eventSource: MetaDATDeviceEventSource
+    private let foregroundReadiness: MetaDATForegroundReadiness
+    private var applicationPhase: MetaDATApplicationPhase
     private var generationFence = MetaDATSessionGenerationFence()
     private var selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
     private var connecting = false
@@ -165,6 +167,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     public init(
         wearables: any WearablesInterface = Wearables.shared,
+        initialApplicationPhase: MetaDATApplicationPhase,
         connectTimeout: Duration = .seconds(15),
         eventBufferLimit: Int = MetaDATDeviceAdapter.defaultEventBufferLimit,
         snapshotTimeout: Duration = .seconds(5),
@@ -173,6 +176,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         precondition(connectTimeout > .zero)
         precondition(eventBufferLimit > 0)
         self.wearables = wearables
+        self.applicationPhase = initialApplicationPhase
+        self.foregroundReadiness = MetaDATForegroundReadiness(
+            initialPhase: initialApplicationPhase
+        )
         self.connectTimeout = connectTimeout
         self.eventSource = MetaDATDeviceEventSource(bufferLimit: eventBufferLimit)
         self.cameraSnapshotController = MetaDATCameraSnapshotController(
@@ -187,6 +194,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     public func connect() async throws {
         guard deviceSession == nil, !connecting else { return }
+        guard applicationPhase == .foreground else {
+            throw AWLError.capabilityUnavailable(
+                "Meta DAT media session cannot connect while the host is backgrounded"
+            )
+        }
 
         stopping = false
         connecting = true
@@ -295,10 +307,17 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 generation: generation
             )
 
+            // A successful fresh session is the only boundary that can make
+            // foreground media ownership usable again. A foreground lifecycle
+            // callback by itself never replays or restores prior work.
+            await foregroundReadiness.markReacquired()
+
             // Do not create a second stateStream() after consuming .started.
             // Continue the same stream in one observer so SDK stream semantics cannot
             // create a gap between startup and steady-state monitoring.
-            guard generationFence.owns(generation), !stopping else {
+            guard generationFence.owns(generation),
+                  !stopping,
+                  applicationPhase == .foreground else {
                 throw AWLError.device("Meta DAT session setup was superseded")
             }
 
@@ -322,6 +341,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public func captureSnapshot(
         interactionID: InteractionID
     ) async throws -> ImageAttachment {
+        guard applicationPhase == .foreground,
+              await foregroundReadiness.state == .fresh else {
+            throw AWLError.capabilityUnavailable(
+                "Meta DAT private media requires fresh foreground readiness"
+            )
+        }
         guard !stopping,
               let session = deviceSession else {
             throw AWLError.device("Meta DAT device session is not connected")
@@ -561,6 +586,26 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
             _ = try await group.next()
             group.cancelAll()
+        }
+    }
+
+    /// Applies the host application's real foreground/background phase.
+    ///
+    /// Background is a hard ownership boundary for private media: the current
+    /// session generation, camera transfer, Speech surface, and listener tasks
+    /// are retired immediately. Returning to foreground never reconnects or
+    /// replays work automatically; the host/runtime must call connect() to
+    /// establish a fresh generation.
+    public func applicationPhaseDidChange(
+        _ phase: MetaDATApplicationPhase
+    ) async {
+        guard phase != applicationPhase else { return }
+
+        applicationPhase = phase
+        await foregroundReadiness.handle(phase)
+
+        if phase == .background {
+            tearDownSession()
         }
     }
 
