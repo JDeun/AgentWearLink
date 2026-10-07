@@ -67,7 +67,7 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
     }
 
     func testForegroundReadinessRequiresFreshReacquisitionAfterBackground() async {
-        let readiness = MetaDATForegroundReadiness()
+        let readiness = MetaDATForegroundReadiness(initialPhase: .foreground)
 
         await readiness.handle(.background)
         let staleState = await readiness.state
@@ -92,13 +92,34 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         XCTAssertEqual(repeatedFreshState, .fresh)
     }
 
-    func testForegroundWithoutBackgroundDoesNotTriggerReacquisition() async {
-        let readiness = MetaDATForegroundReadiness()
+    func testForegroundColdStartRequiresExplicitReacquisition() async {
+        let readiness = MetaDATForegroundReadiness(initialPhase: .foreground)
+
+        let initialState = await readiness.state
+        XCTAssertEqual(initialState, .reacquiring)
 
         await readiness.handle(.foreground)
+        let repeatedForegroundState = await readiness.state
+        XCTAssertEqual(repeatedForegroundState, .reacquiring)
 
-        let state = await readiness.state
-        XCTAssertEqual(state, .fresh)
+        await readiness.markReacquired()
+        let freshState = await readiness.state
+        XCTAssertEqual(freshState, .fresh)
+    }
+
+    func testBackgroundColdStartIsNeverFresh() async {
+        let readiness = MetaDATForegroundReadiness(initialPhase: .background)
+
+        let initialState = await readiness.state
+        XCTAssertEqual(initialState, .stale)
+
+        await readiness.markReacquired()
+        let stillStale = await readiness.state
+        XCTAssertEqual(stillStale, .stale)
+
+        await readiness.handle(.foreground)
+        let foregroundState = await readiness.state
+        XCTAssertEqual(foregroundState, .reacquiring)
     }
 
 }
