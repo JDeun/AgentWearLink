@@ -88,7 +88,7 @@ Future device/runtime adapters should remain outside Core.
 
 A DeviceAdapter exposes only implemented and currently available capabilities.
 
-Current capability vocabulary includes text input, speech input, raw audio input, camera snapshot, speaker output, text output, and voice invocation.
+Current capability vocabulary includes text input, speech input, raw audio input, camera snapshot, speaker output, text output, and voice invocation. Speaker/text output bits are reserved for a future device-owned callable output surface; the current reference iPhone TTS/UI path is host-owned and is composed through `InteractionOutputSink`, so reference DeviceAdapters must not advertise those bits merely because the phone can render output.
 
 ### FR-2 Interaction lifecycle
 
@@ -100,7 +100,7 @@ Agent requests/responses are distinct from wearable events. Incremental output i
 
 ### FR-4 Runtime lifecycle
 
-Runtime start/stop must be deterministic and idempotent. Cancellation must propagate across the boundary. Completed tasks must not be retained.
+Runtime start/stop must be deterministic and idempotent. Cancellation must propagate across the boundary. Completed tasks must not be retained. Normalized runtime output may be delivered through a typed `InteractionOutputSink`; host output lifecycle must remain separate from wearable input ownership.
 
 ### FR-5 Transport
 
