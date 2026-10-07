@@ -4,6 +4,8 @@ options:
   deploymentTarget:
     iOS: "17.2"
 packages:
+  AgentWearLink:
+    path: ../../..
   MetaIntegration:
     path: ..
   MetaWearablesDAT:
@@ -16,6 +18,12 @@ targets:
     sources:
       - path: App
     dependencies:
+      - package: AgentWearLink
+        product: AgentWearLinkCore
+      - package: AgentWearLink
+        product: AgentWearLinkOpenClaw
+      - package: AgentWearLink
+        product: AgentWearLinkAppleOutput
       - package: MetaIntegration
         product: AgentWearLinkMetaDATIntegration
     settings:
