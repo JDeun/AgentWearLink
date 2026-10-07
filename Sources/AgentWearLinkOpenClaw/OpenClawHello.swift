@@ -11,10 +11,41 @@ public struct OpenClawHelloOK: Decodable, Sendable, Equatable {
         public let events: [String]
     }
 
-    public struct Auth: Decodable, Sendable, Equatable {
+    public struct Auth:
+        Decodable,
+        Sendable,
+        Equatable,
+        CustomStringConvertible,
+        CustomDebugStringConvertible
+    {
+        public struct DeviceToken:
+            Decodable,
+            Sendable,
+            Equatable,
+            CustomStringConvertible,
+            CustomDebugStringConvertible
+        {
+            public let deviceToken: String
+            public let role: String
+            public let scopes: [String]
+
+            public var description: String {
+                "DeviceToken(role: \(role), scopes: \(scopes), deviceToken: <redacted>)"
+            }
+            public var debugDescription: String { description }
+        }
+
         public let role: String
         public let scopes: [String]
         public let deviceToken: String?
+        public let deviceTokens: [DeviceToken]?
+
+        public var description: String {
+            "Auth(role: \(role), scopes: \(scopes), deviceToken: " +
+            "\(deviceToken == nil ? "nil" : "<redacted>"), deviceTokens: " +
+            "\(deviceTokens?.count ?? 0))"
+        }
+        public var debugDescription: String { description }
     }
 
     public struct Snapshot: Decodable, Sendable, Equatable {
