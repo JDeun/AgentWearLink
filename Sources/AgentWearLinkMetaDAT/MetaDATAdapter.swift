@@ -167,6 +167,9 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
     private var snapshotGeneration: UInt64 = 0
     private var activeSnapshotGeneration: UInt64?
 
+    /// Static declared *support* in the SDK-neutral fixture/reference wrapper.
+    /// The vendor-linked iOS MetaDATDeviceAdapter instead exposes a live
+    /// readiness snapshot; neither contract replaces operation-time checks.
     public nonisolated var capabilities: CapabilitySet { mappedCapabilities }
 
     public init(session: any MetaDATSession) {
