@@ -16,7 +16,7 @@ let package = Package(
         .package(path: "../.."),
         .package(
             url: "https://github.com/facebook/meta-wearables-dat-ios",
-            exact: "1.0.0"
+            revision: "1f38beecba83c4c8b5e343540f9cd615323ab19a"
         )
     ],
     targets: [
