@@ -111,7 +111,8 @@ public actor OpenClawGatewayConnection {
             let hello = try decodeHello(payload)
             do {
                 try OpenClawGatewayState.validateHello(hello)
-            } catch AWLOpenClawError.invalidPolicy {
+            } catch let error as AWLOpenClawError {
+                guard error == .invalidPolicy else { throw error }
                 throw OpenClawHandshakeError.invalidPolicy
             }
             try await assembler.persistHello(hello, assembled: assembled)
