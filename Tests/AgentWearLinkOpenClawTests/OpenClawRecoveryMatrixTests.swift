@@ -144,6 +144,11 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
         successfulConnectCalls.insert(connectCalls + 1)
     }
 
+    func makeHandshakeSucceed(afterCurrentCount offset: Int) {
+        precondition(offset > 0)
+        successfulConnectCalls.insert(connectCalls + offset)
+    }
+
     func makeNextHandshakeRequirePairing(
         retryable: Bool = true,
         waitForResolution: Bool = true,
@@ -442,6 +447,8 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
             recommendedNextStep: "wait_then_retry",
             retryAfterMilliseconds: 1
         )
+        await fixture.socket.makeHandshakeSucceed(afterCurrentCount: 2)
+
         // After the pairing-required handshake, the same bounded reconnect
         // transition should retry rather than stopping.
         let reconnect = Task {
@@ -456,7 +463,6 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         ) {
             await fixture.socket.connectionCount() >= 2
         }
-        await fixture.socket.makeNextHandshakeSucceed()
         await reconnect.value
 
         let connectionCount = await fixture.socket.connectionCount()
