@@ -574,10 +574,12 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         selectedDeviceListenerTask = nil
         speechTask = nil
 
+        // Session teardown is the terminal Speech detach boundary. Avoid
+        // removeSpeech() here because the transcript helper owns its listener
+        // token and retires it asynchronously when the consumer task ends.
+        // Generation fencing prevents any late callback from escaping while
+        // DeviceSession.stop() releases the attached Speech surface.
         speech?.stop()
-        if speech != nil {
-            try? deviceSession?.removeSpeech()
-        }
         speech = nil
 
         if let speechErrorToken {
