@@ -15,6 +15,7 @@ private struct SupervisorPairingResponse: Sendable {
 
 private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var connectCalls = 0
+    private var transportGenerationValue: UInt64 = 0
     private var handshakeStep = 0
     private var sentFrames: [String] = []
     private var receiveWaiter: CheckedContinuation<String, Error>?
@@ -31,6 +32,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
 
     func connect() async {
         connectCalls += 1
+        transportGenerationValue &+= 1
         handshakeStep = 0
 
         guard blockedConnectCall == connectCalls else { return }
@@ -47,6 +49,20 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     }
 
     func send(text: String) async throws {
+        sentFrames.append(text)
+    }
+
+    func transportGeneration() async -> UInt64? {
+        transportGenerationValue
+    }
+
+    func send(
+        text: String,
+        expectedGeneration: UInt64
+    ) async throws {
+        guard expectedGeneration == transportGenerationValue else {
+            throw OpenClawTransportSendError.staleGeneration
+        }
         sentFrames.append(text)
     }
 
@@ -71,7 +87,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
                   "type":"hello-ok","protocol":4,
                   "server":{"version":"2026.10","connId":"c-\(connectCalls)"},
                   "features":{"methods":["health"],"events":["tick"]},
-                  "auth":{"role":"operator","scopes":["operator.read"]},
+                  "auth":{"role":"operator","scopes":["operator.read","operator.write"]},
                   "policy":{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":15000}
                 }}
                 """
@@ -130,6 +146,18 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     func connectionCount() -> Int { connectCalls }
     func closeCount() -> Int { closeCalls }
     func sentCount() -> Int { sentFrames.count }
+
+    func sentMethodCount(_ method: String) -> Int {
+        sentFrames.reduce(into: 0) { count, frame in
+            guard let data = frame.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data)
+                    as? [String: Any],
+                  object["method"] as? String == method else {
+                return
+            }
+            count += 1
+        }
+    }
 
     func failCurrentReceive() {
         if let receiveWaiter {
@@ -605,18 +633,55 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         XCTAssertTrue(GatewayConnectionState.ready.canSendRequests)
     }
 
-    func testTransportGenerationChangesRepresentNoReplayBoundary() async {
-        // The supervisor's generation is the identity boundary used when an old
-        // transport is retired. Application requests are not retained by the
-        // reconnect policy and therefore cannot be silently replayed.
-        let policy = GatewayReconnectPolicy(
-            initialDelayMilliseconds: 10,
-            maximumDelayMilliseconds: 20,
-            maximumAttempts: 1
-        )
+    func testUncertainMutatingRequestIsNeverReplayedAcrossReconnect() async throws {
+        let fixture = makeSupervisor()
+        try await fixture.supervisor.start()
 
-        XCTAssertEqual(policy.maximumAttempts, 1)
-        XCTAssertEqual(policy.delayMilliseconds(forAttempt: 1), 10)
-        XCTAssertEqual(policy.delayMilliseconds(forAttempt: 2), 20)
+        let initialTransportGeneration = await fixture.supervisor.transportGeneration
+        let request = Task {
+            try await fixture.dispatcher.request(
+                method: "agent",
+                params: SupervisorMutatingParams(message: "execute-once")
+            )
+        }
+
+        try await waitUntilOpenClawTestCondition(
+            "mutating request reached the first transport"
+        ) {
+            await fixture.socket.sentMethodCount("agent") == 1
+        }
+
+        // Retire the transport while the mutating request has no authoritative
+        // response. The supervisor may restore transport, but it must never
+        // retain or resubmit the application request.
+        await fixture.socket.makeNextHandshakeSucceed()
+        await fixture.socket.failCurrentReceive()
+
+        do {
+            _ = try await request.value
+            XCTFail("Expected the in-flight request outcome to become uncertain")
+        } catch {
+            // The exact transport-facing error is intentionally not treated as
+            // permission to replay. The invariant below is the contract.
+        }
+
+        try await waitUntilOpenClawTestCondition(
+            "supervisor restored a fresh transport"
+        ) {
+            let ready = await fixture.state.connectionState == .ready
+            let running = await fixture.dispatcher.isRunning
+            return ready && running
+        }
+
+        let finalTransportGeneration = await fixture.supervisor.transportGeneration
+        let mutatingSendCount = await fixture.socket.sentMethodCount("agent")
+        XCTAssertGreaterThan(finalTransportGeneration, initialTransportGeneration)
+        XCTAssertEqual(mutatingSendCount, 1)
+
+        await fixture.supervisor.stop()
     }
+}
+
+private struct SupervisorMutatingParams: Encodable, Sendable {
+    let message: String
 }
