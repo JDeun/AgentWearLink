@@ -11,7 +11,7 @@ public protocol SpeechSynthesizing: Sendable {
 /// The concrete AVSpeechSynthesizer bridge lives in the iOS host. This actor
 /// deliberately keeps only the latest pending text and cancels active speech
 /// before a replacement, preventing an unbounded spoken-response queue.
-public actor AppleSpeechOutput {
+public actor AppleSpeechOutput: InteractionOutputSink {
     public static let defaultMaximumBufferedTextBytes = 64 * 1024
     private static let maximumTerminalHistory = 64
 
@@ -32,9 +32,23 @@ public actor AppleSpeechOutput {
         self.maximumBufferedTextBytes = maximumBufferedTextBytes
     }
 
+    /// Backward-compatible adapter for callers that still consume raw
+    /// AgentResponse values directly.
     public func consume(_ response: AgentResponse) async {
         switch response {
         case let .textDelta(id, text):
+            await consume(.text(id, text))
+        case let .completed(id):
+            await consume(.turnCompleted(id))
+        case let .failed(id, error):
+            await consume(InteractionEvent.failed(id, error))
+        }
+    }
+
+    /// Consumes the normalized runtime output contract.
+    public func consume(_ event: InteractionEvent) async {
+        switch event {
+        case let .text(id, text):
             guard !terminalInteractionIDs.contains(id) else { return }
 
             if activeInteractionID != id {
@@ -48,9 +62,9 @@ public actor AppleSpeechOutput {
 
             let incomingBytes = text.utf8.count
             guard incomingBytes <= maximumBufferedTextBytes - pendingTextUTF8Bytes else {
-                // Once a response exceeds the configured bound, discard the entire
-                // pending utterance rather than speaking a truncated/private fragment.
-                // Mark it terminal so later deltas/completion cannot resurrect it.
+                // Once a response exceeds the configured bound, discard the
+                // complete pending utterance rather than speaking a truncated
+                // private fragment.
                 pendingText = ""
                 pendingTextUTF8Bytes = 0
                 activeInteractionID = nil
@@ -62,7 +76,7 @@ public actor AppleSpeechOutput {
             pendingText += text
             pendingTextUTF8Bytes += incomingBytes
 
-        case let .completed(id):
+        case let .turnCompleted(id):
             guard !terminalInteractionIDs.contains(id) else { return }
 
             let text: String?
@@ -80,7 +94,7 @@ public actor AppleSpeechOutput {
                 await synthesizer.speak(text)
             }
 
-        case let .failed(id, _):
+        case let .failed(id?, _):
             guard !terminalInteractionIDs.contains(id) else { return }
             rememberTerminal(id)
 
@@ -89,6 +103,20 @@ public actor AppleSpeechOutput {
             pendingTextUTF8Bytes = 0
             activeInteractionID = nil
             await synthesizer.stop()
+
+        case let .failed(nil, error):
+            // Nil-ID agent/transport diagnostics can describe uncertainty that
+            // must not interrupt unrelated completed speech. A global device
+            // failure, however, retires the active runtime generation.
+            if case .device = error {
+                await interrupt()
+            }
+
+        case let .interrupted(id), let .sessionEnded(id):
+            await interrupt(interactionID: id)
+
+        case .sessionStarted, .invocation:
+            break
         }
     }
 

@@ -36,6 +36,25 @@ public actor AgentWearLinkRuntime {
         self.coordinator = InteractionCoordinator(agent: agent, output: output)
     }
 
+    /// Convenience production composition for a typed host output sink.
+    ///
+    /// The closure initializer remains available for lightweight integrations,
+    /// while this overload makes the output boundary explicit and testable.
+    public init(
+        device: any DeviceAdapter,
+        agent: any AgentAdapter,
+        outputSink: any InteractionOutputSink
+    ) {
+        self.device = device
+        self.agent = agent
+
+        let output: @Sendable (InteractionEvent) async -> Void = { event in
+            await outputSink.consume(event)
+        }
+        self.output = output
+        self.coordinator = InteractionCoordinator(agent: agent, output: output)
+    }
+
     public func start() async throws {
         while true {
             try Task.checkCancellation()

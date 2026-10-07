@@ -306,7 +306,9 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
         if source.contains(.speech) { result.insert(.speechInput) }
         if source.contains(.rawAudio) { result.insert(.rawAudioInput) }
         if source.contains(.cameraSnapshot) { result.insert(.cameraSnapshot) }
-        if source.contains(.speaker) { result.insert(.speakerOutput) }
+        // Phone/UI/TTS output belongs to the host InteractionOutputSink. A Meta
+        // input session does not advertise speaker output without a concrete
+        // device-output command surface.
         if source.contains(.voiceInvocation) { result.insert(.voiceInvocation) }
         return result
     }

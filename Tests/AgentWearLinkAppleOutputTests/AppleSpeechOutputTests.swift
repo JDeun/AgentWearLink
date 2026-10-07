@@ -11,6 +11,61 @@ private actor SpeechSpy: SpeechSynthesizing {
 }
 
 final class AppleSpeechOutputTests: XCTestCase {
+    func testNormalizedRuntimeEventsDriveSpeechOutput() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(synthesizer: spy)
+        let id = InteractionID()
+
+        await output.consume(.text(id, "hello "))
+        await output.consume(.text(id, "world"))
+        await output.consume(.turnCompleted(id))
+
+        let values = await spy.values()
+        XCTAssertEqual(values.0, ["hello world"])
+        XCTAssertEqual(values.1, 0)
+    }
+
+    func testNormalizedInterruptionStopsAndDiscardsPendingSpeech() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(synthesizer: spy)
+        let id = InteractionID()
+
+        await output.consume(.text(id, "do not speak"))
+        await output.consume(.interrupted(id))
+        await output.consume(.turnCompleted(id))
+
+        let values = await spy.values()
+        XCTAssertTrue(values.0.isEmpty)
+        XCTAssertEqual(values.1, 1)
+    }
+
+    func testGlobalDeviceFailureInterruptsActiveOutput() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(synthesizer: spy)
+        let id = InteractionID()
+
+        await output.consume(.text(id, "pending"))
+        await output.consume(.failed(nil, .device("session lost")))
+
+        let values = await spy.values()
+        XCTAssertTrue(values.0.isEmpty)
+        XCTAssertEqual(values.1, 1)
+    }
+
+    func testGlobalAgentDiagnosticDoesNotInterruptUnrelatedOutput() async {
+        let spy = SpeechSpy()
+        let output = AppleSpeechOutput(synthesizer: spy)
+        let id = InteractionID()
+
+        await output.consume(.text(id, "safe"))
+        await output.consume(.failed(nil, .agent("remote cancellation uncertain")))
+        await output.consume(.turnCompleted(id))
+
+        let values = await spy.values()
+        XCTAssertEqual(values.0, ["safe"])
+        XCTAssertEqual(values.1, 0)
+    }
+
     func testDeltasAreCoalescedUntilCompletion() async {
         let spy = SpeechSpy()
         let output = AppleSpeechOutput(synthesizer: spy)

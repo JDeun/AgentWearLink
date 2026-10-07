@@ -4,7 +4,7 @@
 
 [English](README.md) · [아키텍처](docs/architecture.md) · [PRD](docs/PRD.md) · [테스트](docs/testing.md)
 
-AgentWearLink(AWL)는 음성, 오디오, 카메라 스냅샷, 호출, 출력과 같은 웨어러블 기능을 교체 가능한 어댑터 뒤에서 정규화하고, 이를 기존 AI 에이전트 런타임에 연결합니다. AWL 자체가 모델·메모리·도구·RAG 같은 에이전트의 지능을 대신 구현하지 않습니다.
+AgentWearLink(AWL)는 음성, 오디오, 카메라 스냅샷, 호출 같은 웨어러블 입력·캡처 기능을 교체 가능한 어댑터 뒤에서 정규화하고 기존 AI 에이전트 런타임에 연결합니다. iPhone TTS 같은 호스트 출력은 별도의 output sink로 합성하며, AWL 자체가 모델·메모리·도구·RAG 같은 에이전트의 지능을 대신 구현하지 않습니다.
 
 > **상태:** pre-alpha. Core와 OpenClaw 기반 구현 및 자동화 테스트는 진행되었으며, Ray-Ban Meta + iPhone 실기기 검증은 아직 진행 중입니다.
 
@@ -45,7 +45,7 @@ Meta DAT, OpenClaw, Tailscale, Telegram, Apple TTS는 레퍼런스 통합이며 
 - 명시적 opt-in 방식의 실제 OpenClaw text E2E probe
 - Meta DAT 1.0.0 고정 통합: registration/device lifecycle, camera, Speech, Voice Invocation, live capability 및 lifecycle 정책
 - 크기 제한 및 agent capability 선검사를 포함한 명시적 vision contract
-- Apple host output package 및 `AVSpeechSynthesizer` bridge
+- typed `InteractionOutputSink` 기반 host output composition 및 `AVSpeechSynthesizer` bridge
 - deterministic reliability regression test
 
 MockDeviceKit app-hosted 통합은 별도 CI gate로 검증 중입니다. 실제 Bluetooth, 카메라 센서 wake/shutter 및 사진 전송, 웨어러블 오디오 라우팅, 잠금/주머니 상태 invocation, 모바일 Tailnet 전환, 실제 vision E2E는 실기기·배포 검증이 남아 있습니다.

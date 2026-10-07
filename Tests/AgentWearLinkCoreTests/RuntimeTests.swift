@@ -19,6 +19,25 @@ private actor RuntimeRecorder {
     }
 }
 
+private actor RuntimeOutputSinkRecorder: InteractionOutputSink {
+    private(set) var events: [InteractionEvent] = []
+    private let eventCount = TestCountSignal()
+
+    func consume(_ event: InteractionEvent) async {
+        events.append(event)
+        await eventCount.increment()
+    }
+
+    func waitUntilCount(_ count: Int) async throws {
+        try await eventCount.wait(
+            until: count,
+            label: "runtime output sink event count \(count)"
+        )
+    }
+
+    func snapshot() -> [InteractionEvent] { events }
+}
+
 private final class ConnectEmittingDevice: DeviceAdapter, @unchecked Sendable {
     let capabilities: CapabilitySet = [.textInput]
     private let stream: AsyncStream<InteractionEvent>
@@ -379,6 +398,34 @@ private final class RestartableEndingDevice: DeviceAdapter, @unchecked Sendable 
 }
 
 final class RuntimeTests: XCTestCase {
+    func testTypedOutputSinkReceivesNormalizedAgentResponse() async throws {
+        let device = MockDeviceAdapter()
+        let agent = MockAgentAdapter()
+        let sink = RuntimeOutputSinkRecorder()
+        let runtime = AgentWearLinkRuntime(
+            device: device,
+            agent: agent,
+            outputSink: sink
+        )
+
+        try await runtime.start()
+
+        let id = InteractionID()
+        await device.emit(.text(id, "hello"))
+        try await sink.waitUntilCount(2)
+
+        let events = await sink.snapshot()
+        XCTAssertEqual(
+            events,
+            [
+                .text(id, "echo: hello"),
+                .turnCompleted(id)
+            ]
+        )
+
+        await runtime.stop()
+    }
+
     func testMockDeviceSubscriptionIsInstalledBeforeEventsReturns() async {
         let device = MockDeviceAdapter()
         var iterator = device.events().makeAsyncIterator()

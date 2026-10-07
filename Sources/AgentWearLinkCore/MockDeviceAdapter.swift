@@ -82,7 +82,7 @@ public actor MockDeviceAdapter: DeviceAdapter {
     public nonisolated let capabilities: CapabilitySet
     private nonisolated let eventSource = MockDeviceEventSource()
 
-    public init(capabilities: CapabilitySet = [.textInput, .textOutput]) {
+    public init(capabilities: CapabilitySet = [.textInput]) {
         self.capabilities = capabilities
     }
 
