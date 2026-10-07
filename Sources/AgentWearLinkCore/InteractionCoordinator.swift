@@ -81,6 +81,9 @@ public actor InteractionCoordinator {
 
     public func handle(_ event: InteractionEvent) async {
         guard let id = event.interactionID else {
+            if event.isTerminalGlobalDeviceFailure {
+                await cancelAll()
+            }
             await outputQueue.emit(event)
             return
         }
