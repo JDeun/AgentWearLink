@@ -14,7 +14,7 @@ The concrete integration now includes:
 - Speech transcript stream handling with final-only filtering and duplicate suppression
 - independent Voice Invocation listener, acknowledgement, and bounded reopen/backoff policy
 - foreground/background media invalidation and fresh-readiness rules
-- DEBUG-only MockDeviceKit host bootstrap and test-server rendezvous
+- MockDeviceKit host bootstrap and deterministic mock fixtures live in the separate `AgentWearLinkMetaDATTestSupport` target; the production integration target does not link MockDeviceKit
 - pinned SDK compile gates for iOS Simulator
 
 These are code-side claims. They are not substitutes for physical Ray-Ban Meta evidence.
@@ -46,7 +46,7 @@ xcodebuild \
   build
 ```
 
-The Swift package is a compile boundary for the concrete integration library only. Behavioral simulator work uses the dedicated `TestApp/` iOS application plus its app-hosted XCUITest target; there is no SwiftPM test-host executable.
+The Swift package keeps production integration and MockDeviceKit test support in separate targets. `AgentWearLinkMetaDATIntegration` contains no `MWDATMockDevice` dependency; behavioral simulator work links `AgentWearLinkMetaDATTestSupport` only from the dedicated `TestApp/` host plus its app-hosted XCUITest target. There is no SwiftPM test-host executable.
 
 Root `swift test` passing means Core/runtime contracts pass. It does **not** prove the concrete MWDAT integration or physical glasses.
 
