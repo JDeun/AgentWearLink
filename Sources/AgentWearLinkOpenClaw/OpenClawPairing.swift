@@ -60,6 +60,37 @@ public struct OpenClawPairingRequired: Sendable, Equatable {
     }
 }
 
+
+public struct OpenClawDeviceTokenRetryHint: Sendable, Equatable {
+    public let code: String?
+    public let reason: String?
+    public let recommendedNextStep: String
+
+    public init?(error: OpenClawResponseEnvelope.GatewayError) {
+        guard case let .object(details)? = error.details,
+              case let .bool(canRetry)? = details["canRetryWithDeviceToken"],
+              canRetry,
+              case let .string(nextStep)? = details["recommendedNextStep"],
+              nextStep == "retry_with_device_token" else {
+            return nil
+        }
+
+        if case let .string(code)? = details["code"] {
+            self.code = code
+        } else {
+            self.code = nil
+        }
+
+        if case let .string(reason)? = details["reason"] {
+            self.reason = reason
+        } else {
+            self.reason = nil
+        }
+
+        self.recommendedNextStep = nextStep
+    }
+}
+
 public enum OpenClawPairingState: Sendable, Equatable {
     case unknown
     case required(OpenClawPairingRequired)
