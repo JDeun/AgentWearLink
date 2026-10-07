@@ -12,7 +12,9 @@ public enum OpenClawFrameError: Error, Sendable, Equatable {
     case unsupportedFrameType(String)
 }
 
-/// Validates the pre-auth ceiling and decodes each inbound JSON frame once.
+/// Validates frame-size ceilings before JSON decoding and decodes each inbound frame once.
+/// The post-auth ceiling is intentionally independent of Gateway `maxPayload`: the
+/// protocol does not guarantee that the outbound payload limit is symmetric for inbound frames.
 public struct OpenClawFrameRouter: Sendable {
     public static let defaultInboundMaximumBytes = 25 * 1024 * 1024
     private struct Envelope: Decodable {
