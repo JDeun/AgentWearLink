@@ -35,6 +35,8 @@ Responsibilities:
 - connect/disconnect device session
 - advertise capabilities
 - emit normalized input/lifecycle events
+- install event subscriptions synchronously before `events()` returns
+- retain connect-time events in a finite buffer/coalescing slot until Core begins consumption
 - accept supported output commands
 - hide vendor SDK types from the core
 
@@ -85,6 +87,7 @@ Private media crosses AWL boundaries only through explicit bounded contracts. Im
 - Device reconnect does not silently create duplicate agent requests.
 - Agent reconnect does not silently replay mutating requests.
 - Media buffers are bounded.
+- Device event streams are subscribed before device connect; their finite buffering contract preserves connect-time events without forwarding a failed startup generation.
 
 ## Reference adapters
 
