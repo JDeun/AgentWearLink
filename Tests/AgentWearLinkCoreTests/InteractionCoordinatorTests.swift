@@ -46,7 +46,8 @@ final class InteractionCoordinatorTests: XCTestCase {
         await coordinator.deactivate(runtimeGeneration: generation)
         await coordinator.handle(.text(id, "stale"), runtimeGeneration: generation)
         try? await Task.sleep(for: .milliseconds(20))
-        XCTAssertTrue((await recorded.values).isEmpty)
+        let events = await recorded.values
+        XCTAssertTrue(events.isEmpty)
     }
 
     func testDuplicateRequestForInteractionIsSuppressed() async throws {
