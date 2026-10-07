@@ -84,4 +84,40 @@ final class OpenClawPrivacyRegressionTests: XCTestCase {
         }
     }
 
+    func testConnectParamsAndRequestFrameDiagnosticsRedactNestedAuth() {
+        let secrets = [
+            "AGG_TOKEN_SENTINEL",
+            "AGG_PASSWORD_SENTINEL",
+            "AGG_BOOTSTRAP_SENTINEL"
+        ]
+        let params = OpenClawConnectParams(
+            version: "test",
+            scopes: ["operator.read"],
+            auth: .init(
+                token: secrets[0],
+                password: secrets[1],
+                bootstrapToken: secrets[2]
+            )
+        )
+        let frame = OpenClawRequestFrame(
+            id: "request-1",
+            method: "connect",
+            params: params
+        )
+
+        for rendered in [
+            String(describing: params),
+            String(reflecting: params),
+            String(describing: frame),
+            String(reflecting: frame)
+        ] {
+            for secret in secrets {
+                XCTAssertFalse(rendered.contains(secret))
+            }
+        }
+
+        XCTAssertTrue(String(describing: params).contains("auth: <redacted>"))
+        XCTAssertTrue(String(describing: frame).contains("params: <redacted>"))
+    }
+
 }
