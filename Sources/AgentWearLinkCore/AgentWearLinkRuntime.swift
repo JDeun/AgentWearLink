@@ -109,6 +109,13 @@ public actor AgentWearLinkRuntime {
             for await event in events {
                 guard !Task.isCancelled else { break }
                 await coordinator.handle(event, runtimeGeneration: generation)
+
+                if event.isTerminalGlobalDeviceFailure {
+                    await self.globalDeviceFailureDidOccur(
+                        generation: generation
+                    )
+                    return
+                }
             }
 
             await self.forwardingDidEnd(
@@ -118,6 +125,28 @@ public actor AgentWearLinkRuntime {
         }
 
         finishStartWaiters(generation: generation, result: .success(()))
+    }
+
+    private func globalDeviceFailureDidOccur(
+        generation: UInt64
+    ) async {
+        guard lifecycleState == .running,
+              lifecycleGeneration == generation else {
+            return
+        }
+
+        // The coordinator has already cancelled all active interactions and
+        // emitted the authoritative global device failure. Retire this runtime
+        // generation without manufacturing a second stream-ended failure.
+        lifecycleState = .stopping
+        lifecycleGeneration &+= 1
+        forwardingTask = nil
+
+        await coordinator.deactivate(runtimeGeneration: generation)
+        await device.disconnect()
+        await agent.disconnect()
+
+        finishStopping()
     }
 
     private func forwardingDidEnd(
