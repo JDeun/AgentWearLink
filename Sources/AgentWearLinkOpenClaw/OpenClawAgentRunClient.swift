@@ -3,9 +3,15 @@ import Foundation
 public actor OpenClawAgentRunClient {
     private let dispatcher: OpenClawRPCDispatcher
     private let decoder = JSONDecoder()
+    private let updateBufferLimit: Int
 
-    public init(dispatcher: OpenClawRPCDispatcher) {
+    public init(
+        dispatcher: OpenClawRPCDispatcher,
+        updateBufferLimit: Int = OpenClawRPCDispatcher.defaultAgentEventBufferLimit
+    ) {
+        precondition(updateBufferLimit > 0)
         self.dispatcher = dispatcher
+        self.updateBufferLimit = updateBufferLimit
     }
 
     public func submit(
@@ -67,25 +73,33 @@ public actor OpenClawAgentRunClient {
     ) async -> AsyncThrowingStream<OpenClawAgentRunUpdate, Error> {
         let events = await dispatcher.agentEvents(runID: runID)
 
-        return AsyncThrowingStream { continuation in
+        return AsyncThrowingStream(
+            bufferingPolicy: .bufferingNewest(updateBufferLimit)
+        ) { continuation in
             let task = Task {
                 do {
                     for try await event in events {
+                        let update: OpenClawAgentRunUpdate
                         switch event.stream {
                         case "assistant":
-                            continuation.yield(
-                                .assistant(runID: runID, payload: event.data)
-                            )
+                            update = .assistant(runID: runID, payload: event.data)
                         case "tool":
-                            continuation.yield(
-                                .tool(runID: runID, payload: event.data)
-                            )
+                            update = .tool(runID: runID, payload: event.data)
                         case "lifecycle":
-                            continuation.yield(
-                                .lifecycle(runID: runID, payload: event.data)
-                            )
+                            update = .lifecycle(runID: runID, payload: event.data)
                         default:
                             continue
+                        }
+
+                        switch continuation.yield(update) {
+                        case .enqueued:
+                            break
+                        case .dropped:
+                            throw OpenClawAgentRunError.updateBufferOverflow(runID)
+                        case .terminated:
+                            return
+                        @unknown default:
+                            return
                         }
                     }
                     continuation.finish()
@@ -130,4 +144,5 @@ public actor OpenClawAgentRunClient {
 public enum OpenClawAgentRunError: Error, Sendable, Equatable {
     case missingPayload
     case abortNotConfirmed(String)
+    case updateBufferOverflow(String)
 }
