@@ -6,6 +6,8 @@ enum OpenClawRequestFactory {
         configuration: OpenClawConfiguration,
         request: AgentRequest
     ) throws -> URLRequest {
+        try configuration.validateCredentialTransport()
+
         let endpoint = configuration.baseURL
             .appendingPathComponent("v1")
             .appendingPathComponent("chat")
