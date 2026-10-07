@@ -147,9 +147,10 @@ public struct OpenClawConnectAssembler: Sendable {
         guard assembled.usedStoredCredential,
               let stored = assembled.storedCredential else { return }
 
-        try await credentialStore.remove(
+        _ = try await credentialStore.compareAndRemove(
             deviceID: stored.deviceID,
-            role: stored.role
+            role: stored.role,
+            expected: stored
         )
     }
 
@@ -170,13 +171,19 @@ public struct OpenClawConnectAssembler: Sendable {
             scopes = hello.auth.scopes
         }
 
-        try await credentialStore.save(
-            OpenClawDeviceCredential(
-                deviceID: deviceID,
-                role: hello.auth.role,
-                scopes: scopes,
-                token: token
-            )
+        let credential = OpenClawDeviceCredential(
+            deviceID: deviceID,
+            role: hello.auth.role,
+            scopes: scopes,
+            token: token
+        )
+
+        // The stored credential captured during assemble() is the compare token.
+        // A stale handshake must not overwrite a grant that a newer handshake
+        // has already rotated after this snapshot was taken.
+        _ = try await credentialStore.compareAndSave(
+            credential,
+            expected: assembled.storedCredential
         )
     }
 }
