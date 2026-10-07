@@ -195,6 +195,13 @@ public actor OpenClawRPCDispatcher {
             throw AWLOpenClawError.disconnected
         }
 
+        if let requiredScope = Self.requiredOperatorScope(for: method) {
+            try await state.requireOperatorScope(requiredScope)
+            guard isActive(generation: requestGeneration) else {
+                throw AWLOpenClawError.disconnected
+            }
+        }
+
         // Capture transport identity while this dispatcher generation is active.
         // Every actor hop below is followed by a generation check so stop() cannot
         // retire the request and let it resume into a later dispatcher generation.
@@ -384,6 +391,15 @@ public actor OpenClawRPCDispatcher {
         }
 
         finishReceiveLoop(generation: receiveGeneration)
+    }
+
+    private static func requiredOperatorScope(for method: String) -> String? {
+        switch method {
+        case "agent", "agent.wait", "chat.abort":
+            return "operator.write"
+        default:
+            return nil
+        }
     }
 
     private func isCurrentReceiveGeneration(_ expected: UInt64) -> Bool {
