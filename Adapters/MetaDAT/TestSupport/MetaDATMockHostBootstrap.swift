@@ -32,8 +32,26 @@ public enum MetaDATMockHostBootstrap {
         throw MetaDATMockHostError.unavailableInReleaseBuild
         #endif
     }
+
+    /// Configure the same deterministic captured photo on both current mock
+    /// still-capture routes. Called by the UI-test host *after* pairing so no
+    /// test fixture is installed in the release adapter or stored persistently.
+    public static func configureCapturedPhotoFixture(fileURL: URL) throws -> Int {
+        #if DEBUG
+        let paired = MockDeviceKit.shared.pairedDevices
+        guard !paired.isEmpty else { throw MetaDATMockHostError.noPairedDevices }
+        for device in paired {
+            device.services.camera.setCapturedImage(fileURL: fileURL)
+            device.services.cameraCapture.setCapturedPhoto(fileURL: fileURL)
+        }
+        return paired.count
+        #else
+        throw MetaDATMockHostError.unavailableInReleaseBuild
+        #endif
+    }
 }
 
 public enum MetaDATMockHostError: Error, Equatable {
     case unavailableInReleaseBuild
+    case noPairedDevices
 }
