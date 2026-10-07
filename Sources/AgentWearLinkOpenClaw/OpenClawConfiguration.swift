@@ -1,3 +1,4 @@
+import AgentWearLinkCore
 import Foundation
 
 public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
