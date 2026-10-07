@@ -13,6 +13,7 @@ Examples:
 - bounded stream/media behavior
 - event/request mapping
 - OpenClaw protocol framing, RPC correlation, and reconnect state machines
+- existing-session wire fixtures are schema evidence only; `OpenClawExistingSessionAdapterTests` additionally exercises the production GatewayConnection → dispatcher → run client → native adapter path against a deterministic synthetic socket
 - credential/configuration diagnostic redaction
 - Meta helper policies such as final-transcript filtering, capture generations, readiness, and bounded backoff
 
