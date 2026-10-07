@@ -156,6 +156,83 @@ final class OpenClawAgentRunTests: XCTestCase {
         await dispatcher.stop()
     }
 
+    func testRunUpdatesFailFastWhenSlowConsumerOverflowsBoundedBuffer() async throws {
+        let state = OpenClawGatewayState()
+        let socket = AgentEventSocket(
+            frames: [
+                #"{"type":"event","event":"agent","seq":1,"payload":{"runId":"run-1","stream":"assistant","seq":1,"data":{"delta":"one"}}}"#,
+                #"{"type":"event","event":"agent","seq":2,"payload":{"runId":"run-1","stream":"assistant","seq":2,"data":{"delta":"two"}}}"#,
+                #"{"type":"event","event":"agent","seq":3,"payload":{"runId":"run-1","stream":"assistant","seq":3,"data":{"delta":"three"}}}"#
+            ],
+            holdOpenAfterFrames: true
+        )
+        await state.beginConnect()
+        try await state.acceptHello(
+            OpenClawHelloOK(
+                type: "hello-ok",
+                protocolVersion: 4,
+                server: .init(version: "test", connId: "c1"),
+                features: .init(methods: [], events: ["agent"]),
+                auth: .init(
+                    role: "operator",
+                    scopes: ["operator.read"],
+                    deviceToken: nil
+                ),
+                policy: .init(
+                    maxPayload: 1024,
+                    maxBufferedBytes: 2048,
+                    tickIntervalMs: 15000,
+                    attachments: nil
+                )
+            )
+        )
+
+        let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
+        let client = OpenClawAgentRunClient(
+            dispatcher: dispatcher,
+            updateBufferLimit: 2
+        )
+        let updates = await client.updates(runID: "run-1")
+        await dispatcher.start()
+
+        try await waitUntilOpenClawTestCondition(
+            "run update buffer overflow"
+        ) {
+            await client.updateBufferOverflowCount == 1
+        }
+
+        var iterator = updates.makeAsyncIterator()
+        let second = try await iterator.next()
+        let third = try await iterator.next()
+
+        if case let .assistant(_, .object(payload)?) = second,
+           case let .string(delta)? = payload["delta"] {
+            XCTAssertEqual(delta, "two")
+        } else {
+            XCTFail("Expected second assistant delta")
+        }
+
+        if case let .assistant(_, .object(payload)?) = third,
+           case let .string(delta)? = payload["delta"] {
+            XCTAssertEqual(delta, "three")
+        } else {
+            XCTFail("Expected third assistant delta")
+        }
+
+        do {
+            _ = try await iterator.next()
+            XCTFail("Expected bounded run-update overflow")
+        } catch let error as OpenClawAgentRunError {
+            XCTAssertEqual(error, .updateBufferOverflow("run-1"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let running = await dispatcher.isRunning
+        XCTAssertTrue(running)
+        await dispatcher.stop()
+    }
+
     func testRunScopedRoutingDoesNotFanOutOtherRuns() async throws {
         var frames: [String] = []
         for index in 0..<50 {
