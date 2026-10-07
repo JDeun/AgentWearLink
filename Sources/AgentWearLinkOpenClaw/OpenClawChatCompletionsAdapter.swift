@@ -9,14 +9,19 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
 
     private let configuration: OpenClawConfiguration
     private let session: URLSession
+    private let responseBufferLimit: Int
     private var tasks: [InteractionID: TaskEntry] = [:]
+    private(set) var responseBufferOverflowCount = 0
 
     public init(
         configuration: OpenClawConfiguration,
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        responseBufferLimit: Int = AgentResponse.defaultBufferLimit
     ) {
+        precondition(responseBufferLimit > 0)
         self.configuration = configuration
         self.session = session
+        self.responseBufferLimit = responseBufferLimit
     }
 
     public func connect() async throws {}
@@ -33,7 +38,9 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
         let configuration = self.configuration
         let session = self.session
         let generation = UUID()
-        let pair = AsyncThrowingStream<AgentResponse, Error>.makeStream()
+        let pair = AsyncThrowingStream<AgentResponse, Error>.makeStream(
+            bufferingPolicy: .bufferingOldest(responseBufferLimit)
+        )
         let continuation = pair.continuation
 
         let task = Task {
@@ -67,15 +74,39 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
                         maximumEventBytes: configuration.maximumEventBytes
                     ) {
                     case let .delta(text):
-                        continuation.yield(
+                        switch continuation.yield(
                             .textDelta(request.interactionID, text)
-                        )
+                        ) {
+                        case .enqueued:
+                            break
+                        case .dropped:
+                            await self.recordResponseBufferOverflow()
+                            throw AWLError.overloaded(
+                                "agent response stream buffer capacity exceeded"
+                            )
+                        case .terminated:
+                            throw CancellationError()
+                        @unknown default:
+                            throw CancellationError()
+                        }
 
                     case .done:
                         sawDone = true
-                        continuation.yield(
+                        switch continuation.yield(
                             .completed(request.interactionID)
-                        )
+                        ) {
+                        case .enqueued:
+                            break
+                        case .dropped:
+                            await self.recordResponseBufferOverflow()
+                            throw AWLError.overloaded(
+                                "agent response stream buffer capacity exceeded"
+                            )
+                        case .terminated:
+                            throw CancellationError()
+                        @unknown default:
+                            throw CancellationError()
+                        }
                         break streamLoop
 
                     case .ignored:
@@ -131,6 +162,10 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
         }
 
         return pair.stream
+    }
+
+    private func recordResponseBufferOverflow() {
+        responseBufferOverflowCount += 1
     }
 
     private func finish(

@@ -29,6 +29,12 @@ public protocol AgentAdapter: Sendable {
     /// partially failed connection, or when no connection was established.
     func disconnect() async
 
+    /// Produces a finite-buffer response stream.
+    ///
+    /// Implementations must not use the default unbounded AsyncThrowingStream
+    /// policy. If a slow consumer exhausts the configured response buffer,
+    /// terminate with AWLError.overloaded rather than silently dropping data or
+    /// later presenting a successful terminal response after data loss.
     func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error>
     func cancel(interactionID: InteractionID) async
 }

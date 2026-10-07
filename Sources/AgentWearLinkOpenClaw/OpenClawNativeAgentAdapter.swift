@@ -31,6 +31,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     private let sessionKey: String?
     private let maximumTerminalWaitPolls: Int
     private let terminalPollTimeoutMilliseconds: Int
+    private let responseBufferLimit: Int
     private var runs: [InteractionID: RunContext] = [:]
 
     public init(
@@ -39,16 +40,19 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         runClient: OpenClawAgentRunClient,
         sessionKey: String? = nil,
         maximumTerminalWaitPolls: Int = OpenClawNativeAgentAdapter.defaultMaximumTerminalWaitPolls,
-        terminalPollTimeoutMilliseconds: Int = OpenClawNativeAgentAdapter.defaultTerminalPollTimeoutMilliseconds
+        terminalPollTimeoutMilliseconds: Int = OpenClawNativeAgentAdapter.defaultTerminalPollTimeoutMilliseconds,
+        responseBufferLimit: Int = AgentResponse.defaultBufferLimit
     ) {
         precondition(maximumTerminalWaitPolls > 0)
         precondition(terminalPollTimeoutMilliseconds > 0)
+        precondition(responseBufferLimit > 0)
         self.supervisor = supervisor
         self.dispatcher = dispatcher
         self.runClient = runClient
         self.sessionKey = sessionKey
         self.maximumTerminalWaitPolls = maximumTerminalWaitPolls
         self.terminalPollTimeoutMilliseconds = terminalPollTimeoutMilliseconds
+        self.responseBufferLimit = responseBufferLimit
     }
 
     public func connect() async throws {
@@ -65,6 +69,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     ) async -> AsyncThrowingStream<AgentResponse, Error> {
         let client = runClient
         let sessionKey = sessionKey
+        let responseBufferLimit = responseBufferLimit
 
         // A Core InteractionID is a correlation identity and may produce a
         // later, distinct logical agent turn after a prior turn completes.
@@ -73,7 +78,9 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         // while a later responses(for:) call receives a different key.
         let submissionIdentity = OpenClawSubmissionIdentity()
 
-        return AsyncThrowingStream { continuation in
+        return AsyncThrowingStream(
+            bufferingPolicy: .bufferingOldest(responseBufferLimit)
+        ) { continuation in
             let task = Task {
                 do {
                     let accepted = try await client.submit(
@@ -95,8 +102,9 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                         for try await update in updates {
                             if case let .assistant(_, payload) = update,
                                let delta = Self.extractTextDelta(payload) {
-                                continuation.yield(
-                                    .textDelta(request.interactionID, delta)
+                                try Self.yieldResponse(
+                                    .textDelta(request.interactionID, delta),
+                                    to: continuation
                                 )
                             }
                         }
@@ -111,14 +119,18 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
 
                     switch terminal.status {
                     case "ok":
-                        continuation.yield(.completed(request.interactionID))
+                        try Self.yieldResponse(
+                            .completed(request.interactionID),
+                            to: continuation
+                        )
                         continuation.finish()
                     case "error":
                         let message = terminal.error
                             ?? terminal.stopReason
                             ?? "OpenClaw agent run failed"
-                        continuation.yield(
-                            .failed(request.interactionID, .agent(message))
+                        try Self.yieldResponse(
+                            .failed(request.interactionID, .agent(message)),
+                            to: continuation
                         )
                         continuation.finish()
                     default:
@@ -140,6 +152,26 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
             }
 
             continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private nonisolated static func yieldResponse(
+        _ response: AgentResponse,
+        to continuation: AsyncThrowingStream<AgentResponse, Error>.Continuation
+    ) throws {
+        switch continuation.yield(response) {
+        case .enqueued:
+            return
+        case .dropped:
+            let error = AWLError.overloaded(
+                "agent response stream buffer capacity exceeded"
+            )
+            continuation.finish(throwing: error)
+            throw error
+        case .terminated:
+            throw CancellationError()
+        @unknown default:
+            throw CancellationError()
         }
     }
 
