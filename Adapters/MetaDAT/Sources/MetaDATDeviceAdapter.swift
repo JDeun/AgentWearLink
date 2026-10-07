@@ -42,6 +42,92 @@ struct MetaDATSessionGenerationFence: Sendable {
     }
 }
 
+final class MetaDATDeviceEventSource: @unchecked Sendable {
+    private struct Subscription {
+        let generation: UInt64
+        let continuation: AsyncStream<InteractionEvent>.Continuation
+    }
+
+    private let lock = NSLock()
+    private let bufferLimit: Int
+    private var nextGeneration: UInt64 = 0
+    private var subscription: Subscription?
+
+    init(bufferLimit: Int) {
+        precondition(bufferLimit > 0)
+        self.bufferLimit = bufferLimit
+    }
+
+    func stream() -> AsyncStream<InteractionEvent> {
+        AsyncStream(
+            bufferingPolicy: .bufferingNewest(bufferLimit)
+        ) { continuation in
+            lock.lock()
+            nextGeneration &+= 1
+            let generation = nextGeneration
+            let previous = subscription
+            subscription = Subscription(
+                generation: generation,
+                continuation: continuation
+            )
+            lock.unlock()
+
+            continuation.onTermination = { [weak self] _ in
+                self?.remove(generation: generation)
+            }
+            previous?.continuation.finish()
+        }
+    }
+
+    func yield(_ event: InteractionEvent) {
+        lock.lock()
+        let active = subscription
+        lock.unlock()
+
+        guard let active else { return }
+
+        switch active.continuation.yield(event) {
+        case .enqueued:
+            break
+        case .dropped:
+            _ = active.continuation.yield(
+                .failed(
+                    event.interactionID,
+                    .overloaded("Meta DAT device event buffer capacity exceeded")
+                )
+            )
+            retire(generation: active.generation)
+        case .terminated:
+            remove(generation: active.generation)
+        @unknown default:
+            retire(generation: active.generation)
+        }
+    }
+
+    private func retire(generation: UInt64) {
+        let continuation: AsyncStream<InteractionEvent>.Continuation?
+
+        lock.lock()
+        if subscription?.generation == generation {
+            continuation = subscription?.continuation
+            subscription = nil
+        } else {
+            continuation = nil
+        }
+        lock.unlock()
+
+        continuation?.finish()
+    }
+
+    private func remove(generation: UInt64) {
+        lock.lock()
+        if subscription?.generation == generation {
+            subscription = nil
+        }
+        lock.unlock()
+    }
+}
+
 /// First concrete device adapter for Meta Wearables DAT.
 ///
 /// This target is intentionally iOS/vendor-specific and must be compiled only
@@ -61,12 +147,11 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var registrationTask: Task<Void, Never>?
     private var deviceMonitorTask: Task<Void, Never>?
     private var selectedDeviceListenerTask: Task<Void, Never>?
-    private var eventContinuation: AsyncStream<InteractionEvent>.Continuation?
     private var generationFence = MetaDATSessionGenerationFence()
     private var connecting = false
     private var stopping = false
     private let connectTimeout: Duration
-    private nonisolated let eventBufferLimit: Int
+    private nonisolated let eventSource: MetaDATDeviceEventSource
 
     public init(
         wearables: any WearablesInterface = Wearables.shared,
@@ -77,23 +162,11 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         precondition(eventBufferLimit > 0)
         self.wearables = wearables
         self.connectTimeout = connectTimeout
-        self.eventBufferLimit = eventBufferLimit
+        self.eventSource = MetaDATDeviceEventSource(bufferLimit: eventBufferLimit)
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
-        let limit = eventBufferLimit
-        return AsyncStream(
-            bufferingPolicy: .bufferingNewest(limit)
-        ) { continuation in
-            Task { await self.install(continuation) }
-        }
-    }
-
-    private func install(
-        _ continuation: AsyncStream<InteractionEvent>.Continuation
-    ) {
-        eventContinuation?.finish()
-        eventContinuation = continuation
+        eventSource.stream()
     }
 
     public func connect() async throws {
@@ -360,26 +433,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     }
 
     private func yieldEvent(_ event: InteractionEvent) {
-        guard let continuation = eventContinuation else { return }
-
-        switch continuation.yield(event) {
-        case .enqueued:
-            break
-        case .dropped:
-            _ = continuation.yield(
-                .failed(
-                    event.interactionID,
-                    .overloaded("Meta DAT device event buffer capacity exceeded")
-                )
-            )
-            continuation.finish()
-            eventContinuation = nil
-        case .terminated:
-            eventContinuation = nil
-        @unknown default:
-            continuation.finish()
-            eventContinuation = nil
-        }
+        eventSource.yield(event)
     }
 
     private func tearDownSession(expectedGeneration: UInt64? = nil) {
