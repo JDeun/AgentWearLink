@@ -53,11 +53,39 @@ final class OpenClawFrameRouterTests: XCTestCase {
         }
     }
 
+    func testAcceptsPostAuthFrameExactlyAtConfiguredLimit() throws {
+        let data = Data(#"{"type":"event","event":"tick","payload":null}"#.utf8)
+
+        let frame = try OpenClawFrameRouter().decode(
+            data,
+            maximumBytes: data.count
+        )
+
+        guard case let .event(event) = frame else {
+            return XCTFail("Expected event")
+        }
+        XCTAssertEqual(event.event, "tick")
+    }
+
     func testRejectsOversizedPostAuthFrameBeforeJSONParsing() {
         let maximum = 32
         let data = Data(repeating: 65, count: maximum + 1)
         XCTAssertThrowsError(try OpenClawFrameRouter().decode(data, maximumBytes: maximum)) { error in
             XCTAssertEqual(error as? OpenClawFrameError, .oversizedInboundFrame(actual: maximum + 1, maximum: maximum))
+        }
+    }
+
+    func testRejectsLargeMalformedPostAuthFrameAsOversizedBeforeDecode() {
+        let maximum = 1_024
+        let data = Data(repeating: UInt8(ascii: "{"), count: 64 * 1_024)
+
+        XCTAssertThrowsError(
+            try OpenClawFrameRouter().decode(data, maximumBytes: maximum)
+        ) { error in
+            XCTAssertEqual(
+                error as? OpenClawFrameError,
+                .oversizedInboundFrame(actual: data.count, maximum: maximum)
+            )
         }
     }
 
