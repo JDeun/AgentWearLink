@@ -7,6 +7,8 @@ public enum OpenClawKeychainError: Error, Sendable, Equatable {
 }
 
 private struct OpenClawKeychain {
+    private static let mutationLock = NSLock()
+
     let service: String
 
     func read(account: String) throws -> Data? {
@@ -29,6 +31,12 @@ private struct OpenClawKeychain {
     }
 
     func write(_ data: Data, account: String) throws {
+        try Self.withMutationLock {
+            try writeUnlocked(data, account: account)
+        }
+    }
+
+    private func writeUnlocked(_ data: Data, account: String) throws {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -66,29 +74,107 @@ private struct OpenClawKeychain {
     }
 
     func addIfAbsent(_ data: Data, account: String) throws {
-        let item: [String: Any] = [
+        try Self.withMutationLock {
+            let item: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        let status = SecItemAdd(item as CFDictionary, nil)
-        guard status == errSecSuccess else {
+            let status = SecItemAdd(item as CFDictionary, nil)
+            guard status == errSecSuccess else {
+                throw OpenClawKeychainError.unexpectedStatus(status)
+            }
+        }
+    }
+
+    func compareAndWrite(
+        _ data: Data,
+        account: String,
+        matchesExpected: (Data?) throws -> Bool
+    ) throws -> Bool {
+        try Self.withMutationLock {
+            let current = try read(account: account)
+            guard try matchesExpected(current) else { return false }
+
+            if current == nil {
+                let item: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: account,
+                    kSecValueData as String: data,
+                    kSecAttrAccessible as String:
+                        kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+                ]
+                let status = SecItemAdd(item as CFDictionary, nil)
+                if status == errSecSuccess { return true }
+                if status == errSecDuplicateItem { return false }
+                throw OpenClawKeychainError.unexpectedStatus(status)
+            }
+
+            let base: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account
+            ]
+            let attributes: [String: Any] = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String:
+                    kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            ]
+            let status = SecItemUpdate(
+                base as CFDictionary,
+                attributes as CFDictionary
+            )
+            if status == errSecSuccess { return true }
+            if status == errSecItemNotFound { return false }
+            throw OpenClawKeychainError.unexpectedStatus(status)
+        }
+    }
+
+    func compareAndDelete(
+        account: String,
+        matchesExpected: (Data?) throws -> Bool
+    ) throws -> Bool {
+        try Self.withMutationLock {
+            let current = try read(account: account)
+            guard current != nil, try matchesExpected(current) else {
+                return false
+            }
+
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account
+            ]
+            let status = SecItemDelete(query as CFDictionary)
+            if status == errSecSuccess { return true }
+            if status == errSecItemNotFound { return false }
             throw OpenClawKeychainError.unexpectedStatus(status)
         }
     }
 
     func delete(account: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw OpenClawKeychainError.unexpectedStatus(status)
+        try Self.withMutationLock {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account
+            ]
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw OpenClawKeychainError.unexpectedStatus(status)
+            }
         }
+    }
+
+    private static func withMutationLock<T>(
+        _ operation: () throws -> T
+    ) rethrows -> T {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        return try operation()
     }
 }
 
@@ -156,6 +242,59 @@ public actor KeychainOpenClawDeviceCredentialStore: OpenClawDeviceCredentialStor
                 role: credential.role
             )
         )
+    }
+
+    public func compareAndSave(
+        _ credential: OpenClawDeviceCredential,
+        expected: OpenClawDeviceCredential?
+    ) async throws -> Bool {
+        if let expected,
+           expected.deviceID != credential.deviceID ||
+           expected.role != credential.role {
+            return false
+        }
+
+        let data = try JSONEncoder().encode(credential)
+        return try keychain.compareAndWrite(
+            data,
+            account: account(
+                deviceID: credential.deviceID,
+                role: credential.role
+            )
+        ) { currentData in
+            let current: OpenClawDeviceCredential?
+            if let currentData {
+                current = try JSONDecoder().decode(
+                    OpenClawDeviceCredential.self,
+                    from: currentData
+                )
+            } else {
+                current = nil
+            }
+            return current == expected
+        }
+    }
+
+    public func compareAndRemove(
+        deviceID: String,
+        role: String,
+        expected: OpenClawDeviceCredential
+    ) async throws -> Bool {
+        guard expected.deviceID == deviceID,
+              expected.role == role else {
+            return false
+        }
+
+        return try keychain.compareAndDelete(
+            account: account(deviceID: deviceID, role: role)
+        ) { currentData in
+            guard let currentData else { return false }
+            let current = try JSONDecoder().decode(
+                OpenClawDeviceCredential.self,
+                from: currentData
+            )
+            return current == expected
+        }
     }
 
     public func remove(deviceID: String, role: String) async throws {
