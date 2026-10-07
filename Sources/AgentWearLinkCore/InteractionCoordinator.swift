@@ -34,6 +34,7 @@ private actor InteractionOutputQueue {
 public actor InteractionCoordinator {
     public static let defaultMaximumInFlightInteractions = 8
     public static let defaultMaximumRequestTextBytes = AgentRequest.defaultMaximumTextBytes
+    private static let maximumDeviceTerminalHistory = 64
 
     private struct TaskEntry {
         let generation: UUID
@@ -46,6 +47,8 @@ public actor InteractionCoordinator {
     private var tasks: [InteractionID: TaskEntry] = [:]
     private let outputQueue: InteractionOutputQueue
     private var activeRuntimeGeneration: UInt64?
+    private var terminalDeviceInteractions: Set<InteractionID> = []
+    private var terminalDeviceOrder: [InteractionID] = []
 
     public init(
         agent: any AgentAdapter,
@@ -84,12 +87,17 @@ public actor InteractionCoordinator {
 
         switch event {
         case .interrupted, .sessionEnded:
+            guard rememberDeviceTerminal(id) else { return }
             await cancel(id)
             await outputQueue.emit(event)
         case .failed:
+            guard rememberDeviceTerminal(id) else { return }
             await cancel(id)
             await outputQueue.emit(event)
         case .sessionStarted:
+            resetDeviceTerminal(id)
+            await outputQueue.emit(event)
+        case .turnCompleted:
             await outputQueue.emit(event)
         case let .text(_, text):
             await submit(.init(interactionID: id, text: text))
@@ -158,7 +166,7 @@ public actor InteractionCoordinator {
                     case let .completed(responseID):
                         observedTerminal = true
                         _ = await self.emitIfCurrent(
-                            .sessionEnded(responseID),
+                            .turnCompleted(responseID),
                             id: id,
                             generation: generation
                         )
@@ -221,6 +229,24 @@ public actor InteractionCoordinator {
         await outputQueue.emit(event)
 
         return tasks[id]?.generation == generation
+    }
+
+    private func rememberDeviceTerminal(_ id: InteractionID) -> Bool {
+        guard terminalDeviceInteractions.insert(id).inserted else {
+            return false
+        }
+
+        terminalDeviceOrder.append(id)
+        if terminalDeviceOrder.count > Self.maximumDeviceTerminalHistory {
+            let expired = terminalDeviceOrder.removeFirst()
+            terminalDeviceInteractions.remove(expired)
+        }
+        return true
+    }
+
+    private func resetDeviceTerminal(_ id: InteractionID) {
+        terminalDeviceInteractions.remove(id)
+        terminalDeviceOrder.removeAll { $0 == id }
     }
 
     func inFlightInteractionCount() -> Int { tasks.count }
