@@ -292,12 +292,11 @@ Implemented code-side:
 Current unclosed evidence/work priorities:
 
 1. compose Meta camera/Speech/Voice/capability/lifecycle helper slices into the concrete production session/adapter path (#230);
-2. replace policy-only OpenClaw recovery coverage with deterministic supervisor transition/no-replay tests (#233);
-3. complete the real iOS app-hosted MockDeviceKit/XCUITest gate (#122);
-4. run the read-only OpenClaw probe against the owner's Mac mini over Tailscale;
-5. validate one existing-session incremental native agent turn over the real Tailnet (#97/#118);
-6. validate persistent Gateway credential reuse in deployment (#117);
-7. run physical Ray-Ban Meta + iPhone camera/Speech/Voice/lifecycle gates (#1/#98 and children);
-8. complete physical reliability/privacy/network transition evidence (#59/#119/#120).
+2. complete the real iOS app-hosted MockDeviceKit/XCUITest gate (#122);
+3. run the read-only OpenClaw probe against the owner's Mac mini over Tailscale;
+4. validate one existing-session incremental native agent turn over the real Tailnet (#97/#118);
+5. validate persistent Gateway credential reuse in deployment (#117);
+6. run physical Ray-Ban Meta + iPhone camera/Speech/Voice/lifecycle gates (#1/#98 and children);
+7. complete physical reliability/privacy/network transition evidence (#59/#119/#120).
 
 Helper implementation must not be reported as production wiring, and code-side completion must not be reported as deployment or physical completion. See `testing.md` for the evidence vocabulary.
