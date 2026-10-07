@@ -65,10 +65,11 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
                 }
 
                 var sawDone = false
+                var lineParser = OpenClawBoundedLineParser(
+                    maximumEventBytes: configuration.maximumEventBytes
+                )
 
-                streamLoop: for try await line in bytes.lines {
-                    try Task.checkCancellation()
-
+                func processLine(_ line: String) async throws -> Bool {
                     switch try OpenClawSSEParser.parse(
                         line: line,
                         maximumEventBytes: configuration.maximumEventBytes
@@ -78,7 +79,7 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
                             .textDelta(request.interactionID, text)
                         ) {
                         case .enqueued:
-                            break
+                            return false
                         case .dropped:
                             await self.recordResponseBufferOverflow()
                             throw AWLError.overloaded(
@@ -91,12 +92,11 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
                         }
 
                     case .done:
-                        sawDone = true
                         switch continuation.yield(
                             .completed(request.interactionID)
                         ) {
                         case .enqueued:
-                            break
+                            return true
                         case .dropped:
                             await self.recordResponseBufferOverflow()
                             throw AWLError.overloaded(
@@ -107,11 +107,28 @@ public actor OpenClawChatCompletionsAdapter: AgentAdapter {
                         @unknown default:
                             throw CancellationError()
                         }
-                        break streamLoop
 
                     case .ignored:
-                        break
+                        return false
                     }
+                }
+
+                streamLoop: for try await byte in bytes {
+                    try Task.checkCancellation()
+
+                    guard let line = try lineParser.append(byte) else {
+                        continue
+                    }
+                    if try await processLine(line) {
+                        sawDone = true
+                        break streamLoop
+                    }
+                }
+
+                if !sawDone,
+                   let finalLine = lineParser.finish(),
+                   try await processLine(finalLine) {
+                    sawDone = true
                 }
 
                 try Task.checkCancellation()
