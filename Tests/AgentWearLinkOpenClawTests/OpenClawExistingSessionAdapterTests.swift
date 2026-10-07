@@ -4,7 +4,7 @@ import XCTest
 @testable import AgentWearLinkOpenClaw
 
 private actor ExistingSessionAdapterSocket: OpenClawWebSocket {
-    enum TerminalMode: Sendable {
+    enum TerminalMode: Sendable, Equatable {
         case success
         case failure
     }
