@@ -209,16 +209,24 @@ public struct OpenClawConnectAssembler: Sendable {
         let scopes: [String]
 
         if let stored = assembled.storedCredential,
-           token == stored.token {
-            // Preserve the approved grant for an unchanged stored token.
+           token == stored.token,
+           stored.role == assembled.params.role,
+           hello.auth.role == assembled.params.role {
+            // Preserve the approved grant only when the Gateway confirms the
+            // same requested role. A role downgrade must take the returned
+            // scopes so a cached grant can never broaden authorization.
             scopes = stored.scopes
         } else {
             scopes = hello.auth.scopes
         }
 
+        // Credential lookup is keyed by the role AWL requests on the connect
+        // frame, not by the role the Gateway ultimately grants. This keeps
+        // pre-auth load and post-auth persistence symmetric even when the
+        // Gateway downgrades the authenticated role.
         let credential = OpenClawDeviceCredential(
             deviceID: deviceID,
-            role: hello.auth.role,
+            role: assembled.params.role,
             scopes: scopes,
             token: token
         )
