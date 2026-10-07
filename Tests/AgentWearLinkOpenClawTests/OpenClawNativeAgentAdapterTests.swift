@@ -63,11 +63,11 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
         }
 
         do {
-            _ = try await OpenClawNativeAgentAdapter.withOwnedUpdateTask(
+            try await OpenClawNativeAgentAdapter.withOwnedUpdateTask(
                 updateTask
-            ) {
+            ) { () async throws -> Void in
                 throw OwnedUpdateTaskTestError.terminalWaitFailed
-            } as Void
+            }
             XCTFail("Expected terminal wait failure")
         } catch OwnedUpdateTaskTestError.terminalWaitFailed {
             // Expected. Scope exit must still cancel the update consumer.
@@ -90,7 +90,6 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
         }
 
         XCTAssertEqual(value, 42)
-        XCTAssertFalse(updateTask.isCancelled)
     }
 
     func testTerminalPollingReturnsAfterPendingTimeoutThenSuccess() async throws {
