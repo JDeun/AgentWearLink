@@ -3,9 +3,18 @@ import XCTest
 
 private actor RecordedEvents {
     var values: [InteractionEvent] = []
+    private let eventCount = TestCountSignal()
 
-    func append(_ event: InteractionEvent) {
+    func append(_ event: InteractionEvent) async {
         values.append(event)
+        await eventCount.increment()
+    }
+
+    func waitUntilCount(_ count: Int) async throws {
+        try await eventCount.wait(
+            until: count,
+            label: "interaction recorder event count \(count)"
+        )
     }
 }
 
@@ -45,13 +54,12 @@ final class InteractionCoordinatorTests: XCTestCase {
         await coordinator.activate(runtimeGeneration: generation)
         await coordinator.deactivate(runtimeGeneration: generation)
         await coordinator.handle(.text(id, "stale"), runtimeGeneration: generation)
-        try? await Task.sleep(for: .milliseconds(20))
         let events = await recorded.values
         XCTAssertTrue(events.isEmpty)
     }
 
     func testDuplicateRequestForInteractionIsSuppressed() async throws {
-        let agent = StubAgent()
+        let agent = CapacityHoldingAgent()
         let recorded = RecordedEvents()
         let coordinator = InteractionCoordinator(agent: agent) { event in
             await recorded.append(event)
@@ -59,11 +67,12 @@ final class InteractionCoordinatorTests: XCTestCase {
 
         let id = InteractionID()
         await coordinator.handle(.text(id, "hello"))
+        try await agent.waitUntilRequestCount(1)
         await coordinator.handle(.text(id, "hello"))
 
-        try await Task.sleep(for: .milliseconds(20))
-        let requestCount = await agent.requests()
-        XCTAssertEqual(requestCount, 1)
+        let requests = await agent.requests()
+        XCTAssertEqual(requests, [id])
+        await coordinator.cancelAll()
     }
 
     func testInactiveTerminalEventDoesNotAbortAgent() async {
@@ -102,9 +111,13 @@ final class InteractionCoordinatorTests: XCTestCase {
 
         let id = InteractionID()
         await coordinator.handle(.text(id, "first"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(2)
+        try await waitUntilTestCondition("first interaction task retired") {
+            await coordinator.inFlightInteractionCount() == 0
+        }
+
         await coordinator.handle(.text(id, "second"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(4)
 
         let requestCount = await agent.requests()
         XCTAssertEqual(requestCount, 2)
@@ -119,7 +132,7 @@ final class InteractionCoordinatorTests: XCTestCase {
 
         let id = InteractionID()
         await coordinator.handle(.text(id, "hello"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(2)
 
         let events = await recorded.values
         XCTAssertTrue(events.contains(.text(id, "response")))
@@ -129,6 +142,7 @@ final class InteractionCoordinatorTests: XCTestCase {
 
 private actor DelayedFirstAgent: AgentAdapter {
     private(set) var requestCount = 0
+    private let requestSignal = TestCountSignal()
     private var firstGate: CheckedContinuation<Void, Never>?
     private var continuations: [AsyncThrowingStream<AgentResponse, Error>.Continuation] = []
 
@@ -140,6 +154,7 @@ private actor DelayedFirstAgent: AgentAdapter {
     ) async -> AsyncThrowingStream<AgentResponse, Error> {
         requestCount += 1
         let ordinal = requestCount
+        await requestSignal.increment()
 
         if ordinal == 1 {
             await withCheckedContinuation { continuation in
@@ -160,6 +175,13 @@ private actor DelayedFirstAgent: AgentAdapter {
     func cancel(interactionID: InteractionID) async {}
 
     func requests() -> Int { requestCount }
+
+    func waitUntilRequestCount(_ count: Int) async throws {
+        try await requestSignal.wait(
+            until: count,
+            label: "delayed agent request count \(count)"
+        )
+    }
 
     func releaseFirst() {
         firstGate?.resume()
@@ -251,7 +273,7 @@ private actor ExplicitFailureResponseAgent: AgentAdapter {
 }
 
 private actor PendingUntilCancelledAgent: AgentAdapter {
-    private var responseStarted = false
+    private let responseStartSignal = TestCountSignal()
     private var continuation: AsyncThrowingStream<AgentResponse, Error>.Continuation?
     private(set) var cancelled: [InteractionID] = []
 
@@ -261,7 +283,7 @@ private actor PendingUntilCancelledAgent: AgentAdapter {
     func responses(
         for request: AgentRequest
     ) async -> AsyncThrowingStream<AgentResponse, Error> {
-        responseStarted = true
+        await responseStartSignal.increment()
         var captured: AsyncThrowingStream<AgentResponse, Error>.Continuation?
         let stream = AsyncThrowingStream<AgentResponse, Error> { continuation in
             captured = continuation
@@ -276,10 +298,11 @@ private actor PendingUntilCancelledAgent: AgentAdapter {
         continuation = nil
     }
 
-    func waitUntilResponseStarts() async {
-        while !responseStarted {
-            await Task.yield()
-        }
+    func waitUntilResponseStarts() async throws {
+        try await responseStartSignal.wait(
+            until: 1,
+            label: "pending agent response start"
+        )
     }
 
     func cancellations() -> [InteractionID] { cancelled }
@@ -295,20 +318,17 @@ extension InteractionCoordinatorTests {
         let id = InteractionID()
 
         await coordinator.handle(.text(id, "first"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await agent.waitUntilRequestCount(1)
 
         await coordinator.handle(.interrupted(id))
         await coordinator.handle(.text(id, "second"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await agent.waitUntilRequestCount(2)
 
         let afterReplacement = await agent.requests()
         XCTAssertEqual(afterReplacement, 2)
 
         await agent.releaseFirst()
-        try await Task.sleep(for: .milliseconds(20))
-
         await coordinator.handle(.text(id, "third"))
-        try await Task.sleep(for: .milliseconds(20))
 
         let finalCount = await agent.requests()
         XCTAssertEqual(finalCount, 2)
@@ -326,7 +346,7 @@ extension InteractionCoordinatorTests {
         let id = InteractionID()
 
         await coordinator.handle(.text(id, "hello"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(1)
 
         let events = await recorded.values
         XCTAssertTrue(events.contains(.sessionEnded(id)))
@@ -347,7 +367,7 @@ extension InteractionCoordinatorTests {
         let id = InteractionID()
 
         await coordinator.handle(.text(id, "hello"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(1)
 
         let events = await recorded.values
         XCTAssertTrue(events.contains(.failed(id, .timeout)))
@@ -363,7 +383,7 @@ extension InteractionCoordinatorTests {
         let id = InteractionID()
 
         await coordinator.handle(.text(id, "hello"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(1)
 
         let events = await recorded.values
         XCTAssertEqual(
@@ -381,7 +401,7 @@ extension InteractionCoordinatorTests {
         let id = InteractionID()
 
         await coordinator.handle(.text(id, "hello"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(2)
 
         let events = await recorded.values
         XCTAssertEqual(
@@ -402,7 +422,7 @@ extension InteractionCoordinatorTests {
         let id = InteractionID()
 
         await coordinator.handle(.text(id, "hello"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(1)
 
         let events = await recorded.values
         XCTAssertEqual(events, [.failed(id, .agent("explicit failure"))])
@@ -417,9 +437,8 @@ extension InteractionCoordinatorTests {
         let id = InteractionID()
 
         await coordinator.handle(.text(id, "hello"))
-        await agent.waitUntilResponseStarts()
+        try await agent.waitUntilResponseStarts()
         await coordinator.handle(.interrupted(id))
-        try await Task.sleep(for: .milliseconds(20))
 
         let events = await recorded.values
         XCTAssertEqual(events, [.interrupted(id)])
@@ -434,9 +453,7 @@ private actor CapacityHoldingAgent: AgentAdapter {
     private var continuations: [
         InteractionID: AsyncThrowingStream<AgentResponse, Error>.Continuation
     ] = [:]
-    private var requestWaiters: [
-        (count: Int, continuation: CheckedContinuation<Void, Never>)
-    ] = []
+    private let requestSignal = TestCountSignal()
 
     func connect() async throws {}
     func disconnect() async {}
@@ -445,20 +462,7 @@ private actor CapacityHoldingAgent: AgentAdapter {
         for request: AgentRequest
     ) async -> AsyncThrowingStream<AgentResponse, Error> {
         requestedIDs.append(request.interactionID)
-
-        var readyWaiters: [CheckedContinuation<Void, Never>] = []
-        var pendingWaiters: [
-            (count: Int, continuation: CheckedContinuation<Void, Never>)
-        ] = []
-        for waiter in requestWaiters {
-            if requestedIDs.count >= waiter.count {
-                readyWaiters.append(waiter.continuation)
-            } else {
-                pendingWaiters.append(waiter)
-            }
-        }
-        requestWaiters = pendingWaiters
-        for waiter in readyWaiters { waiter.resume() }
+        await requestSignal.increment()
 
         var captured: AsyncThrowingStream<AgentResponse, Error>.Continuation?
         let stream = AsyncThrowingStream<AgentResponse, Error> { continuation in
@@ -472,11 +476,11 @@ private actor CapacityHoldingAgent: AgentAdapter {
         continuations.removeValue(forKey: interactionID)?.finish()
     }
 
-    func waitUntilRequestCount(_ count: Int) async {
-        if requestedIDs.count >= count { return }
-        await withCheckedContinuation { continuation in
-            requestWaiters.append((count, continuation))
-        }
+    func waitUntilRequestCount(_ count: Int) async throws {
+        try await requestSignal.wait(
+            until: count,
+            label: "capacity agent request count \(count)"
+        )
     }
 
     func requests() -> [InteractionID] { requestedIDs }
@@ -489,7 +493,7 @@ private actor CapacityHoldingAgent: AgentAdapter {
 }
 
 extension InteractionCoordinatorTests {
-    func testCapacityRejectsNewestAndCancellationReleasesSlot() async {
+    func testCapacityRejectsNewestAndCancellationReleasesSlot() async throws {
         let agent = CapacityHoldingAgent()
         let recorded = RecordedEvents()
         let coordinator = InteractionCoordinator(
@@ -506,7 +510,7 @@ extension InteractionCoordinatorTests {
 
         await coordinator.handle(.text(first, "first"))
         await coordinator.handle(.text(second, "second"))
-        await agent.waitUntilRequestCount(2)
+        try await agent.waitUntilRequestCount(2)
 
         let fullCount = await coordinator.inFlightInteractionCount()
         XCTAssertEqual(fullCount, 2)
@@ -527,7 +531,7 @@ extension InteractionCoordinatorTests {
         XCTAssertEqual(afterCancelCount, 1)
 
         await coordinator.handle(.text(admittedAfterCancel, "replacement"))
-        await agent.waitUntilRequestCount(3)
+        try await agent.waitUntilRequestCount(3)
 
         let finalCount = await coordinator.inFlightInteractionCount()
         XCTAssertEqual(finalCount, 2)
@@ -541,7 +545,7 @@ extension InteractionCoordinatorTests {
         XCTAssertEqual(afterCancelAll, 0)
     }
 
-    func testBurstNeverReservesMoreThanConfiguredCapacity() async {
+    func testBurstNeverReservesMoreThanConfiguredCapacity() async throws {
         let capacity = 4
         let agent = CapacityHoldingAgent()
         let recorded = RecordedEvents()
@@ -560,7 +564,7 @@ extension InteractionCoordinatorTests {
         let inFlight = await coordinator.inFlightInteractionCount()
         XCTAssertEqual(inFlight, capacity)
 
-        await agent.waitUntilRequestCount(capacity)
+        try await agent.waitUntilRequestCount(capacity)
         let requests = await agent.requests()
         XCTAssertEqual(requests.count, capacity)
 
@@ -608,7 +612,7 @@ extension InteractionCoordinatorTests {
         let id = InteractionID()
 
         await coordinator.handle(.text(id, "hello"))
-        try await Task.sleep(for: .milliseconds(20))
+        try await recorded.waitUntilCount(1)
 
         let events = await recorded.values
         XCTAssertFalse(events.contains { event in
