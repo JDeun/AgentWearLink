@@ -387,6 +387,58 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
         let callCount = await script.callCount()
         XCTAssertEqual(callCount, 1)
     }
+    func testTerminalReplyReconciliationEmitsOnlyMissingSuffix() throws {
+        let suffix = try OpenClawNativeAgentAdapter.terminalReplySuffix(
+            streamedText: "hello",
+            terminalReply: .object(["text": .string("hello world")])
+        )
+
+        XCTAssertEqual(suffix, " world")
+    }
+
+    func testTerminalReplyReconciliationUsesFullReplyWhenNoDeltaArrived() throws {
+        let suffix = try OpenClawNativeAgentAdapter.terminalReplySuffix(
+            streamedText: "",
+            terminalReply: .object(["text": .string("complete answer")])
+        )
+
+        XCTAssertEqual(suffix, "complete answer")
+    }
+
+    func testTerminalReplyReplayDoesNotDuplicateAlreadyStreamedText() throws {
+        let suffix = try OpenClawNativeAgentAdapter.terminalReplySuffix(
+            streamedText: "already complete",
+            terminalReply: .object(["text": .string("already complete")])
+        )
+
+        XCTAssertNil(suffix)
+    }
+
+    func testTerminalReplyMismatchFailsClosedWithoutPrivateTextInError() throws {
+        XCTAssertThrowsError(
+            try OpenClawNativeAgentAdapter.terminalReplySuffix(
+                streamedText: "old projection",
+                terminalReply: .object(["text": .string("corrected projection")])
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? OpenClawNativeAdapterError,
+                .terminalReplyMismatch
+            )
+            XCTAssertFalse(String(describing: error).contains("old projection"))
+            XCTAssertFalse(String(describing: error).contains("corrected projection"))
+        }
+    }
+
+    func testTerminalReplyWithoutTextNeedsNoReconciliation() throws {
+        let suffix = try OpenClawNativeAgentAdapter.terminalReplySuffix(
+            streamedText: "partial",
+            terminalReply: .object(["kind": .string("metadata-only")])
+        )
+
+        XCTAssertNil(suffix)
+    }
+
     func testAssistantProjectionEmitsOnlyExplicitAppendDelta() {
         let payload = JSONValue.object([
             "text": .string("hello"),
