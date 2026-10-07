@@ -153,6 +153,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var stopping = false
     private let connectTimeout: Duration
     private nonisolated let eventBufferLimit: Int
+    private nonisolated let eventSource: MetaDATDeviceEventSource
 
     public init(
         wearables: any WearablesInterface = Wearables.shared,
