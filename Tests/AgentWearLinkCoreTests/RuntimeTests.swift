@@ -296,7 +296,7 @@ private actor RuntimeHoldingAgent: AgentAdapter {
 
     func disconnect() async {
         disconnects += 1
-        let active = continuations.values
+        let active = Array(continuations.values)
         continuations.removeAll()
         for continuation in active {
             continuation.finish()
