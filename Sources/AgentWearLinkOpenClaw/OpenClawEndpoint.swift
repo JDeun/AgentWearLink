@@ -59,7 +59,7 @@ public struct OpenClawEndpoint: Sendable, Equatable {
         return try .init(gatewayURL: url, exposure: .tailnetServe)
     }
 
-    private static func isLoopbackHost(_ host: String) -> Bool {
+    static func isLoopbackHost(_ host: String) -> Bool {
         let normalized = host.lowercased()
         return normalized == "localhost"
             || normalized == "::1"
