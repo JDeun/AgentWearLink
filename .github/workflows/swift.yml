@@ -39,6 +39,7 @@ jobs:
               - 'Adapters/MetaDAT/**'
               - 'Sources/AgentWearLinkCore/**'
               - 'scripts/install-xcodegen.sh'
+              - 'scripts/verify-meta-dat-revision.sh'
               - 'Package.swift'
               - 'Package.resolved'
               - '.github/workflows/swift.yml'
@@ -108,6 +109,8 @@ jobs:
       - name: Resolve pinned Meta DAT SDK
         working-directory: Adapters/MetaDAT
         run: swift package resolve
+      - name: Verify resolved Meta DAT revision
+        run: bash scripts/verify-meta-dat-revision.sh
       - name: List Meta DAT integration schemes
         working-directory: Adapters/MetaDAT
         run: xcodebuild -list
