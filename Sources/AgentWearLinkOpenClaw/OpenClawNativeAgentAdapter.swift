@@ -228,18 +228,58 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     }
 
     public func cancel(interactionID: InteractionID) async {
+        _ = await cancellationOutcome(interactionID: interactionID)
+    }
+
+    public func cancellationOutcome(
+        interactionID: InteractionID
+    ) async -> AgentCancellationOutcome {
         guard let context = runs.removeValue(forKey: interactionID) else {
-            return
+            return .handled
         }
 
-        if let sessionKey = context.sessionKey {
-            try? await runClient.cancel(
+        let outcome = await Self.remoteCancellationOutcome(
+            interactionID: interactionID,
+            sessionKey: context.sessionKey
+        ) { sessionKey in
+            try await self.runClient.cancel(
                 runID: context.runID,
                 sessionKey: sessionKey,
                 agentID: context.agentID
             )
         }
+
+        // Local subscriber/run bookkeeping must not be retained even when the
+        // remote abort cannot be addressed or confirmed.
         await runClient.finishUpdates(runID: context.runID)
+        return outcome
+    }
+
+    static func remoteCancellationOutcome(
+        interactionID: InteractionID,
+        sessionKey: String?,
+        abort: (String) async throws -> Void
+    ) async -> AgentCancellationOutcome {
+        guard let sessionKey, !sessionKey.isEmpty else {
+            return .uncertain(
+                .agent(
+                    "OpenClaw remote cancellation uncertain for interaction " +
+                    "\(interactionID.rawValue.uuidString): accepted run has no session key"
+                )
+            )
+        }
+
+        do {
+            try await abort(sessionKey)
+            return .handled
+        } catch {
+            return .uncertain(
+                .agent(
+                    "OpenClaw remote cancellation uncertain for interaction " +
+                    "\(interactionID.rawValue.uuidString): chat.abort was not confirmed"
+                )
+            )
+        }
     }
 
     private func remember(

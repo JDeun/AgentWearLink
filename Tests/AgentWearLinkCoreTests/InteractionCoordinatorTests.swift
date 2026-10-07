@@ -849,3 +849,64 @@ extension InteractionCoordinatorTests {
         await coordinator.cancelAll()
     }
 }
+
+
+private actor UncertainCancellationAgent: AgentAdapter {
+    private var continuations: [
+        InteractionID: AsyncThrowingStream<AgentResponse, Error>.Continuation
+    ] = [:]
+
+    func connect() async throws {}
+
+    func disconnect() async {
+        let active = continuations.values
+        continuations.removeAll(keepingCapacity: false)
+        for continuation in active {
+            continuation.finish()
+        }
+    }
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        let pair = AsyncThrowingStream<AgentResponse, Error>.makeStream(
+            bufferingPolicy: .bufferingOldest(1)
+        )
+        continuations[request.interactionID] = pair.continuation
+        return pair.stream
+    }
+
+    func cancel(interactionID: InteractionID) async {
+        continuations.removeValue(forKey: interactionID)?.finish()
+    }
+
+    func cancellationOutcome(
+        interactionID: InteractionID
+    ) async -> AgentCancellationOutcome {
+        continuations.removeValue(forKey: interactionID)?.finish()
+        return .uncertain(.agent("remote cancellation uncertain"))
+    }
+}
+
+extension InteractionCoordinatorTests {
+    func testUncertainAgentCancellationSurfacesNonTerminalGlobalDiagnostic() async throws {
+        let agent = UncertainCancellationAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "active"))
+        await coordinator.cancel(id)
+        try await recorded.waitUntilCount(1)
+
+        let events = await recorded.values
+        XCTAssertEqual(
+            events,
+            [.failed(nil, .agent("remote cancellation uncertain"))]
+        )
+        let inFlight = await coordinator.inFlightInteractionCount()
+        XCTAssertEqual(inFlight, 0)
+    }
+}
