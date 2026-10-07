@@ -44,7 +44,7 @@ This catches SDK/API drift. It does not prove runtime behavior.
 
 ## 3. Simulator/vendor behavioral integration
 
-The generated Meta iOS test host uses **XcodeGen 2.46.0**. Install the repository-pinned, checksum-verified release before generating the project:
+The generated Meta iOS test host uses **XcodeGen 2.46.0**. Install the repository-pinned, checksum-verified Homebrew bottle before generating the project:
 
 ```bash
 bash scripts/install-xcodegen.sh
@@ -52,7 +52,7 @@ export PATH="$PWD/.build/tools:$PATH"
 xcodegen --version
 ```
 
-CI uses the same script and checksum. Upgrade XcodeGen only in a dedicated dependency/CI change that updates the pinned version, release SHA-256, generated-project validation, and this documentation together. The generated `.xcodeproj` remains ephemeral.
+CI uses the same script and rejects Homebrew metadata drift unless the pinned version, bottle rebuild, formula checksum, and supported bottle SHA-256 values all match. Upgrade XcodeGen only in a dedicated dependency/CI change that updates those pins, generated-project validation, and this documentation together. The generated `.xcodeproj` remains ephemeral.
 
 Meta's MockDeviceKit runs in an iOS host process and is driven through `MWDATMockDeviceTestClient`. The behavioral contract covers server rendezvous, mock pairing/state transitions, and normal DAT wiring.
 
