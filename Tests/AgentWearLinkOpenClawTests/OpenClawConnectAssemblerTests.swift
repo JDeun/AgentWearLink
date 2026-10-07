@@ -6,6 +6,37 @@ import XCTest
 final class OpenClawConnectAssemblerTests: XCTestCase {
     private let challenge = OpenClawConnectChallenge(nonce: "nonce", ts: 123)
 
+    private func makeHello(
+        token: String,
+        scopes: [String] = ["operator.read"],
+        connectionID: String = "cas-test"
+    ) throws -> OpenClawHelloOK {
+        let object: [String: Any] = [
+            "type": "hello-ok",
+            "protocol": 4,
+            "server": [
+                "version": "2026.10",
+                "connId": connectionID,
+            ],
+            "features": [
+                "methods": [],
+                "events": [],
+            ],
+            "auth": [
+                "role": "operator",
+                "scopes": scopes,
+                "deviceToken": token,
+            ],
+            "policy": [
+                "maxPayload": 1024,
+                "maxBufferedBytes": 2048,
+                "tickIntervalMs": 15000,
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object)
+        return try JSONDecoder().decode(OpenClawHelloOK.self, from: data)
+    }
+
     private func assertProof(
         _ result: OpenClawAssembledConnect,
         signs token: String?,
@@ -386,5 +417,170 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         )
         XCTAssertEqual(remaining?.token, "same-token")
     }
+
+
+    func testStaleHelloPersistenceCannotOverwriteNewerCredential() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        let original = OpenClawDeviceCredential(
+            deviceID: deviceID,
+            role: "operator",
+            scopes: ["operator.read"],
+            token: "original"
+        )
+        try await store.save(original)
+
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: store
+        )
+        let staleSnapshot = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(),
+            challenge: challenge
+        )
+
+        let newer = OpenClawDeviceCredential(
+            deviceID: deviceID,
+            role: "operator",
+            scopes: ["operator.read", "operator.write"],
+            token: "newer"
+        )
+        try await store.save(newer)
+
+        try await assembler.persistHello(
+            makeHello(token: "stale-rotation"),
+            assembled: staleSnapshot
+        )
+
+        let persisted = try await store.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        XCTAssertEqual(persisted, newer)
+    }
+
+    func testFirstCredentialPersistenceIsInsertOnlyAcrossStaleSnapshots() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: store
+        )
+
+        let firstSnapshot = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(bootstrapToken: "bootstrap-a"),
+            challenge: challenge
+        )
+        let secondSnapshot = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(bootstrapToken: "bootstrap-b"),
+            challenge: .init(nonce: "second", ts: 456)
+        )
+
+        try await assembler.persistHello(
+            makeHello(token: "first-winner", connectionID: "first"),
+            assembled: firstSnapshot
+        )
+        try await assembler.persistHello(
+            makeHello(token: "late-loser", connectionID: "second"),
+            assembled: secondSnapshot
+        )
+
+        let persisted = try XCTUnwrap(
+            try await store.load(deviceID: deviceID, role: "operator")
+        )
+        XCTAssertEqual(persisted.token, "first-winner")
+    }
+
+    func testStaleCredentialInvalidationCannotDeleteRotatedGrant() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        let original = OpenClawDeviceCredential(
+            deviceID: deviceID,
+            role: "operator",
+            scopes: ["operator.read"],
+            token: "original"
+        )
+        try await store.save(original)
+
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: store
+        )
+        let staleSnapshot = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(),
+            challenge: challenge
+        )
+        XCTAssertTrue(staleSnapshot.usedStoredCredential)
+
+        let newer = OpenClawDeviceCredential(
+            deviceID: deviceID,
+            role: "operator",
+            scopes: ["operator.read"],
+            token: "newer"
+        )
+        try await store.save(newer)
+
+        try await assembler.invalidateStoredCredentialIfUsed(staleSnapshot)
+
+        let persisted = try await store.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        XCTAssertEqual(persisted, newer)
+    }
+
+    func testCredentialCASRejectsMismatchedExpectedValue() async throws {
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        let current = OpenClawDeviceCredential(
+            deviceID: "device",
+            role: "operator",
+            scopes: ["operator.read"],
+            token: "current"
+        )
+        try await store.save(current)
+
+        let staleExpected = OpenClawDeviceCredential(
+            deviceID: "device",
+            role: "operator",
+            scopes: ["operator.read"],
+            token: "stale"
+        )
+        let replacement = OpenClawDeviceCredential(
+            deviceID: "device",
+            role: "operator",
+            scopes: ["operator.read", "operator.write"],
+            token: "replacement"
+        )
+
+        let saved = try await store.compareAndSave(
+            replacement,
+            expected: staleExpected
+        )
+
+        XCTAssertFalse(saved)
+        let persisted = try await store.load(
+            deviceID: "device",
+            role: "operator"
+        )
+        XCTAssertEqual(persisted, current)
+    }
+
 
 }
