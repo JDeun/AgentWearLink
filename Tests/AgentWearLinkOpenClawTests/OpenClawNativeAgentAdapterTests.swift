@@ -1,7 +1,22 @@
+import Foundation
 import XCTest
 @testable import AgentWearLinkOpenClaw
 
 final class OpenClawNativeAgentAdapterTests: XCTestCase {
+    func testSubmissionIdentityIsStablePerLogicalSubmissionAndFreshForNextTurn() {
+        let firstUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let secondUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+
+        let first = OpenClawSubmissionIdentity(rawValue: firstUUID)
+        let retryOfFirst = first
+        let second = OpenClawSubmissionIdentity(rawValue: secondUUID)
+
+        XCTAssertEqual(first.idempotencyKey, retryOfFirst.idempotencyKey)
+        XCTAssertNotEqual(first.idempotencyKey, second.idempotencyKey)
+        XCTAssertEqual(first.idempotencyKey, firstUUID.uuidString)
+        XCTAssertEqual(second.idempotencyKey, secondUUID.uuidString)
+    }
+
     func testWaitResultDecodesPendingMetadata() throws {
         let data = Data(#"""
         {
