@@ -426,7 +426,8 @@ final class RuntimeTests: XCTestCase {
 
         let second = Task { try await runtime.start() }
         await Task.yield()
-        XCTAssertEqual(await agent.connectCount(), 1)
+        let connectCount = await agent.connectCount()
+        XCTAssertEqual(connectCount, 1)
 
         await agent.release()
 
@@ -488,6 +489,9 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(connectCount, 1)
 
         let stopping = Task { await runtime.stop() }
+        // Give stop() the actor turn while the startup owner is suspended in
+        // connect(), so this regression deterministically exercises supersession.
+        try? await Task.sleep(for: .milliseconds(10))
         await agent.release()
 
         do {
