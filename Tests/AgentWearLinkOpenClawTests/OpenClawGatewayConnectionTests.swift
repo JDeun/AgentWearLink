@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 @testable import AgentWearLinkOpenClaw
@@ -65,6 +66,72 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
         XCTAssertEqual(sentCount, 1)
     }
 
+
+    func testBootstrapHandshakeSendsAndSignsBootstrapToken() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: InMemoryOpenClawDeviceCredentialStore()
+        )
+        let challenge = #"{"type":"event","event":"connect.challenge","payload":{"nonce":"bootstrap-nonce","ts":1737264000000}}"#
+        let socket = AdaptiveHandshakeSocket(challenge: challenge)
+        let connection = OpenClawGatewayConnection(
+            socket: socket,
+            assembler: assembler
+        )
+
+        _ = try await connection.connect(
+            appVersion: "0.1.0",
+            scopes: ["operator.read"],
+            credentials: .init(bootstrapToken: "bootstrap-secret")
+        )
+
+        let frames = await socket.sentFramesSnapshot()
+        let frame = try XCTUnwrap(frames.first)
+        let data = try XCTUnwrap(frame.data(using: .utf8))
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let params = try XCTUnwrap(json["params"] as? [String: Any])
+        let auth = try XCTUnwrap(params["auth"] as? [String: Any])
+        XCTAssertEqual(auth["bootstrapToken"] as? String, "bootstrap-secret")
+        XCTAssertNil(auth["token"])
+        XCTAssertNil(auth["deviceToken"])
+
+        let device = try XCTUnwrap(params["device"] as? [String: Any])
+        let signatureText = try XCTUnwrap(device["signature"] as? String)
+        let signedAt = try XCTUnwrap(device["signedAt"] as? Int64)
+        let nonce = try XCTUnwrap(device["nonce"] as? String)
+
+        var encodedSignature = signatureText
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        encodedSignature += String(
+            repeating: "=",
+            count: (4 - encodedSignature.count % 4) % 4
+        )
+        let signature = try XCTUnwrap(Data(base64Encoded: encodedSignature))
+
+        let client = try XCTUnwrap(params["client"] as? [String: Any])
+        let payload = OpenClawDeviceProofBuilder().buildPayloadV3(
+            deviceID: try identity.deviceID,
+            clientID: try XCTUnwrap(client["id"] as? String),
+            clientMode: try XCTUnwrap(client["mode"] as? String),
+            role: try XCTUnwrap(params["role"] as? String),
+            scopes: try XCTUnwrap(params["scopes"] as? [String]),
+            token: "bootstrap-secret",
+            nonce: nonce,
+            signedAt: signedAt,
+            platform: try XCTUnwrap(client["platform"] as? String),
+            deviceFamily: try XCTUnwrap(client["deviceFamily"] as? String)
+        )
+        let publicKey = try Curve25519.Signing.PublicKey(
+            rawRepresentation: identity.publicKeyRaw
+        )
+        XCTAssertTrue(publicKey.isValidSignature(signature, for: payload))
+    }
 
     func testMissingChallengeClosesSocket() async {
         let socket = MockOpenClawWebSocket(
@@ -273,6 +340,7 @@ private actor AdaptiveHandshakeSocket: OpenClawWebSocket {
 
     func close() async {}
     func sentCount() -> Int { sentFrames.count }
+    func sentFramesSnapshot() -> [String] { sentFrames }
 }
 
 private actor RejectingHandshakeSocket: OpenClawWebSocket {
