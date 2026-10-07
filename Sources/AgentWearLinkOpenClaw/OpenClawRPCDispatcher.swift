@@ -46,8 +46,8 @@ public actor OpenClawRPCDispatcher {
         registry: OpenClawRPCRegistry = .init(),
         requestTimeout: Duration = .seconds(30),
         inboundMaximumBytes: Int = OpenClawFrameRouter.defaultInboundMaximumBytes,
-        agentEventBufferLimit: Int = Self.defaultAgentEventBufferLimit,
-        pendingAgentEventLimit: Int = Self.defaultPendingAgentEventLimit,
+        agentEventBufferLimit: Int = OpenClawRPCDispatcher.defaultAgentEventBufferLimit,
+        pendingAgentEventLimit: Int = OpenClawRPCDispatcher.defaultPendingAgentEventLimit,
         nowMilliseconds: @escaping @Sendable () -> Int64 = {
             Int64(ProcessInfo.processInfo.systemUptime * 1_000)
         }
@@ -335,8 +335,179 @@ public actor OpenClawRPCDispatcher {
                 continuation.finish(throwing: error)
             }
             eventContinuations.removeAll(keepingCapacity: false)
+            finishAllAgentEventSubscribers(throwing: error)
+            resetAgentRoutingBuffers()
         }
         receiveTask = nil
+    }
+
+    private static func decodeAgentEvent(
+        _ envelope: OpenClawEventEnvelope
+    ) -> OpenClawAgentEvent? {
+        guard envelope.event == "agent",
+              case let .object(object)? = envelope.payload,
+              case let .string(runID)? = object["runId"],
+              case let .string(stream)? = object["stream"] else {
+            return nil
+        }
+
+        let seq: Int?
+        switch object["seq"] {
+        case let .some(.integer(value)):
+            seq = Int(exactly: value)
+        case let .some(.unsignedInteger(value)):
+            seq = Int(exactly: value)
+        default:
+            seq = nil
+        }
+
+        let data: JSONValue?
+        if case .some(.null) = object["data"] {
+            data = nil
+        } else {
+            data = object["data"]
+        }
+
+        return OpenClawAgentEvent(
+            runId: runID,
+            stream: stream,
+            data: data,
+            seq: seq
+        )
+    }
+
+    private func routeAgentEvent(_ event: OpenClawAgentEvent) {
+        guard !finishedAgentRunIDs.contains(event.runId),
+              !pendingAgentOverflowRunIDs.contains(event.runId) else {
+            return
+        }
+
+        guard let subscribers = agentEventContinuations[event.runId],
+              subscribers.values.contains(where: { $0.generation == generation }) else {
+            bufferPendingAgentEvent(event)
+            return
+        }
+
+        var terminated: [UUID] = []
+        var overflowed = false
+
+        for (id, subscriber) in subscribers {
+            guard subscriber.generation == generation else {
+                terminated.append(id)
+                continue
+            }
+
+            switch subscriber.continuation.yield(event) {
+            case .enqueued:
+                break
+            case .dropped:
+                overflowed = true
+            case .terminated:
+                terminated.append(id)
+            @unknown default:
+                terminated.append(id)
+            }
+        }
+
+        if overflowed {
+            failAgentRunSubscribers(
+                runID: event.runId,
+                error: OpenClawAgentEventRoutingError.bufferOverflow(event.runId)
+            )
+            recordPendingAgentOverflow(event.runId)
+            return
+        }
+
+        for id in terminated {
+            agentEventContinuations[event.runId]?[id] = nil
+        }
+        if agentEventContinuations[event.runId]?.isEmpty == true {
+            agentEventContinuations[event.runId] = nil
+        }
+    }
+
+    private func bufferPendingAgentEvent(_ event: OpenClawAgentEvent) {
+        if pendingAgentEvents.count >= pendingAgentEventLimit {
+            let dropped = pendingAgentEvents.removeFirst()
+            recordPendingAgentOverflow(dropped.runId)
+        }
+
+        guard !pendingAgentOverflowRunIDs.contains(event.runId),
+              !finishedAgentRunIDs.contains(event.runId) else {
+            return
+        }
+        pendingAgentEvents.append(event)
+    }
+
+    private func recordPendingAgentOverflow(_ runID: String) {
+        pendingAgentEvents.removeAll { $0.runId == runID }
+        guard pendingAgentOverflowRunIDs.insert(runID).inserted else { return }
+
+        pendingAgentOverflowOrder.append(runID)
+        if pendingAgentOverflowOrder.count > pendingAgentEventLimit {
+            let evicted = pendingAgentOverflowOrder.removeFirst()
+            pendingAgentOverflowRunIDs.remove(evicted)
+        }
+    }
+
+    private func rememberFinishedAgentRun(_ runID: String) {
+        guard finishedAgentRunIDs.insert(runID).inserted else { return }
+
+        finishedAgentRunOrder.append(runID)
+        if finishedAgentRunOrder.count > pendingAgentEventLimit {
+            let evicted = finishedAgentRunOrder.removeFirst()
+            finishedAgentRunIDs.remove(evicted)
+        }
+    }
+
+    private func failAgentRunSubscribers(
+        runID: String,
+        error: Error
+    ) {
+        guard let subscribers = agentEventContinuations.removeValue(forKey: runID) else {
+            return
+        }
+        for subscriber in subscribers.values {
+            subscriber.continuation.finish(throwing: error)
+        }
+    }
+
+    private func finishAllAgentEventSubscribers(
+        throwing error: Error? = nil
+    ) {
+        let subscribers = agentEventContinuations.values.flatMap { $0.values }
+        agentEventContinuations.removeAll(keepingCapacity: false)
+
+        for subscriber in subscribers {
+            if let error {
+                subscriber.continuation.finish(throwing: error)
+            } else {
+                subscriber.continuation.finish()
+            }
+        }
+    }
+
+    private func resetAgentRoutingBuffers() {
+        pendingAgentEvents.removeAll(keepingCapacity: false)
+        pendingAgentOverflowRunIDs.removeAll(keepingCapacity: false)
+        pendingAgentOverflowOrder.removeAll(keepingCapacity: false)
+        finishedAgentRunIDs.removeAll(keepingCapacity: false)
+        finishedAgentRunOrder.removeAll(keepingCapacity: false)
+    }
+
+    private func removeAgentEventSubscriber(
+        runID: String,
+        id: UUID,
+        generation expectedGeneration: UInt64
+    ) {
+        guard let subscriber = agentEventContinuations[runID]?[id],
+              subscriber.generation == expectedGeneration else {
+            return
+        }
+        agentEventContinuations[runID]?[id] = nil
+        if agentEventContinuations[runID]?.isEmpty == true {
+            agentEventContinuations[runID] = nil
+        }
     }
 
     private func isActive(generation expected: UInt64) -> Bool {
