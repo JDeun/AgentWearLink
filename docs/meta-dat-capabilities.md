@@ -69,10 +69,15 @@ Multiple paired glasses must not be resolved by list order. Selection ranks conn
 
 Concrete session setup is generation-owned from the moment registration monitoring starts. Registration loss during startup invalidates that generation even before a `DeviceSession` exists; no-device, incompatibility, session-creation/start/wait failures, explicit disconnect, selected-device loss, and unexpected stop all retire the same owned monitor/task set. Late callbacks from a retired generation are ignored and cannot tear down a newer reconnect attempt.
 
-## Capability freshness
+## Capability freshness and interpretation
 
-The SDK-neutral `MetaDATCapabilities` value is currently static for the lifetime of a `MetaDATAdapter`.
+Core `DeviceAdapter.capabilities` is a synchronous **current-availability snapshot** for production device adapters, not a guarantee that a subsequent operation will succeed. Every operation must still re-check permissions, generation, session and actual bridge readiness at use time; a change between snapshot and use must fail closed. Core has no push-based capability-change event.
 
-Until Core has dynamic capability-change events, the concrete iOS host must advertise conservatively. A capability that depends on a transient grant or experimental module must not be advertised optimistically.
+Two distinct layers currently coexist:
 
-If a previously advertised capability becomes unusable, pending work must fail explicitly and the session should be rebuilt rather than silently pretending the capability remains healthy.
+- **Production `MetaDATDeviceAdapter` (vendor-linked):** the thread-safe `MetaDATLiveCapabilitySource` reports Speech and snapshot only during their owning ready `DeviceSession`. Camera permission must be granted; query errors fail closed. Session teardown clears those bits. Independent Voice Invocation is not advertised until a concrete listener marks it ready. Raw PCM, phone text/TTS, and experimental standalone Camera.photo are not claimed.
+- **SDK-neutral `MetaDATAdapter(session:)` test/reference wrapper:** the `MetaDATCapabilities` snapshot taken in its initializer describes the session implementation's *declared support*, **not live readiness**. It exists to exercise deterministic normalization, capture and lifecycle contracts without vendor SDK linkage. Do not use this wrapper's static capability value as a live iOS UI readiness indicator.
+
+During permission revocation, disconnect, background transition, or SDK readiness loss, the vendor adapter must clear affected capabilities at the applicable lifecycle boundary and reject stale in-flight operations. A new foreground/session generation may re-establish availability but never silently replay an uncertain request.
+
+Known follow-ups: independent Voice Invocation listener/availability (#95/#115/#230), physical permission/link races (#1/#98), and production media lifecycle testing (#96/#116). The live availability model should not be mistaken for completion of those features.
