@@ -35,6 +35,18 @@ public struct OpenClawConfiguration: Sendable, Equatable, CustomStringConvertibl
         self.maximumEventBytes = maximumEventBytes
     }
 
+    public func validateCredentialTransport() throws {
+        if baseURL.scheme?.lowercased() == "https" { return }
+
+        guard baseURL.scheme?.lowercased() == "http",
+              let host = baseURL.host?.lowercased(),
+              ["localhost", "127.0.0.1", "::1"].contains(host) else {
+            throw AWLError.transport(
+                "OpenClaw bearer credentials require HTTPS or an explicit loopback HTTP endpoint"
+            )
+        }
+    }
+
     public var description: String {
         let sessionKeyDescription = sessionKey == nil ? "nil" : "<redacted>"
         let messageChannelDescription = messageChannel == nil ? "nil" : "<redacted>"
