@@ -127,22 +127,31 @@ public actor OpenClawGatewaySupervisor {
             }
 
             guard !stopped else { return }
+            await runWatchdogCheck()
+        }
+    }
 
-            let running = await dispatcher.isRunning
-            let doubledInterval = interval.multipliedReportingOverflow(by: 2)
-            let staleTimeout = doubledInterval.overflow
-                ? Int.max
-                : doubledInterval.partialValue
-            let stale = await dispatcher.isStale(
-                timeoutMilliseconds: staleTimeout
+    func runWatchdogCheck(nowMilliseconds explicitNow: Int64? = nil) async {
+        // Module-internal so deterministic recovery tests can exercise the
+        // watchdog transition without waiting for a real wall-clock interval.
+        guard !stopped, !stopping else { return }
+
+        let interval = max(1_000, tickIntervalMilliseconds)
+        let running = await dispatcher.isRunning
+        let doubledInterval = interval.multipliedReportingOverflow(by: 2)
+        let staleTimeout = doubledInterval.overflow
+            ? Int.max
+            : doubledInterval.partialValue
+        let stale = await dispatcher.isStale(
+            timeoutMilliseconds: staleTimeout,
+            now: explicitNow
+        )
+
+        if !running || stale {
+            await reconnect(
+                closeCode: stale ? 4_000 : 1_001,
+                closeReason: stale ? "tick timeout" : "transport retired"
             )
-
-            if !running || stale {
-                await reconnect(
-                    closeCode: stale ? 4_000 : 1_001,
-                    closeReason: stale ? "tick timeout" : "transport retired"
-                )
-            }
         }
     }
 
