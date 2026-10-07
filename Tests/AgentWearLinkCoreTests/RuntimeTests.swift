@@ -278,6 +278,71 @@ private final class RestartableEndingDevice: DeviceAdapter, @unchecked Sendable 
     }
 }
 
+
+private actor RuntimeHoldingAgent: AgentAdapter {
+    private(set) var connects = 0
+    private(set) var disconnects = 0
+    private var requestedIDs: [InteractionID] = []
+    private var cancelledIDs: [InteractionID] = []
+    private var continuations: [
+        InteractionID: AsyncThrowingStream<AgentResponse, Error>.Continuation
+    ] = [:]
+    private let requestSignal = TestCountSignal()
+    private let disconnectSignal = TestCountSignal()
+
+    func connect() async throws {
+        connects += 1
+    }
+
+    func disconnect() async {
+        disconnects += 1
+        let active = continuations.values
+        continuations.removeAll()
+        for continuation in active {
+            continuation.finish()
+        }
+        await disconnectSignal.increment()
+    }
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        requestedIDs.append(request.interactionID)
+        await requestSignal.increment()
+
+        var captured: AsyncThrowingStream<AgentResponse, Error>.Continuation?
+        let stream = AsyncThrowingStream<AgentResponse, Error> { continuation in
+            captured = continuation
+        }
+        continuations[request.interactionID] = captured
+        return stream
+    }
+
+    func cancel(interactionID: InteractionID) async {
+        cancelledIDs.append(interactionID)
+        continuations.removeValue(forKey: interactionID)?.finish()
+    }
+
+    func waitUntilRequestCount(_ count: Int) async throws {
+        try await requestSignal.wait(
+            until: count,
+            label: "runtime holding agent request count \(count)"
+        )
+    }
+
+    func waitUntilDisconnectCount(_ count: Int) async throws {
+        try await disconnectSignal.wait(
+            until: count,
+            label: "runtime holding agent disconnect count \(count)"
+        )
+    }
+
+    func cancellations() -> [InteractionID] { cancelledIDs }
+    func counts() -> (connects: Int, disconnects: Int) {
+        (connects, disconnects)
+    }
+}
+
 final class RuntimeTests: XCTestCase {
     func testMockDeviceSubscriptionIsInstalledBeforeEventsReturns() async {
         let device = MockDeviceAdapter()
@@ -687,4 +752,49 @@ final class RuntimeTests: XCTestCase {
             [.failed(nil, .device("device event stream ended unexpectedly"))]
         )
     }
+    func testGlobalDeviceFailureCancelsAllTurnsAndStopsRuntimeGeneration() async throws {
+        let device = MockDeviceAdapter()
+        let agent = RuntimeHoldingAgent()
+        let recorder = RuntimeRecorder()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent) { event in
+            await recorder.append(event)
+        }
+
+        try await runtime.start()
+
+        let first = InteractionID()
+        let second = InteractionID()
+        await device.emit(.text(first, "first"))
+        await device.emit(.text(second, "second"))
+        try await agent.waitUntilRequestCount(2)
+
+        await device.emit(.failed(nil, .device("selected device lost")))
+        try await recorder.waitUntilCount(1)
+        try await agent.waitUntilDisconnectCount(1)
+
+        let events = await recorder.events
+        XCTAssertEqual(
+            events,
+            [.failed(nil, .device("selected device lost"))]
+        )
+
+        let cancellations = await agent.cancellations()
+        XCTAssertEqual(Set(cancellations), Set([first, second]))
+        XCTAssertEqual(cancellations.count, 2)
+
+        let afterFailure = await agent.counts()
+        XCTAssertEqual(afterFailure.connects, 1)
+        XCTAssertEqual(afterFailure.disconnects, 1)
+
+        // A terminal global failure must leave the lifecycle fully stopped so a
+        // fresh generation can start rather than joining a zombie running state.
+        try await runtime.start()
+        await runtime.stop()
+
+        let afterRestart = await agent.counts()
+        XCTAssertEqual(afterRestart.connects, 2)
+        XCTAssertEqual(afterRestart.disconnects, 2)
+    }
+
+
 }
