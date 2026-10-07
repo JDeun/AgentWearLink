@@ -497,9 +497,11 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
             assembled: secondSnapshot
         )
 
-        let persisted = try XCTUnwrap(
-            try await store.load(deviceID: deviceID, role: "operator")
+        let loaded = try await store.load(
+            deviceID: deviceID,
+            role: "operator"
         )
+        let persisted = try XCTUnwrap(loaded)
         XCTAssertEqual(persisted.token, "first-winner")
     }
 
