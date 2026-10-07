@@ -116,6 +116,7 @@ public struct GatewayScopedOpenClawDeviceCredentialStore:
             deviceID: storageDeviceID(credential.deviceID),
             role: credential.role,
             requestedRole: credential.requestedRole,
+            storageRoleOverride: credential.storageRoleOverride,
             scopes: credential.scopes,
             token: credential.token
         )
@@ -132,6 +133,7 @@ public struct GatewayScopedOpenClawDeviceCredentialStore:
             deviceID: deviceID,
             role: credential.role,
             requestedRole: credential.requestedRole,
+            storageRoleOverride: credential.storageRoleOverride,
             scopes: credential.scopes,
             token: credential.token
         )
@@ -194,13 +196,19 @@ public struct OpenClawDeviceCredential: Codable, Sendable, Equatable, CustomStri
     /// downgraded/different authenticated role is still discoverable on the
     /// next connect without broadening the requested role.
     public let requestedRole: String?
+    /// Optional internal storage partition for protocol grants that must remain
+    /// distinct even when they share the same requested/authenticated role.
+    /// Existing records decode this as nil and keep their historical key.
+    public let storageRoleOverride: String?
     public let scopes: [String]
     public let token: String
 
     /// Stable lookup key used before the Gateway has returned hello-ok.
-    /// Legacy records did not encode requestedRole, so their authenticated
-    /// role remains the lookup key.
-    public var storageRole: String { requestedRole ?? role }
+    /// Legacy records did not encode requestedRole/storageRoleOverride, so
+    /// their authenticated role remains the lookup key.
+    public var storageRole: String {
+        storageRoleOverride ?? requestedRole ?? role
+    }
 
     public var description: String {
         "OpenClawDeviceCredential(deviceID: \\(deviceID), role: \\(role), scopes: \\(scopes), token: <redacted>)"
@@ -211,12 +219,14 @@ public struct OpenClawDeviceCredential: Codable, Sendable, Equatable, CustomStri
         deviceID: String,
         role: String,
         requestedRole: String? = nil,
+        storageRoleOverride: String? = nil,
         scopes: [String],
         token: String
     ) {
         self.deviceID = deviceID
         self.role = role
         self.requestedRole = requestedRole
+        self.storageRoleOverride = storageRoleOverride
         self.scopes = scopes
         self.token = token
     }

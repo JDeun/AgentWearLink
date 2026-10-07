@@ -49,6 +49,17 @@ public struct OpenClawEndpoint: Sendable, Equatable {
         self.exposure = exposure
     }
 
+    /// Whether this validated deployment profile may persist bootstrap handoff
+    /// credentials. Every currently supported exposure is explicitly local or
+    /// private: loopback, Tailnet, or a host-declared private TLS reverse proxy.
+    /// Callers that bypass OpenClawEndpoint validation do not receive this trust.
+    public var allowsBootstrapHandoffPersistence: Bool {
+        switch exposure {
+        case .loopback, .tailnetDirect, .tailnetServe, .privateReverseProxy:
+            return true
+        }
+    }
+
     /// Conservative credential partition derived from this validated endpoint.
     /// Hosts that intentionally use multiple aliases for one Gateway may supply
     /// an explicit stable namespace to OpenClawConnectAssembler instead.
