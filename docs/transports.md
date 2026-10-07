@@ -37,9 +37,13 @@ A streaming transport must define:
 - handling of late frames after cancellation
 - behavior for mutating requests (never silently replay)
 
-## Buffered HTTP memory bound
+## Request and buffered HTTP memory bounds
 
-The baseline HTTP transport is still semantically buffered: it emits the response only after the HTTP body completes. Its memory bound is enforced incrementally while downloading, however. `maximumResponseBytes` is therefore a hard response-body accumulation ceiling rather than a post-download validation limit. Known oversized `Content-Length` values are rejected before body consumption, and chunked/unknown-length responses are cancelled as soon as the next byte would exceed the configured ceiling.
+Core applies a default 256 KiB UTF-8 budget before dispatching an `AgentRequest`; callers can choose a different coordinator budget deliberately. Concrete transports must still enforce their own wire budget because encoded protocol overhead can exceed the source text size.
+
+The baseline HTTP transport uses `maximumRequestBytes` as both a pre-encoding text ceiling and an exact post-encoding JSON body ceiling. Oversized text is therefore rejected before a large request body is constructed, while the exact encoded-size check preserves the wire contract.
+
+The response is still semantically buffered: it is emitted only after the HTTP body completes. Its receive memory bound is enforced incrementally while downloading. `maximumResponseBytes` is therefore a hard response-body accumulation ceiling rather than a post-download validation limit. Known oversized `Content-Length` values are rejected before body consumption, and chunked/unknown-length responses are cancelled as soon as the next byte would exceed the configured ceiling.
 
 ## Planned transports
 
