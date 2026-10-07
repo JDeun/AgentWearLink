@@ -20,6 +20,7 @@ jobs:
     outputs:
       swift: ${{ steps.filter.outputs.swift }}
       meta: ${{ steps.filter.outputs.meta }}
+      meta_behavior: ${{ steps.filter.outputs.meta_behavior }}
       meta_host: ${{ steps.filter.outputs.meta_host }}
       meta_ui: ${{ steps.filter.outputs.meta_ui }}
     steps:
@@ -42,6 +43,9 @@ jobs:
               - 'scripts/verify-meta-dat-revision.sh'
               - 'Package.swift'
               - 'Package.resolved'
+              - '.github/workflows/swift.yml'
+            meta_behavior:
+              - 'Adapters/MetaDAT/**'
               - '.github/workflows/swift.yml'
             meta_host:
               - 'Adapters/MetaDAT/Sources/**'
@@ -101,6 +105,7 @@ jobs:
 
           echo "Meta DAT Swift toolchain contract satisfied: Swift $swift_version"
       - name: Select available iPhone simulator
+        if: needs.changes.outputs.meta_behavior == 'true'
         run: |
           SIMULATOR_UDID="$(xcrun simctl list devices available -j | /usr/bin/python3 -c 'import json,sys; payload=json.load(sys.stdin); print(next(device["udid"] for devices in payload.get("devices", {}).values() for device in devices if device.get("isAvailable", True) and device.get("name", "").startswith("iPhone")))')"
           echo "Using iPhone simulator: ${SIMULATOR_UDID}"
@@ -122,6 +127,7 @@ jobs:
             -skipPackagePluginValidation \
             build
       - name: Boot selected iPhone Simulator
+        if: needs.changes.outputs.meta_behavior == 'true'
         timeout-minutes: 2
         run: |
           xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
@@ -137,6 +143,7 @@ jobs:
           xcrun simctl list devices >&2
           exit 1
       - name: Execute deterministic Meta DAT integration tests
+        if: needs.changes.outputs.meta_behavior == 'true'
         timeout-minutes: 5
         working-directory: Adapters/MetaDAT
         run: |
@@ -178,7 +185,13 @@ jobs:
         working-directory: Adapters/MetaDAT/TestApp
         run: |
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing test-without-building
+      - name: Explain compatibility-only boundary
+        if: needs.changes.outputs.meta_behavior != 'true'
+        run: |
+          echo "This change can affect Meta DAT compilation, so the pinned SDK integration is resolved, revision-verified, and compile-gated."
+          echo "No Meta DAT implementation/test path changed, so simulator boot and behavioral XCTest are intentionally skipped."
       - name: Explain behavioral test boundary
+        if: needs.changes.outputs.meta_behavior == 'true'
         run: |
           echo "The concrete Meta DAT integration library is compile-gated and its deterministic helper/integration XCTest target is executed on iOS Simulator."
           echo "Behavioral MockDeviceKit pairing remains app-hosted XCUITest evidence (#122); the package test that requires linked-app Keychain context is intentionally skipped."
