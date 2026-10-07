@@ -40,11 +40,15 @@ public enum MetaDATMockHostBootstrap {
         #if DEBUG
         let paired = MockDeviceKit.shared.pairedDevices
         guard !paired.isEmpty else { throw MetaDATMockHostError.noPairedDevices }
+        var configured = 0
         for device in paired {
-            device.services.camera.setCapturedImage(fileURL: fileURL)
-            device.services.cameraCapture.setCapturedPhoto(fileURL: fileURL)
+            guard let glasses = device as? MockGlasses else { continue }
+            glasses.services.camera.setCapturedImage(fileURL: fileURL)
+            glasses.services.cameraCapture.setCapturedPhoto(fileURL: fileURL)
+            configured += 1
         }
-        return paired.count
+        guard configured > 0 else { throw MetaDATMockHostError.noPairedDevices }
+        return configured
         #else
         throw MetaDATMockHostError.unavailableInReleaseBuild
         #endif
