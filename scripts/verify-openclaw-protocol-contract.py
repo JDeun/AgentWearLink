@@ -135,6 +135,17 @@ def verify() -> None:
     for field in ["deviceToken:", "role:", "scopes:", "issuedAtMs:"]:
         require(handoff, field, "bootstrap handoff grants")
 
+    for auth_method in [
+        '"none"',
+        '"token"',
+        '"password"',
+        '"tailscale"',
+        '"device-token"',
+        '"bootstrap-token"',
+        '"trusted-proxy"',
+    ]:
+        require(hello, auth_method, "hello auth method registry")
+
     for schema_name in [
         "RequestFrameSchema",
         "ResponseFrameSchema",
@@ -182,11 +193,6 @@ def verify() -> None:
         require(abort, field, "chat.abort params")
 
     device_auth = compact(sources["device_auth"])
-    v3 = section(
-        device_auth,
-        "export function buildDeviceAuthPayloadV3",
-        "}.join",
-    ) if False else device_auth
     require(device_auth, '"v3"', "device auth V3")
     require(device_auth, "normalizeDeviceMetadataForAuth(params.platform)", "device auth platform normalization")
     require(device_auth, "normalizeDeviceMetadataForAuth(params.deviceFamily)", "device auth device-family normalization")
