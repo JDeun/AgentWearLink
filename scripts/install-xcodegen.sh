@@ -2,57 +2,95 @@
 set -euo pipefail
 
 XCODEGEN_VERSION="2.46.0"
-XCODEGEN_SHA256="4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+XCODEGEN_BOTTLE_REBUILD="1"
+XCODEGEN_FORMULA_SHA256="10ad1aeee58bcef59ae74dd83652f4cefdce36413a3660650cb1b94a229c330a"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_DIR="${XCODEGEN_INSTALL_DIR:-${ROOT_DIR}/.build/tools}"
-ARCHIVE_URL="https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
-DISTRIBUTION_DIR="${INSTALL_DIR}/xcodegen-${XCODEGEN_VERSION}"
-PRESETS_DIR="${DISTRIBUTION_DIR}/share/xcodegen/SettingPresets"
-LAUNCHER="${INSTALL_DIR}/xcodegen"
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew is required to install the repository-pinned XcodeGen bottle." >&2
+  exit 1
+fi
 
 mkdir -p "${INSTALL_DIR}"
 
-if [[ -x "${LAUNCHER}" ]] \
-  && [[ -x "${DISTRIBUTION_DIR}/bin/xcodegen" ]] \
-  && [[ -d "${PRESETS_DIR}" ]] \
-  && "${LAUNCHER}" --version 2>&1 | grep -Fq "${XCODEGEN_VERSION}"; then
-  echo "Using pinned XcodeGen ${XCODEGEN_VERSION}: ${DISTRIBUTION_DIR}"
-  "${LAUNCHER}" --version
+metadata="$(HOMEBREW_NO_AUTO_UPDATE=1 brew info --json=v2 xcodegen)"
+
+METADATA="${metadata}" /usr/bin/python3 <<'PY'
+import json
+import os
+import sys
+
+payload = json.loads(os.environ["METADATA"])
+formulae = payload.get("formulae", [])
+if len(formulae) != 1:
+    raise SystemExit("Expected exactly one xcodegen formula in Homebrew metadata")
+
+formula = formulae[0]
+expected_version = "2.46.0"
+expected_rebuild = 1
+expected_formula_sha256 = "10ad1aeee58bcef59ae74dd83652f4cefdce36413a3660650cb1b94a229c330a"
+expected_bottles = {
+    "arm64_golden_gate": "cc5980a1ffd679edf00e4204473b1cfa8c3abcce69c22c084d4d079b277e248b",
+    "arm64_tahoe": "69a3584c1c9118cd37e45565b8679e1c84663e783e720c68e85ef6000a52c870",
+    "arm64_sequoia": "0f06608766b94ca4ca5eb380ff38abfa908015f05c7f0eef41f22ac2a97c4288",
+    "arm64_sonoma": "e23b1e8501ad0276d810f41d195ad30787e55634e845c039d4ce015491455dba",
+    "sonoma": "d0e021076a96894c2d48a51003e99ab4885130f69ea922a67de8bef3062c5a50",
+}
+
+if formula.get("versions", {}).get("stable") != expected_version:
+    raise SystemExit(
+        f"XcodeGen stable version drifted: expected {expected_version}, "
+        f"found {formula.get('versions', {}).get('stable')}"
+    )
+
+stable_bottle = formula.get("bottle", {}).get("stable", {})
+if stable_bottle.get("rebuild") != expected_rebuild:
+    raise SystemExit(
+        f"XcodeGen bottle rebuild drifted: expected {expected_rebuild}, "
+        f"found {stable_bottle.get('rebuild')}"
+    )
+
+formula_sha = formula.get("ruby_source_checksum", {}).get("sha256")
+if formula_sha != expected_formula_sha256:
+    raise SystemExit(
+        f"XcodeGen formula checksum drifted: expected {expected_formula_sha256}, "
+        f"found {formula_sha}"
+    )
+
+files = stable_bottle.get("files", {})
+for tag, expected_sha in expected_bottles.items():
+    actual_sha = files.get(tag, {}).get("sha256")
+    if actual_sha != expected_sha:
+        raise SystemExit(
+            f"XcodeGen bottle checksum drifted for {tag}: "
+            f"expected {expected_sha}, found {actual_sha}"
+        )
+
+print(
+    "Verified Homebrew XcodeGen metadata: "
+    f"{expected_version}, bottle rebuild {expected_rebuild}"
+)
+PY
+
+existing="${INSTALL_DIR}/xcodegen"
+if [[ -x "${existing}" ]] && "${existing}" --version 2>&1 | grep -Fq "${XCODEGEN_VERSION}"; then
+  echo "Using pinned XcodeGen ${XCODEGEN_VERSION}: ${existing}"
+  "${existing}" --version
   exit 0
 fi
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "${tmp_dir}"' EXIT
+export HOMEBREW_NO_AUTO_UPDATE=1
+brew install xcodegen
 
-archive="${tmp_dir}/xcodegen.zip"
-curl --fail --location --silent --show-error "${ARCHIVE_URL}" --output "${archive}"
-printf '%s  %s\n' "${XCODEGEN_SHA256}" "${archive}" | shasum -a 256 -c -
-
-unzip -q "${archive}" -d "${tmp_dir}/unpacked"
-archive_distribution="${tmp_dir}/unpacked/xcodegen"
-archive_binary="${archive_distribution}/bin/xcodegen"
-archive_presets="${archive_distribution}/share/xcodegen/SettingPresets"
-
-if [[ ! -x "${archive_binary}" ]]; then
-  echo "Pinned XcodeGen archive did not contain xcodegen/bin/xcodegen" >&2
+installed_version="$(xcodegen --version 2>&1)"
+if ! grep -Fq "${XCODEGEN_VERSION}" <<<"${installed_version}"; then
+  echo "Installed XcodeGen version does not match pin ${XCODEGEN_VERSION}: ${installed_version}" >&2
   exit 1
 fi
 
-if [[ ! -d "${archive_presets}" ]]; then
-  echo "Pinned XcodeGen archive did not contain share/xcodegen/SettingPresets" >&2
-  exit 1
-fi
+brew_prefix="$(brew --prefix xcodegen)"
+ln -sf "${brew_prefix}/bin/xcodegen" "${existing}"
 
-rm -rf "${DISTRIBUTION_DIR}"
-cp -R "${archive_distribution}" "${DISTRIBUTION_DIR}"
-
-cat > "${LAUNCHER}" <<EOF
-#!/bin/bash
-set -euo pipefail
-launcher_dir="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-exec "\${launcher_dir}/xcodegen-${XCODEGEN_VERSION}/bin/xcodegen" "\$@"
-EOF
-chmod 0755 "${LAUNCHER}"
-
-echo "Installed pinned XcodeGen ${XCODEGEN_VERSION}: ${DISTRIBUTION_DIR}"
-"${LAUNCHER}" --version
+echo "Installed pinned Homebrew XcodeGen ${XCODEGEN_VERSION}: ${existing}"
+"${existing}" --version
