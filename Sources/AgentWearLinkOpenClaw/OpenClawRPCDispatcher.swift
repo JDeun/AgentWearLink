@@ -12,6 +12,9 @@ public actor OpenClawRPCDispatcher {
         UUID: AsyncThrowingStream<OpenClawEventEnvelope, Error>.Continuation
     ] = [:]
     private var receiveTask: Task<Void, Never>?
+    private var requestTasks: [String: Task<Void, Never>] = [:]
+    private var sendStarted: Set<String> = []
+    private var generation: UInt64 = 0
     private var lastActivityMilliseconds: Int64?
     private let nowMilliseconds: @Sendable () -> Int64
     private let requestTimeout: Duration
@@ -49,6 +52,7 @@ public actor OpenClawRPCDispatcher {
 
     public func start() {
         guard receiveTask == nil else { return }
+        generation &+= 1
         lastActivityMilliseconds = nowMilliseconds()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
@@ -75,8 +79,16 @@ public actor OpenClawRPCDispatcher {
         method: String,
         params: Params
     ) async throws -> OpenClawResponseEnvelope {
-        guard await state.connectionState == .ready else {
+        guard receiveTask != nil,
+              await state.connectionState == .ready else {
             throw AWLOpenClawError.notReady
+        }
+
+        // Capture transport identity before validating the authenticated state.
+        // If reconnect retires this transport at any later point, the bound send
+        // below rejects rather than resolving the socket actor's new task.
+        guard let transportGeneration = await socket.transportGeneration() else {
+            throw OpenClawTransportSendError.generationBindingUnavailable
         }
 
         if let textParams = params as? OpenClawAgentParams {
@@ -92,30 +104,40 @@ public actor OpenClawRPCDispatcher {
         }
 
         try await registry.register(id: id, method: method)
+        let requestGeneration = generation
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 responses[id] = continuation
-                Task {
-                    do {
-                        try await socket.send(text: text)
-                    } catch {
-                        await self.fail(id: id, error: error)
+
+                let task = Task {
+                    guard await self.markSendStarted(
+                        id: id,
+                        generation: requestGeneration
+                    ) else {
                         return
                     }
 
                     do {
+                        try Task.checkCancellation()
+                        try await socket.send(
+                            text: text,
+                            expectedGeneration: transportGeneration
+                        )
+
                         try await Task.sleep(for: requestTimeout)
                         await self.fail(
                             id: id,
                             error: OpenClawRPCDispatcherError.deadlineExceeded
                         )
                     } catch is CancellationError {
-                        // Request completion/cancellation owns cleanup.
+                        // Response completion, explicit cancellation, or stop()
+                        // owns terminal signaling for a cancelled request task.
                     } catch {
                         await self.fail(id: id, error: error)
                     }
                 }
+                requestTasks[id] = task
             }
         } onCancel: {
             Task { await self.cancel(id: id) }
@@ -123,9 +145,24 @@ public actor OpenClawRPCDispatcher {
     }
 
     public func stop() async {
+        generation &+= 1
+
+        let ownedRequestTasks = Array(requestTasks.values)
+        requestTasks.removeAll(keepingCapacity: false)
+        for task in ownedRequestTasks {
+            task.cancel()
+        }
+
         receiveTask?.cancel()
         receiveTask = nil
         lastActivityMilliseconds = nil
+
+        // Wait until every owned send task has observed cancellation or returned
+        // from its generation-bound socket send before classifying outcomes.
+        for task in ownedRequestTasks {
+            await task.value
+        }
+
         await failAll(AWLOpenClawError.disconnected)
         for continuation in eventContinuations.values {
             continuation.finish()
@@ -144,6 +181,8 @@ public actor OpenClawRPCDispatcher {
                 case let .response(response):
                     try await state.observeSequence(nil)
                     _ = try await registry.resolve(id: response.id)
+                    sendStarted.remove(response.id)
+                    requestTasks.removeValue(forKey: response.id)?.cancel()
                     responses.removeValue(forKey: response.id)?
                         .resume(returning: response)
 
@@ -167,17 +206,38 @@ public actor OpenClawRPCDispatcher {
         receiveTask = nil
     }
 
+    private func markSendStarted(
+        id: String,
+        generation expected: UInt64
+    ) -> Bool {
+        guard generation == expected,
+              responses[id] != nil,
+              requestTasks[id] != nil,
+              !Task.isCancelled else {
+            return false
+        }
+        sendStarted.insert(id)
+        return true
+    }
+
     private func removeEventSubscriber(_ id: UUID) {
         eventContinuations[id] = nil
     }
 
     private func cancel(id: String) async {
+        let mayHaveBeenSent = sendStarted.remove(id) != nil
+        requestTasks.removeValue(forKey: id)?.cancel()
         await registry.remove(id: id)
-        responses.removeValue(forKey: id)?
-            .resume(throwing: CancellationError())
+        responses.removeValue(forKey: id)?.resume(
+            throwing: mayHaveBeenSent
+                ? OpenClawTransportSendError.deliveryUncertain
+                : CancellationError()
+        )
     }
 
     private func fail(id: String, error: Error) async {
+        sendStarted.remove(id)
+        requestTasks.removeValue(forKey: id)
         await registry.remove(id: id)
         responses.removeValue(forKey: id)?.resume(throwing: error)
     }
@@ -185,7 +245,13 @@ public actor OpenClawRPCDispatcher {
     private func failAll(_ error: Error) async {
         let pending = await registry.drainForDisconnect()
         for item in pending {
-            responses.removeValue(forKey: item.id)?.resume(throwing: error)
+            requestTasks.removeValue(forKey: item.id)?.cancel()
+            let mayHaveBeenSent = sendStarted.remove(item.id) != nil
+            responses.removeValue(forKey: item.id)?.resume(
+                throwing: mayHaveBeenSent
+                    ? OpenClawTransportSendError.deliveryUncertain
+                    : error
+            )
         }
     }
 }
