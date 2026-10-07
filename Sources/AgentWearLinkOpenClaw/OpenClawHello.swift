@@ -11,10 +11,65 @@ public struct OpenClawHelloOK: Decodable, Sendable, Equatable {
         public let events: [String]
     }
 
-    public struct Auth: Decodable, Sendable, Equatable {
+    public struct Auth:
+        Decodable,
+        Sendable,
+        Equatable,
+        CustomStringConvertible,
+        CustomDebugStringConvertible
+    {
+        public struct DeviceTokenGrant:
+            Decodable,
+            Sendable,
+            Equatable,
+            CustomStringConvertible,
+            CustomDebugStringConvertible
+        {
+            public let token: String
+            public let role: String
+            public let scopes: [String]
+
+            public init(
+                token: String,
+                role: String,
+                scopes: [String]
+            ) {
+                self.token = token
+                self.role = role
+                self.scopes = scopes
+            }
+
+            public var description: String {
+                "DeviceTokenGrant(role: \(role), scopes: \(scopes), token: <redacted>)"
+            }
+
+            public var debugDescription: String { description }
+        }
+
         public let role: String
         public let scopes: [String]
         public let deviceToken: String?
+        public let deviceTokens: [DeviceTokenGrant]?
+
+        public init(
+            role: String,
+            scopes: [String],
+            deviceToken: String? = nil,
+            deviceTokens: [DeviceTokenGrant]? = nil
+        ) {
+            self.role = role
+            self.scopes = scopes
+            self.deviceToken = deviceToken
+            self.deviceTokens = deviceTokens
+        }
+
+        public var description: String {
+            let primary = deviceToken == nil ? "nil" : "<redacted>"
+            let handoffCount = deviceTokens?.count ?? 0
+            return "Auth(role: \(role), scopes: \(scopes), deviceToken: \(primary), deviceTokens: <redacted:\(handoffCount)>)"
+        }
+
+        public var debugDescription: String { description }
     }
 
     public struct Snapshot: Decodable, Sendable, Equatable {
