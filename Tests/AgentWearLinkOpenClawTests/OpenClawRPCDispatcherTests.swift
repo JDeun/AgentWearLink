@@ -28,7 +28,17 @@ private actor DispatcherSocket: OpenClawWebSocket {
 
     func receive() async throws -> String {
         if !inbound.isEmpty { return inbound.removeFirst() }
-        return try await withCheckedThrowingContinuation { waiter = $0 }
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { waiter = $0 }
+        } onCancel: {
+            Task { await self.cancelPendingReceive() }
+        }
+    }
+
+    private func cancelPendingReceive() {
+        waiter?.resume(throwing: CancellationError())
+        waiter = nil
     }
 
     func close() async {
@@ -156,6 +166,38 @@ private actor GenerationGateSocket: OpenClawWebSocket {
     }
 
     func sentCount() -> Int { sentFrames.count }
+}
+
+
+private actor DelayedRetirementSocket: OpenClawWebSocket {
+    private var receiveCalls = 0
+    private var receiveWaiters: [CheckedContinuation<String, Error>] = []
+
+    func connect() async {}
+    func send(text: String) async throws {}
+
+    func receive() async throws -> String {
+        receiveCalls += 1
+        return try await withCheckedThrowingContinuation { continuation in
+            receiveWaiters.append(continuation)
+        }
+    }
+
+    func close() async {}
+
+    func waitUntilReceiveCount(_ count: Int) async {
+        while receiveCalls < count {
+            await Task.yield()
+        }
+    }
+
+    func releaseOldestReceive() {
+        guard !receiveWaiters.isEmpty else { return }
+        let waiter = receiveWaiters.removeFirst()
+        waiter.resume(throwing: AWLOpenClawError.disconnected)
+    }
+
+    func receiveCount() -> Int { receiveCalls }
 }
 
 final class OpenClawRPCDispatcherTests: XCTestCase {
@@ -394,7 +436,7 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
     }
 
     func testStopDuringRegistryRegistrationCannotResurrectRequest() async throws {
-        let socket = DispatcherSocket()
+        let socket = GenerationGateSocket()
         let registrationGate = RegistrationGate()
         let registry = OpenClawRPCRegistry(
             beforeRegister: {
@@ -433,6 +475,50 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         XCTAssertEqual(pendingCount, 0)
         XCTAssertEqual(sentCount, 0)
         await socket.close()
+    }
+
+
+    func testStopOwnsDelayedReceiverUntilItActuallyExits() async throws {
+        let socket = DelayedRetirementSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+
+        await dispatcher.start()
+        await socket.waitUntilReceiveCount(1)
+
+        let stopTask = Task {
+            await dispatcher.stop()
+        }
+        await Task.yield()
+
+        // A restart attempt while stop() still owns the old reader must be ignored.
+        await dispatcher.start()
+        let countWhileStopping = await socket.receiveCount()
+        XCTAssertEqual(countWhileStopping, 1)
+
+        await socket.releaseOldestReceive()
+        await stopTask.value
+
+        let runningAfterStop = await dispatcher.isRunning
+        XCTAssertFalse(runningAfterStop)
+
+        // A new reader is admitted only after the prior one has actually exited.
+        await dispatcher.start()
+        await socket.waitUntilReceiveCount(2)
+        let countAfterRestart = await socket.receiveCount()
+        XCTAssertEqual(countAfterRestart, 2)
+
+        let finalStop = Task {
+            await dispatcher.stop()
+        }
+        await Task.yield()
+        await socket.releaseOldestReceive()
+        await finalStop.value
+
+        let finalRunning = await dispatcher.isRunning
+        XCTAssertFalse(finalRunning)
     }
 
 

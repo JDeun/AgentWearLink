@@ -68,8 +68,10 @@ public actor OpenClawGatewaySupervisor {
         transportGeneration &+= 1
         watchdogTask?.cancel()
         watchdogTask = nil
-        await dispatcher.stop()
+        // Retire the transport first so a receive() implementation that does not
+        // promptly observe Swift task cancellation is still forced to unwind.
         await connection.disconnect()
+        await dispatcher.stop()
     }
 
     private func startWatchdog() {
