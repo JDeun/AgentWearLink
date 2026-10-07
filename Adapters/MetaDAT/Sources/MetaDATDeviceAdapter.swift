@@ -137,10 +137,14 @@ final class MetaDATDeviceEventSource: @unchecked Sendable {
 public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public static let defaultEventBufferLimit = 64
 
-    /// Only production-wired capabilities are advertised. Raw audio remains
-    /// unavailable: DAT Speech yields normalized on-device transcripts rather
-    /// than exposing microphone PCM through this adapter.
-    public nonisolated let capabilities: CapabilitySet = [.speechInput, .cameraSnapshot]
+    private nonisolated let liveCapabilities = MetaDATLiveCapabilitySource()
+
+    /// Capability snapshots reflect the currently usable production surfaces.
+    /// Raw audio remains unavailable: DAT Speech yields normalized on-device
+    /// transcripts rather than exposing microphone PCM through this adapter.
+    public nonisolated var capabilities: CapabilitySet {
+        liveCapabilities.value
+    }
 
     private let wearables: any WearablesInterface
     private var deviceSession: DeviceSession?
@@ -188,6 +192,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public func connect() async throws {
         guard deviceSession == nil, !connecting else { return }
 
+        liveCapabilities.update(
+            sessionReady: false,
+            speechReady: false,
+            cameraReady: false
+        )
         stopping = false
         connecting = true
         let generation = generationFence.begin()
@@ -289,11 +298,25 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             )
 
             selectedDeviceLinkLossGate.markSessionStarted()
+            liveCapabilities.update(sessionReady: true)
 
             try await startSpeech(
                 on: session,
                 generation: generation
             )
+            liveCapabilities.update(speechReady: true)
+
+            // Camera is attached lazily for explicit snapshots, but permission
+            // is part of whether that production surface is currently usable.
+            // A permission-query failure must fail closed without discarding an
+            // otherwise healthy Speech/session connection.
+            let cameraReady: Bool
+            do {
+                cameraReady = try await wearables.checkPermissionStatus(.camera) == .granted
+            } catch {
+                cameraReady = false
+            }
+            liveCapabilities.update(cameraReady: cameraReady)
 
             // Do not create a second stateStream() after consuming .started.
             // Continue the same stream in one observer so SDK stream semantics cannot
@@ -328,12 +351,20 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         }
 
         let generation = generationFence.current
-        let cameraStatus = try await wearables.checkPermissionStatus(.camera)
-        guard cameraStatus == .granted else {
+        let cameraGranted: Bool
+        do {
+            cameraGranted = try await wearables.checkPermissionStatus(.camera) == .granted
+        } catch {
+            liveCapabilities.update(cameraReady: false)
+            throw error
+        }
+        guard cameraGranted else {
+            liveCapabilities.update(cameraReady: false)
             throw AWLError.capabilityUnavailable(
                 "Meta DAT camera permission is not granted"
             )
         }
+        liveCapabilities.update(cameraReady: true)
 
         guard generationFence.owns(generation),
               !stopping,
@@ -603,6 +634,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             return
         }
 
+        liveCapabilities.update(
+            sessionReady: false,
+            speechReady: false,
+            cameraReady: false
+        )
         cameraSnapshotController.invalidate()
         stateTask?.cancel()
         errorTask?.cancel()

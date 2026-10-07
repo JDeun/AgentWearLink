@@ -267,7 +267,14 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
 
                     _ = await self.forget(interactionID)
                 } catch is CancellationError {
-                    await self.cancel(interactionID: interactionID)
+                    // Once this stream task is cancelled, a remote abort issued
+                    // on the same task can be cancelled before chat.abort is
+                    // sent. Give the accepted remote mutation a bounded,
+                    // cancellation-independent best-effort abort instead.
+                    let abortTask = Task.detached {
+                        await self.cancel(interactionID: interactionID)
+                    }
+                    await abortTask.value
                     continuation.finish()
                 } catch {
                     if let context = await self.forget(interactionID) {

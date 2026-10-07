@@ -25,18 +25,30 @@ public struct OpenClawHelloOK: Decodable, Sendable, Equatable {
             CustomStringConvertible,
             CustomDebugStringConvertible
         {
+            /// Public API name kept as `token`; the upstream wire field is
+            /// `deviceToken` inside `hello-ok.auth.deviceTokens[]`.
             public let token: String
             public let role: String
             public let scopes: [String]
+            public let issuedAtMs: Int64?
 
             public init(
                 token: String,
                 role: String,
-                scopes: [String]
+                scopes: [String],
+                issuedAtMs: Int64? = nil
             ) {
                 self.token = token
                 self.role = role
                 self.scopes = scopes
+                self.issuedAtMs = issuedAtMs
+            }
+
+            private enum CodingKeys: String, CodingKey {
+                case token = "deviceToken"
+                case role
+                case scopes
+                case issuedAtMs
             }
 
             public var description: String {
