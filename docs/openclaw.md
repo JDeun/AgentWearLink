@@ -71,7 +71,7 @@ Request only the scopes required by the active workflow:
 - interactive agent submission/cancellation requires the write capability in addition to the read capability used by the reference flow;
 - do not request broader scopes merely because the Gateway account can grant them.
 
-A persisted device credential keeps the exact scopes that were previously approved. When AWL reconnects with that stored credential, a caller asking for additional scopes does **not** silently widen the grant: the assembler reuses the stored scope set. A broader grant must therefore go through an explicit authorization/pairing or credential-replacement flow accepted by the Gateway. Local role/scope admission enforcement is tracked separately in #292; this section documents the credential-request and upgrade policy rather than claiming that work is already complete.
+A persisted device credential keeps the exact scopes that were previously approved. When AWL reconnects with that stored credential, a caller asking for additional scopes does **not** silently widen the grant: the assembler reuses the stored scope set. A broader grant must therefore go through an explicit authorization/pairing or credential-replacement flow accepted by the Gateway. Native mutating RPCs (`agent`, `agent.wait`, and `chat.abort`) also require an authenticated `operator` role plus `operator.write` (or `operator.admin`) before any socket send, so a reduced grant is rejected locally as well as remaining subject to Gateway authorization.
 
 ## Validation status
 
