@@ -80,6 +80,8 @@ Telegram is optional visibility only. It is never required as AWL transport.
 
 Reusable Gateway credentials and device private material belong in Keychain or equivalent secure storage. They must not be committed, logged, or exposed through diagnostic descriptions. Configuration diagnostics redact bearer credentials, stable conversation/session routing identifiers, private text, and private media payloads. Test and CI fixtures must use synthetic, non-sensitive values.
 
+Persisted native device grants are partitioned by a Gateway credential namespace. Production composition should derive that namespace from the validated `OpenClawEndpoint` and pass it to `OpenClawConnectAssembler`. Endpoint spelling is normalized, but different host/path aliases remain separate by default. If a host intentionally exposes the same trusted Gateway through multiple aliases, it may supply one explicit stable namespace identifier only after establishing that those aliases terminate at the same Gateway. AWL deliberately does not auto-migrate legacy unscoped device tokens into an endpoint namespace; the first namespaced connection may therefore require re-pairing. This fail-closed migration avoids copying a grant to an unrelated Gateway.
+
 Tailnet reachability is not authorization. Gateway authentication remains required by the selected OpenClaw deployment mode.
 
 Request only the scopes required by the active workflow:

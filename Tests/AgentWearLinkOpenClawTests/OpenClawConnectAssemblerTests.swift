@@ -633,4 +633,70 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
     }
 
 
+
+    func testGatewayNamespacesPreventPersistedCredentialCrossUse() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let identityStore = InMemoryOpenClawDeviceIdentityStore(
+            identity: identity
+        )
+        let sharedStore = InMemoryOpenClawDeviceCredentialStore()
+        let gatewayA = try OpenClawGatewayCredentialNamespace(
+            stableIdentifier: "gateway-a"
+        )
+        let gatewayB = try OpenClawGatewayCredentialNamespace(
+            stableIdentifier: "gateway-b"
+        )
+
+        let assemblerA = OpenClawConnectAssembler(
+            identityManager: .init(store: identityStore),
+            credentialStore: sharedStore,
+            gatewayNamespace: gatewayA
+        )
+        let first = try await assemblerA.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(bootstrapToken: "bootstrap-a"),
+            challenge: challenge
+        )
+        try await assemblerA.persistHello(
+            makeHello(token: "gateway-a-token"),
+            assembled: first
+        )
+
+        let assemblerB = OpenClawConnectAssembler(
+            identityManager: .init(store: identityStore),
+            credentialStore: sharedStore,
+            gatewayNamespace: gatewayB
+        )
+        let differentGateway = try await assemblerB.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(bootstrapToken: "bootstrap-b"),
+            challenge: .init(nonce: "gateway-b", ts: 456)
+        )
+
+        XCTAssertFalse(differentGateway.usedStoredCredential)
+        XCTAssertEqual(differentGateway.effectiveToken, "bootstrap-b")
+        XCTAssertNil(differentGateway.params.auth?.deviceToken)
+        XCTAssertEqual(
+            differentGateway.params.auth?.bootstrapToken,
+            "bootstrap-b"
+        )
+
+        let reconnectA = try await assemblerA.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(bootstrapToken: "must-not-be-used"),
+            challenge: .init(nonce: "gateway-a-reconnect", ts: 789)
+        )
+
+        XCTAssertTrue(reconnectA.usedStoredCredential)
+        XCTAssertEqual(reconnectA.effectiveToken, "gateway-a-token")
+        XCTAssertEqual(
+            reconnectA.params.auth?.deviceToken,
+            "gateway-a-token"
+        )
+        XCTAssertNil(reconnectA.params.auth?.bootstrapToken)
+    }
+
 }

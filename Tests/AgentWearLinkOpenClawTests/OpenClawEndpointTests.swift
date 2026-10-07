@@ -134,4 +134,42 @@ final class OpenClawEndpointTests: XCTestCase {
 
         _ = try URLSessionOpenClawWebSocket(endpoint: endpoint)
     }
+
+    func testCredentialNamespaceCanonicalizesEquivalentEndpointSpelling() throws {
+        let first = try OpenClawEndpoint(
+            gatewayURL: URL(string: "wss://Gateway.Example.com:443")!,
+            exposure: .privateReverseProxy
+        )
+        let second = try OpenClawEndpoint(
+            gatewayURL: URL(string: "https://gateway.example.com/")!,
+            exposure: .privateReverseProxy
+        )
+
+        XCTAssertEqual(first.credentialNamespace, second.credentialNamespace)
+    }
+
+    func testCredentialNamespaceSeparatesDifferentGatewayEndpoints() throws {
+        let first = try OpenClawEndpoint(
+            gatewayURL: URL(string: "wss://gateway-a.example.com")!,
+            exposure: .privateReverseProxy
+        )
+        let second = try OpenClawEndpoint(
+            gatewayURL: URL(string: "wss://gateway-b.example.com")!,
+            exposure: .privateReverseProxy
+        )
+
+        XCTAssertNotEqual(first.credentialNamespace, second.credentialNamespace)
+    }
+
+    func testExplicitCredentialNamespaceCanUnifyTrustedAliases() throws {
+        let serve = try OpenClawGatewayCredentialNamespace(
+            stableIdentifier: "personal-openclaw-gateway"
+        )
+        let direct = try OpenClawGatewayCredentialNamespace(
+            stableIdentifier: "personal-openclaw-gateway"
+        )
+
+        XCTAssertEqual(serve, direct)
+    }
+
 }

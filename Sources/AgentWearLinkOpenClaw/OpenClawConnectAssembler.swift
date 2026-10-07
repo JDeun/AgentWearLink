@@ -43,10 +43,21 @@ public struct OpenClawConnectAssembler: Sendable {
 
     public init(
         identityManager: OpenClawDeviceIdentityManager,
-        credentialStore: any OpenClawDeviceCredentialStore
+        credentialStore: any OpenClawDeviceCredentialStore,
+        gatewayNamespace: OpenClawGatewayCredentialNamespace? = nil
     ) {
         self.identityManager = identityManager
-        self.credentialStore = credentialStore
+        if let gatewayNamespace {
+            self.credentialStore = GatewayScopedOpenClawDeviceCredentialStore(
+                base: credentialStore,
+                namespace: gatewayNamespace
+            )
+        } else {
+            // Source-compatible fallback for callers that have not yet bound
+            // their store to a validated Gateway endpoint. Production
+            // composition should always provide a namespace.
+            self.credentialStore = credentialStore
+        }
     }
 
     public func assemble(
