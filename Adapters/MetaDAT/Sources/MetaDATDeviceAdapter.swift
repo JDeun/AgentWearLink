@@ -8,6 +8,8 @@ import MWDATCore
 /// from an iOS reference app that links MWDATCore. The root AWL Core package
 /// does not depend on Meta DAT.
 public actor MetaDATDeviceAdapter: DeviceAdapter {
+    public static let defaultEventBufferLimit = 64
+
     /// Capabilities are advertised only when their implementation exists.
     /// Camera/Speech/Voice Invocation are added in later slices.
     public nonisolated let capabilities: CapabilitySet = []
@@ -22,18 +24,25 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var eventContinuation: AsyncStream<InteractionEvent>.Continuation?
     private var stopping = false
     private let connectTimeout: Duration
+    private nonisolated let eventBufferLimit: Int
 
     public init(
         wearables: any WearablesInterface = Wearables.shared,
-        connectTimeout: Duration = .seconds(15)
+        connectTimeout: Duration = .seconds(15),
+        eventBufferLimit: Int = MetaDATDeviceAdapter.defaultEventBufferLimit
     ) {
         precondition(connectTimeout > .zero)
+        precondition(eventBufferLimit > 0)
         self.wearables = wearables
         self.connectTimeout = connectTimeout
+        self.eventBufferLimit = eventBufferLimit
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
-        AsyncStream { continuation in
+        let limit = eventBufferLimit
+        return AsyncStream(
+            bufferingPolicy: .bufferingNewest(limit)
+        ) { continuation in
             Task { await self.install(continuation) }
         }
     }
@@ -186,7 +195,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
 
     private func handleSelectedDeviceUnavailable(_ message: String) {
         guard !stopping, deviceSession != nil else { return }
-        eventContinuation?.yield(.failed(nil, .device(message)))
+        yieldEvent(.failed(nil, .device(message)))
         tearDownSession()
     }
 
@@ -236,7 +245,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
 
     private func handleUnexpectedStop() {
         guard !stopping else { return }
-        eventContinuation?.yield(
+        yieldEvent(
             .failed(nil, .device("Meta DAT device session stopped"))
         )
         tearDownSession()
@@ -244,7 +253,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
 
     private func handleRegistrationLoss() {
         guard !stopping, deviceSession != nil else { return }
-        eventContinuation?.yield(
+        yieldEvent(
             .failed(nil, .device("Meta DAT registration became unavailable"))
         )
         tearDownSession()
@@ -252,7 +261,30 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
 
     private func emitDeviceError(_ message: String) {
         guard !stopping else { return }
-        eventContinuation?.yield(.failed(nil, .device(message)))
+        yieldEvent(.failed(nil, .device(message)))
+    }
+
+    private func yieldEvent(_ event: InteractionEvent) {
+        guard let continuation = eventContinuation else { return }
+
+        switch continuation.yield(event) {
+        case .enqueued:
+            break
+        case .dropped:
+            _ = continuation.yield(
+                .failed(
+                    event.interactionID,
+                    .overloaded("Meta DAT device event buffer capacity exceeded")
+                )
+            )
+            continuation.finish()
+            eventContinuation = nil
+        case .terminated:
+            eventContinuation = nil
+        @unknown default:
+            continuation.finish()
+            eventContinuation = nil
+        }
     }
 
     private func tearDownSession() {

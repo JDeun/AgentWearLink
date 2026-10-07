@@ -16,7 +16,9 @@ public actor MetaDATApplicationLifecycle {
     }
 
     public nonisolated func phases() -> AsyncStream<MetaDATApplicationPhase> {
-        AsyncStream { continuation in
+        // Application phase is coalescable state, not an event log. A slow
+        // consumer only needs the newest foreground/background value.
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             Task { await self.install(continuation) }
         }
     }
