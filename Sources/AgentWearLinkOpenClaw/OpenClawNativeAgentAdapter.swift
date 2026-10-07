@@ -83,11 +83,15 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         ) { continuation in
             let task = Task {
                 do {
-                    let accepted = try await client.submit(
-                        message: request.text,
-                        sessionKey: sessionKey,
+                    let accepted = try await Self.performSubmission(
                         idempotencyKey: submissionIdentity.idempotencyKey
-                    )
+                    ) {
+                        try await client.submit(
+                            message: request.text,
+                            sessionKey: sessionKey,
+                            idempotencyKey: submissionIdentity.idempotencyKey
+                        )
+                    }
                     await self.remember(
                         RunContext(
                             runID: accepted.runId,
@@ -168,6 +172,24 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     ) async rethrows -> T {
         defer { updateTask.cancel() }
         return try await operation()
+    }
+
+    static func performSubmission(
+        idempotencyKey: String,
+        operation: () async throws -> OpenClawAgentAccepted
+    ) async throws -> OpenClawAgentAccepted {
+        do {
+            return try await operation()
+        } catch let error as OpenClawTransportSendError
+            where error == .deliveryUncertain {
+            // The mutating frame crossed the local transport handoff, but no
+            // accepted run identity was observed. Do not replay or invent a
+            // run ID: surface the uncertainty together with the safe
+            // correlation key for diagnostics/reconciliation.
+            throw OpenClawNativeAdapterError.submissionExecutionUncertain(
+                idempotencyKey: idempotencyKey
+            )
+        }
     }
 
     private nonisolated static func yieldResponse(
@@ -327,6 +349,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
 }
 
 public enum OpenClawNativeAdapterError: Error, Sendable, Equatable {
+    case submissionExecutionUncertain(idempotencyKey: String)
     case unexpectedWaitStatus(String)
     case terminalWaitLimitExceeded(maximumPolls: Int)
     case terminalRunTimedOut(
