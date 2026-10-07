@@ -56,6 +56,82 @@ private enum OwnedUpdateTaskTestError: Error {
 }
 
 final class OpenClawNativeAgentAdapterTests: XCTestCase {
+    func testSubmissionDeliveryUncertainBecomesTypedExecutionUncertainty() async {
+        let correlationKey = "submission-correlation"
+
+        do {
+            _ = try await OpenClawNativeAgentAdapter.performSubmission(
+                idempotencyKey: correlationKey
+            ) {
+                throw OpenClawTransportSendError.deliveryUncertain
+            }
+            XCTFail("Expected uncertain submission execution")
+        } catch let error as OpenClawNativeAdapterError {
+            XCTAssertEqual(
+                error,
+                .submissionExecutionUncertain(
+                    idempotencyKey: correlationKey
+                )
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testSubmissionDefinitelyNotSentErrorRemainsTransportError() async {
+        do {
+            _ = try await OpenClawNativeAgentAdapter.performSubmission(
+                idempotencyKey: "not-sent"
+            ) {
+                throw OpenClawTransportSendError.staleGeneration
+            }
+            XCTFail("Expected stale-generation rejection")
+        } catch let error as OpenClawTransportSendError {
+            XCTAssertEqual(error, .staleGeneration)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testSubmissionPreSendCancellationRemainsCancellation() async {
+        do {
+            _ = try await OpenClawNativeAgentAdapter.performSubmission(
+                idempotencyKey: "cancelled-before-send"
+            ) {
+                throw CancellationError()
+            }
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // A pre-send cancellation remains a definite non-execution path.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testSubmissionAcceptanceWinsWithoutReclassification() async throws {
+        let accepted = try JSONDecoder().decode(
+            OpenClawAgentAccepted.self,
+            from: Data(
+                #"""
+                {
+                  "runId":"run-accepted",
+                  "acceptedAt":123,
+                  "status":"accepted",
+                  "sessionKey":"session-accepted"
+                }
+                """#.utf8
+            )
+        )
+
+        let result = try await OpenClawNativeAgentAdapter.performSubmission(
+            idempotencyKey: "accepted"
+        ) {
+            accepted
+        }
+
+        XCTAssertEqual(result, accepted)
+    }
+
     func testOwnedUpdateTaskIsCancelledWhenTerminalWaitFails() async throws {
         let probe = OwnedUpdateTaskProbe()
         let updateTask = Task<Void, Error> {
