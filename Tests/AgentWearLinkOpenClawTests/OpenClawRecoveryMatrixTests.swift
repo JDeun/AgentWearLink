@@ -205,7 +205,7 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         do {
             _ = try await fixture.dispatcher.request(
                 method: "agent",
-                params: EmptyParams()
+                params: ["probe": "rejected"]
             )
             XCTFail("Expected receive failure to revoke request admission")
         } catch let error as AWLOpenClawError {
