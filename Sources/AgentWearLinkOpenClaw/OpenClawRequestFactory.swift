@@ -6,6 +6,8 @@ enum OpenClawRequestFactory {
         configuration: OpenClawConfiguration,
         request: AgentRequest
     ) throws -> URLRequest {
+        try request.validateMaximumTextBytes(configuration.maximumRequestBytes)
+
         let endpoint = configuration.baseURL
             .appendingPathComponent("v1")
             .appendingPathComponent("chat")
@@ -51,7 +53,14 @@ enum OpenClawRequestFactory {
                 .init(role: "user", content: request.text)
             ]
         )
-        urlRequest.httpBody = try JSONEncoder().encode(body)
+        let encodedBody = try JSONEncoder().encode(body)
+        guard encodedBody.count <= configuration.maximumRequestBytes else {
+            throw AgentRequestValidationError.payloadTooLarge(
+                actual: encodedBody.count,
+                maximum: configuration.maximumRequestBytes
+            )
+        }
+        urlRequest.httpBody = encodedBody
         return urlRequest
     }
 }
