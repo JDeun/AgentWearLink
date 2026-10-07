@@ -46,7 +46,7 @@ xcodebuild \
   build
 ```
 
-The generated package scheme also contains `AgentWearLinkMetaDATTestHost`. CI compile-gates that host and uses the DEBUG-only mock bootstrap for behavioral simulator work.
+The Swift package is a compile boundary for the concrete integration library only. Behavioral simulator work uses the dedicated `TestApp/` iOS application plus its app-hosted XCUITest target; there is no SwiftPM test-host executable.
 
 Root `swift test` passing means Core/runtime contracts pass. It does **not** prove the concrete MWDAT integration or physical glasses.
 
