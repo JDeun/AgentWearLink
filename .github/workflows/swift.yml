@@ -38,6 +38,8 @@ jobs:
             meta:
               - 'Adapters/MetaDAT/**'
               - 'Sources/AgentWearLinkCore/**'
+              - 'scripts/install-xcodegen.sh'
+              - 'scripts/verify-meta-dat-revision.sh'
               - 'Package.swift'
               - 'Package.resolved'
               - '.github/workflows/swift.yml'
@@ -46,10 +48,12 @@ jobs:
               - 'Adapters/MetaDAT/TestApp/App/**'
               - 'Adapters/MetaDAT/TestApp/project.yml'
               - 'Adapters/MetaDAT/Package.swift'
+              - 'scripts/install-xcodegen.sh'
               - '.github/workflows/swift.yml'
             meta_ui:
               - 'Adapters/MetaDAT/TestApp/**'
               - 'Adapters/MetaDAT/Package.swift'
+              - 'scripts/install-xcodegen.sh'
               - '.github/workflows/swift.yml'
 
   test:
@@ -105,6 +109,8 @@ jobs:
       - name: Resolve pinned Meta DAT SDK
         working-directory: Adapters/MetaDAT
         run: swift package resolve
+      - name: Verify resolved Meta DAT revision
+        run: bash scripts/verify-meta-dat-revision.sh
       - name: List Meta DAT integration schemes
         working-directory: Adapters/MetaDAT
         run: xcodebuild -list
@@ -116,11 +122,16 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
+      - name: Install pinned XcodeGen
+        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
+        run: |
+          bash scripts/install-xcodegen.sh
+          echo "$PWD/.build/tools" >> "$GITHUB_PATH"
       - name: Generate minimal Meta DAT iOS app host
         if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
         working-directory: Adapters/MetaDAT/TestApp
         run: |
-          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen --version
           xcodegen generate
       - name: Compile minimal Meta DAT iOS app host
         if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
