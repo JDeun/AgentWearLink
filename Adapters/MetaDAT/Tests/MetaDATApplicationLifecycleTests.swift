@@ -4,7 +4,7 @@ import XCTest
 final class MetaDATApplicationLifecycleTests: XCTestCase {
     func testPublishesInitialAndDistinctHostPhases() async throws {
         let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
-        let phases = await lifecycle.phases()
+        let phases = lifecycle.phases()
         var iterator = phases.makeAsyncIterator()
 
         let initial = await iterator.next()
@@ -18,6 +18,37 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         let current = await lifecycle.currentPhase
         XCTAssertEqual(current, MetaDATApplicationPhase.background)
     }
+    func testImmediateTransitionAfterSubscriptionCannotBeLost() async {
+        let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
+        let phases = lifecycle.phases()
+
+        await lifecycle.transition(to: .background)
+
+        var iterator = phases.makeAsyncIterator()
+        let firstVisible = await iterator.next()
+        XCTAssertEqual(firstVisible, .background)
+    }
+
+    func testReplacementSubscriptionOwnsFutureLifecycleTransitions() async {
+        let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
+        let first = lifecycle.phases()
+        var firstIterator = first.makeAsyncIterator()
+        let firstInitial = await firstIterator.next()
+        XCTAssertEqual(firstInitial, .foreground)
+
+        let replacement = lifecycle.phases()
+        var replacementIterator = replacement.makeAsyncIterator()
+
+        let firstTerminal = await firstIterator.next()
+        XCTAssertNil(firstTerminal)
+        let replacementInitial = await replacementIterator.next()
+        XCTAssertEqual(replacementInitial, .foreground)
+
+        await lifecycle.transition(to: .background)
+        let replacementBackground = await replacementIterator.next()
+        XCTAssertEqual(replacementBackground, .background)
+    }
+
     func testPhaseStreamCoalescesBurstToNewestState() async {
         let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
         let phases = lifecycle.phases()
