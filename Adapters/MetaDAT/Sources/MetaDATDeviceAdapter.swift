@@ -149,6 +149,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private var selectedDeviceListenerTask: Task<Void, Never>?
     private nonisolated let eventSource: MetaDATDeviceEventSource
     private var generationFence = MetaDATSessionGenerationFence()
+    private var selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
     private var connecting = false
     private var stopping = false
     private let connectTimeout: Duration
@@ -217,6 +218,10 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             throw AWLError.device("Selected Meta DAT device is not SDK-compatible")
         }
 
+        selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate(
+            initiallyConnected: selectedDevice.linkState == .connected
+        )
+
         selectedDeviceListenerTask = Task { [weak self] in
             await self?.monitorSelectedDeviceSignals(
                 selectedDevice,
@@ -267,6 +272,8 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
                 timeout: connectTimeout
             )
 
+            selectedDeviceLinkLossGate.markSessionStarted()
+
             // Do not create a second stateStream() after consuming .started.
             // Continue the same stream in one observer so SDK stream semantics cannot
             // create a gap between startup and steady-state monitoring.
@@ -296,11 +303,13 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
         generation: UInt64
     ) async {
         let linkToken = device.addLinkStateListener { [weak self] state in
-            guard state != .connected else { return }
-            Task { await self?.handleSelectedDeviceUnavailable(
-                "Selected Meta DAT device link became unavailable: \(state)",
-                generation: generation
-            ) }
+            Task {
+                await self?.handleSelectedDeviceLinkState(
+                    isConnected: state == .connected,
+                    description: "\(state)",
+                    generation: generation
+                )
+            }
         }
         let compatibilityToken = device.addCompatibilityListener { [weak self] compatibility in
             guard compatibility != .compatible else { return }
@@ -310,16 +319,15 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             ) }
         }
 
-        await withTaskCancellationHandler {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
-            }
-        } onCancel: {
-            Task {
-                await linkToken.cancel()
-                await compatibilityToken.cancel()
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch {
+                break
             }
         }
+
+        // This task is the sole owner of listener-token cancellation.
         await linkToken.cancel()
         await compatibilityToken.cancel()
     }
@@ -348,6 +356,23 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
                 return
             }
         }
+    }
+
+    private func handleSelectedDeviceLinkState(
+        isConnected: Bool,
+        description: String,
+        generation: UInt64
+    ) {
+        guard !stopping, generationFence.owns(generation) else { return }
+
+        guard selectedDeviceLinkLossGate.observe(isConnected: isConnected) else {
+            return
+        }
+
+        handleSelectedDeviceUnavailable(
+            "Selected Meta DAT device link became unavailable: \(description)",
+            generation: generation
+        )
     }
 
     private func handleSelectedDeviceUnavailable(
@@ -454,6 +479,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
 
         deviceSession?.stop()
         deviceSession = nil
+        selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
         connecting = false
         stopping = false
     }
