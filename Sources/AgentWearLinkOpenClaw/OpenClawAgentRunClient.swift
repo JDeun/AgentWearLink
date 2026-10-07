@@ -63,20 +63,14 @@ public actor OpenClawAgentRunClient {
     }
 
     public func updates(
-        from events: AsyncThrowingStream<OpenClawEventEnvelope, Error>,
         runID: String
-    ) -> AsyncThrowingStream<OpenClawAgentRunUpdate, Error> {
-        AsyncThrowingStream { continuation in
+    ) async -> AsyncThrowingStream<OpenClawAgentRunUpdate, Error> {
+        let events = await dispatcher.agentEvents(runID: runID)
+
+        return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    for try await envelope in events {
-                        guard envelope.event == "agent",
-                              let payload = envelope.payload else {
-                            continue
-                        }
-                        let event = try decode(payload, as: OpenClawAgentEvent.self)
-                        guard event.runId == runID else { continue }
-
+                    for try await event in events {
                         switch event.stream {
                         case "assistant":
                             continuation.yield(
@@ -102,6 +96,10 @@ public actor OpenClawAgentRunClient {
 
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    public func finishUpdates(runID: String) async {
+        await dispatcher.finishAgentEvents(runID: runID)
     }
 
     private func decodePayload<T: Decodable>(
