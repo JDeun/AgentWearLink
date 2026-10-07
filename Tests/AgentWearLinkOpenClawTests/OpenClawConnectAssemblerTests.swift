@@ -8,6 +8,7 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
 
     private func makeHello(
         token: String,
+        role: String = "operator",
         scopes: [String] = ["operator.read"],
         connectionID: String = "cas-test"
     ) throws -> OpenClawHelloOK {
@@ -23,7 +24,7 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
                 "events": [],
             ],
             "auth": [
-                "role": "operator",
+                "role": role,
                 "scopes": scopes,
                 "deviceToken": token,
             ],
@@ -344,6 +345,53 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         XCTAssertEqual(reconnect.params.scopes, ["operator.read"])
         XCTAssertFalse(reconnect.usedBootstrapToken)
         XCTAssertEqual(reconnect.params.device?.nonce, "fresh-nonce")
+    }
+
+    func testDifferentAuthenticatedRoleIsReusedOnFreshConnect() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let identityStore = InMemoryOpenClawDeviceIdentityStore(identity: identity)
+        let credentialStore = InMemoryOpenClawDeviceCredentialStore()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(store: identityStore),
+            credentialStore: credentialStore
+        )
+
+        let first = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(bootstrapToken: "bootstrap"),
+            challenge: challenge
+        )
+        try await assembler.persistHello(
+            makeHello(
+                token: "approved-device-token",
+                role: "viewer",
+                scopes: ["operator.read"]
+            ),
+            assembled: first
+        )
+
+        let loadedCredential = try await credentialStore.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        let stored = try XCTUnwrap(loadedCredential)
+        XCTAssertEqual(stored.role, "viewer")
+        XCTAssertEqual(stored.requestedRole, "operator")
+        XCTAssertEqual(stored.storageRole, "operator")
+
+        let reconnect = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write", "operator.admin"],
+            credentials: .init(bootstrapToken: "must-not-be-used"),
+            challenge: .init(nonce: "fresh-nonce", ts: 456)
+        )
+
+        XCTAssertTrue(reconnect.usedStoredCredential)
+        XCTAssertEqual(reconnect.effectiveToken, "approved-device-token")
+        XCTAssertEqual(reconnect.params.scopes, ["operator.read"])
+        XCTAssertNil(reconnect.params.auth?.bootstrapToken)
     }
 
     func testInvalidatingRejectedStoredCredentialRemovesGrantActuallyUsed() async throws {

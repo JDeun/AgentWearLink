@@ -2,9 +2,19 @@ import Foundation
 
 public struct OpenClawDeviceCredential: Codable, Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     public let deviceID: String
+    /// Role actually granted by the Gateway in hello-ok.
     public let role: String
+    /// Role requested before authentication. New records keep this so a
+    /// downgraded/different authenticated role is still discoverable on the
+    /// next connect without broadening the requested role.
+    public let requestedRole: String?
     public let scopes: [String]
     public let token: String
+
+    /// Stable lookup key used before the Gateway has returned hello-ok.
+    /// Legacy records did not encode requestedRole, so their authenticated
+    /// role remains the lookup key.
+    public var storageRole: String { requestedRole ?? role }
 
     public var description: String {
         "OpenClawDeviceCredential(deviceID: \\(deviceID), role: \\(role), scopes: \\(scopes), token: <redacted>)"
@@ -14,11 +24,13 @@ public struct OpenClawDeviceCredential: Codable, Sendable, Equatable, CustomStri
     public init(
         deviceID: String,
         role: String,
+        requestedRole: String? = nil,
         scopes: [String],
         token: String
     ) {
         self.deviceID = deviceID
         self.role = role
+        self.requestedRole = requestedRole
         self.scopes = scopes
         self.token = token
     }
@@ -57,7 +69,7 @@ public extension OpenClawDeviceCredentialStore {
     ) async throws -> Bool {
         let current = try await load(
             deviceID: credential.deviceID,
-            role: credential.role
+            role: credential.storageRole
         )
         guard current == expected else { return false }
         try await save(credential)
@@ -95,14 +107,14 @@ public actor InMemoryOpenClawDeviceCredentialStore: OpenClawDeviceCredentialStor
     }
 
     public func save(_ credential: OpenClawDeviceCredential) async throws {
-        values[key(credential.deviceID, credential.role)] = credential
+        values[key(credential.deviceID, credential.storageRole)] = credential
     }
 
     public func compareAndSave(
         _ credential: OpenClawDeviceCredential,
         expected: OpenClawDeviceCredential?
     ) async throws -> Bool {
-        let storageKey = key(credential.deviceID, credential.role)
+        let storageKey = key(credential.deviceID, credential.storageRole)
         guard values[storageKey] == expected else { return false }
         values[storageKey] = credential
         return true

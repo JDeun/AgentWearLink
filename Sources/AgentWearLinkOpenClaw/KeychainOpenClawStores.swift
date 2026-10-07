@@ -239,7 +239,7 @@ public actor KeychainOpenClawDeviceCredentialStore: OpenClawDeviceCredentialStor
             data,
             account: account(
                 deviceID: credential.deviceID,
-                role: credential.role
+                role: credential.storageRole
             )
         )
     }
@@ -250,7 +250,7 @@ public actor KeychainOpenClawDeviceCredentialStore: OpenClawDeviceCredentialStor
     ) async throws -> Bool {
         if let expected,
            expected.deviceID != credential.deviceID ||
-           expected.role != credential.role {
+           expected.storageRole != credential.storageRole {
             return false
         }
 
@@ -259,7 +259,7 @@ public actor KeychainOpenClawDeviceCredentialStore: OpenClawDeviceCredentialStor
             data,
             account: account(
                 deviceID: credential.deviceID,
-                role: credential.role
+                role: credential.storageRole
             )
         ) { currentData in
             let current: OpenClawDeviceCredential?
@@ -281,7 +281,7 @@ public actor KeychainOpenClawDeviceCredentialStore: OpenClawDeviceCredentialStor
         expected: OpenClawDeviceCredential
     ) async throws -> Bool {
         guard expected.deviceID == deviceID,
-              expected.role == role else {
+              expected.storageRole == role else {
             return false
         }
 
