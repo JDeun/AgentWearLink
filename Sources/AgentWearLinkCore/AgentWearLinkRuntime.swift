@@ -109,6 +109,13 @@ public actor AgentWearLinkRuntime {
             for await event in events {
                 guard !Task.isCancelled else { break }
                 await coordinator.handle(event, runtimeGeneration: generation)
+
+                if case .failed(nil, _) = event {
+                    await self.forwardingDidReceiveGlobalFailure(
+                        generation: generation
+                    )
+                    break
+                }
             }
 
             await self.forwardingDidEnd(
@@ -118,6 +125,28 @@ public actor AgentWearLinkRuntime {
         }
 
         finishStartWaiters(generation: generation, result: .success(()))
+    }
+
+    private func forwardingDidReceiveGlobalFailure(
+        generation: UInt64
+    ) async {
+        guard lifecycleState == .running,
+              lifecycleGeneration == generation else {
+            return
+        }
+
+        // The coordinator has already cancelled all interaction-scoped work and
+        // surfaced the global failure. Retire the owning runtime generation so
+        // no later device/agent output can escape the failed session.
+        lifecycleState = .stopping
+        lifecycleGeneration &+= 1
+        forwardingTask = nil
+
+        await coordinator.deactivate(runtimeGeneration: generation)
+        await device.disconnect()
+        await agent.disconnect()
+
+        finishStopping()
     }
 
     private func forwardingDidEnd(
