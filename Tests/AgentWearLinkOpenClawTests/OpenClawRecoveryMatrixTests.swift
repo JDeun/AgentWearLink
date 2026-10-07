@@ -3,6 +3,16 @@ import XCTest
 @testable import AgentWearLinkOpenClaw
 
 
+private struct SupervisorPairingResponse: Sendable {
+    let retryable: Bool
+    let waitForResolution: Bool
+    let pauseReconnect: Bool
+    let recommendedNextStep: String
+    let requestID: String
+    let deviceID: String
+    let retryAfterMilliseconds: Int?
+}
+
 private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var connectCalls = 0
     private var handshakeStep = 0
@@ -10,6 +20,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var receiveWaiter: CheckedContinuation<String, Error>?
     private var failNextReceive = false
     private var successfulConnectCalls: Set<Int> = [1]
+    private var pairingResponses: [Int: SupervisorPairingResponse] = [:]
     private var blockedConnectCall: Int?
     private var blockedConnectStarted = false
     private var blockedConnectRelease: CheckedContinuation<Void, Never>?
@@ -66,6 +77,27 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
                 """
             }
 
+            if let pairing = pairingResponses[connectCalls] {
+                let retryAfter = pairing.retryAfterMilliseconds.map {
+                    ",\"retryAfterMs\":\($0)"
+                } ?? ""
+                return """
+                {"type":"res","id":"\(id)","ok":false,"error":{
+                  "code":"NOT_PAIRED","message":"pairing required",
+                  "retryable":\(pairing.retryable)\(retryAfter),
+                  "details":{
+                    "code":"PAIRING_REQUIRED",
+                    "requestId":"\(pairing.requestID)",
+                    "deviceId":"\(pairing.deviceID)",
+                    "reason":"not-paired",
+                    "recommendedNextStep":"\(pairing.recommendedNextStep)",
+                    "waitForResolution":\(pairing.waitForResolution),
+                    "pauseReconnect":\(pairing.pauseReconnect)
+                  }
+                }}
+                """
+            }
+
             return """
             {"type":"res","id":"\(id)","ok":false,"error":{
               "code":"BUSY","message":"retry test","retryable":true
@@ -110,6 +142,31 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
 
     func makeNextHandshakeSucceed() {
         successfulConnectCalls.insert(connectCalls + 1)
+    }
+
+    func makeHandshakeSucceed(afterCurrentCount offset: Int) {
+        precondition(offset > 0)
+        successfulConnectCalls.insert(connectCalls + offset)
+    }
+
+    func makeNextHandshakeRequirePairing(
+        retryable: Bool = true,
+        waitForResolution: Bool = true,
+        pauseReconnect: Bool = false,
+        recommendedNextStep: String = "wait_then_retry",
+        requestID: String = "pairing-request",
+        deviceID: String = "pairing-device",
+        retryAfterMilliseconds: Int? = nil
+    ) {
+        pairingResponses[connectCalls + 1] = SupervisorPairingResponse(
+            retryable: retryable,
+            waitForResolution: waitForResolution,
+            pauseReconnect: pauseReconnect,
+            recommendedNextStep: recommendedNextStep,
+            requestID: requestID,
+            deviceID: deviceID,
+            retryAfterMilliseconds: retryAfterMilliseconds
+        )
     }
 
     func blockNextConnect() {
@@ -371,6 +428,144 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         XCTAssertEqual(restartedState, .ready)
 
         await supervisor.stop()
+    }
+
+    func testRetryablePairingWaitReconnectsUntilApproved() async throws {
+        let fixture = makeSupervisor(
+            reconnectPolicy: .init(
+                initialDelayMilliseconds: 1,
+                maximumDelayMilliseconds: 1,
+                maximumAttempts: 3
+            )
+        )
+        try await fixture.supervisor.start()
+
+        await fixture.socket.makeNextHandshakeRequirePairing(
+            retryable: true,
+            waitForResolution: true,
+            pauseReconnect: false,
+            recommendedNextStep: "wait_then_retry",
+            retryAfterMilliseconds: 1
+        )
+        await fixture.socket.makeHandshakeSucceed(afterCurrentCount: 2)
+
+        // After the pairing-required handshake, the same bounded reconnect
+        // transition should retry rather than stopping.
+        let reconnect = Task {
+            await fixture.supervisor.reconnect(
+                closeCode: 4_000,
+                closeReason: "pairing wait"
+            )
+        }
+
+        try await waitUntilOpenClawTestCondition(
+            "pairing-required reconnect observed"
+        ) {
+            await fixture.socket.connectionCount() >= 2
+        }
+        await reconnect.value
+
+        let connectionCount = await fixture.socket.connectionCount()
+        let finalState = await fixture.state.connectionState
+        XCTAssertEqual(connectionCount, 3)
+        XCTAssertEqual(finalState, .ready)
+
+        await fixture.supervisor.stop()
+    }
+
+    func testPauseReconnectPairingRequiresExplicitRestart() async throws {
+        let fixture = makeSupervisor()
+        try await fixture.supervisor.start()
+
+        await fixture.socket.makeNextHandshakeRequirePairing(
+            retryable: true,
+            waitForResolution: true,
+            pauseReconnect: true,
+            recommendedNextStep: "wait_then_retry"
+        )
+
+        await fixture.supervisor.reconnect(
+            closeCode: 4_000,
+            closeReason: "pairing paused"
+        )
+
+        let pausedCount = await fixture.socket.connectionCount()
+        let pausedState = await fixture.state.connectionState
+        XCTAssertEqual(pausedCount, 2)
+        XCTAssertEqual(pausedState, .disconnected)
+
+        await fixture.socket.makeNextHandshakeSucceed()
+        try await fixture.supervisor.start()
+
+        let restartedCount = await fixture.socket.connectionCount()
+        let restartedState = await fixture.state.connectionState
+        XCTAssertEqual(restartedCount, 3)
+        XCTAssertEqual(restartedState, .ready)
+
+        await fixture.supervisor.stop()
+    }
+
+    func testNonRetryablePairingStopsReconnect() async throws {
+        let fixture = makeSupervisor()
+        try await fixture.supervisor.start()
+
+        await fixture.socket.makeNextHandshakeRequirePairing(
+            retryable: false,
+            waitForResolution: true,
+            pauseReconnect: false,
+            recommendedNextStep: "wait_then_retry"
+        )
+
+        await fixture.supervisor.reconnect(
+            closeCode: 4_000,
+            closeReason: "pairing rejected"
+        )
+
+        let connectionCount = await fixture.socket.connectionCount()
+        let finalState = await fixture.state.connectionState
+        XCTAssertEqual(connectionCount, 2)
+        XCTAssertEqual(finalState, .disconnected)
+
+        await fixture.supervisor.stop()
+    }
+
+    func testStopInvalidatesPairingWaitBeforeNextRetry() async throws {
+        let fixture = makeSupervisor(
+            reconnectPolicy: .init(
+                initialDelayMilliseconds: 100,
+                maximumDelayMilliseconds: 100,
+                maximumAttempts: 3
+            )
+        )
+        try await fixture.supervisor.start()
+
+        await fixture.socket.makeNextHandshakeRequirePairing(
+            retryable: true,
+            waitForResolution: true,
+            pauseReconnect: false,
+            recommendedNextStep: "wait_then_retry"
+        )
+
+        let reconnect = Task {
+            await fixture.supervisor.reconnect(
+                closeCode: 4_000,
+                closeReason: "pairing wait cancellation"
+            )
+        }
+
+        try await waitUntilOpenClawTestCondition(
+            "pairing wait entered"
+        ) {
+            await fixture.socket.connectionCount() >= 2
+        }
+
+        await fixture.supervisor.stop()
+        await reconnect.value
+
+        let finalCount = await fixture.socket.connectionCount()
+        let finalState = await fixture.state.connectionState
+        XCTAssertEqual(finalCount, 2)
+        XCTAssertEqual(finalState, .disconnected)
     }
 
     func testReconnectBackoffIsBoundedAcrossTransitionMatrix() {

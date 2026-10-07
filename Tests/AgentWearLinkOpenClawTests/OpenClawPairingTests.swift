@@ -13,6 +13,7 @@ final class OpenClawPairingTests: XCTestCase {
             "code":"NOT_PAIRED",
             "message":"pairing required",
             "retryable":true,
+            "retryAfterMs":250,
             "details":{
               "code":"PAIRING_REQUIRED",
               "requestId":"req-123",
@@ -38,5 +39,7 @@ final class OpenClawPairingTests: XCTestCase {
         XCTAssertEqual(pairing?.recommendedNextStep, "wait_then_retry")
         XCTAssertEqual(pairing?.waitForResolution, true)
         XCTAssertEqual(pairing?.pauseReconnect, false)
+        XCTAssertEqual(pairing?.retryable, true)
+        XCTAssertEqual(pairing?.retryAfterMilliseconds, 250)
     }
 }

@@ -7,6 +7,8 @@ public struct OpenClawPairingRequired: Sendable, Equatable {
     public let recommendedNextStep: String?
     public let waitForResolution: Bool
     public let pauseReconnect: Bool
+    public let retryable: Bool
+    public let retryAfterMilliseconds: Int?
 
     public init(
         requestID: String?,
@@ -14,7 +16,9 @@ public struct OpenClawPairingRequired: Sendable, Equatable {
         reason: String?,
         recommendedNextStep: String?,
         waitForResolution: Bool,
-        pauseReconnect: Bool
+        pauseReconnect: Bool,
+        retryable: Bool = false,
+        retryAfterMilliseconds: Int? = nil
     ) {
         self.requestID = requestID
         self.deviceID = deviceID
@@ -22,6 +26,8 @@ public struct OpenClawPairingRequired: Sendable, Equatable {
         self.recommendedNextStep = recommendedNextStep
         self.waitForResolution = waitForResolution
         self.pauseReconnect = pauseReconnect
+        self.retryable = retryable
+        self.retryAfterMilliseconds = retryAfterMilliseconds
     }
 
     public init?(error: OpenClawResponseEnvelope.GatewayError) {
@@ -47,7 +53,9 @@ public struct OpenClawPairingRequired: Sendable, Equatable {
             reason: string("reason"),
             recommendedNextStep: string("recommendedNextStep"),
             waitForResolution: bool("waitForResolution"),
-            pauseReconnect: bool("pauseReconnect")
+            pauseReconnect: bool("pauseReconnect"),
+            retryable: error.retryable ?? false,
+            retryAfterMilliseconds: error.retryAfterMs
         )
     }
 }
