@@ -13,14 +13,55 @@ public actor OpenClawAgentRunClient {
         sessionKey: String?,
         idempotencyKey: String
     ) async throws -> OpenClawAgentAccepted {
-        let response = try await dispatcher.request(
-            method: "agent",
-            params: OpenClawAgentParams(
-                message: message,
-                sessionKey: sessionKey,
-                idempotencyKey: idempotencyKey
+        let response: OpenClawResponseEnvelope
+        do {
+            response = try await dispatcher.request(
+                method: "agent",
+                params: OpenClawAgentParams(
+                    message: message,
+                    sessionKey: sessionKey,
+                    idempotencyKey: idempotencyKey
+                )
             )
-        )
+        } catch is CancellationError {
+            // Dispatcher cancellation before transport handoff is known-not-sent.
+            // Preserve cancellation semantics so lifecycle interruption does not
+            // become a second user-visible failure.
+            throw CancellationError()
+        } catch let error as OpenClawTransportSendError {
+            switch error {
+            case .deliveryUncertain:
+                throw OpenClawAgentSubmissionError.executionUncertain(
+                    idempotencyKey: idempotencyKey
+                )
+            case .staleGeneration, .generationBindingUnavailable:
+                throw OpenClawAgentSubmissionError.definitelyNotSent(
+                    idempotencyKey: idempotencyKey
+                )
+            }
+        } catch let error as OpenClawRPCDispatcherError {
+            switch error {
+            case .deadlineExceeded:
+                // RPC deadlines start only after the generation-bound send has
+                // completed, so admission/execution can no longer be disproved.
+                throw OpenClawAgentSubmissionError.executionUncertain(
+                    idempotencyKey: idempotencyKey
+                )
+            }
+        } catch let error as AWLOpenClawError {
+            switch error {
+            case .disconnected, .notReady:
+                // The dispatcher converts transport loss after send handoff to
+                // deliveryUncertain. Reaching these errors therefore means the
+                // mutating frame was never handed to the transport.
+                throw OpenClawAgentSubmissionError.definitelyNotSent(
+                    idempotencyKey: idempotencyKey
+                )
+            default:
+                throw error
+            }
+        }
+
         return try decodePayload(response, as: OpenClawAgentAccepted.self)
     }
 
@@ -127,6 +168,17 @@ public actor OpenClawAgentRunClient {
         let data = try JSONEncoder().encode(value)
         return try decoder.decode(type, from: data)
     }
+}
+
+public enum OpenClawAgentSubmissionError: Error, Sendable, Equatable {
+    /// The dispatcher can prove the mutating frame did not cross the transport
+    /// boundary. A higher layer may choose a new explicit submission, but this
+    /// client never retries automatically.
+    case definitelyNotSent(idempotencyKey: String)
+
+    /// The mutating frame may have been admitted or executed remotely, but its
+    /// acceptance response was not observed. Never replay automatically.
+    case executionUncertain(idempotencyKey: String)
 }
 
 public enum OpenClawAgentRunError: Error, Sendable, Equatable {
