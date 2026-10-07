@@ -15,7 +15,7 @@ public actor InteractionCoordinator {
 
     public init(
         agent: any AgentAdapter,
-        maximumInFlightInteractions: Int = Self.defaultMaximumInFlightInteractions,
+        maximumInFlightInteractions: Int = InteractionCoordinator.defaultMaximumInFlightInteractions,
         output: @escaping @Sendable (InteractionEvent) async -> Void
     ) {
         precondition(maximumInFlightInteractions > 0)
