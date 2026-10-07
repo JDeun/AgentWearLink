@@ -37,16 +37,22 @@ public struct OpenClawAssembledConnect: Sendable, CustomStringConvertible, Custo
 }
 
 public struct OpenClawConnectAssembler: Sendable {
+    private static let maximumBootstrapHandoffTokens = 8
+
     private let identityManager: OpenClawDeviceIdentityManager
     private let credentialStore: any OpenClawDeviceCredentialStore
+    private let bootstrapHandoffPersistenceAllowed: Bool
     private let proofBuilder = OpenClawDeviceProofBuilder()
 
     public init(
         identityManager: OpenClawDeviceIdentityManager,
         credentialStore: any OpenClawDeviceCredentialStore,
-        gatewayNamespace: OpenClawGatewayCredentialNamespace? = nil
+        gatewayNamespace: OpenClawGatewayCredentialNamespace? = nil,
+        bootstrapHandoffPersistenceAllowed: Bool = false
     ) {
         self.identityManager = identityManager
+        self.bootstrapHandoffPersistenceAllowed =
+            bootstrapHandoffPersistenceAllowed
         if let gatewayNamespace {
             self.credentialStore = GatewayScopedOpenClawDeviceCredentialStore(
                 base: credentialStore,
@@ -214,33 +220,121 @@ public struct OpenClawConnectAssembler: Sendable {
         _ hello: OpenClawHelloOK,
         assembled: OpenClawAssembledConnect
     ) async throws {
-        guard let token = hello.auth.deviceToken else { return }
-
         let deviceID = try assembled.identity.deviceID
-        let scopes: [String]
+        let handoffGrants = normalizedBootstrapHandoffGrants(
+            hello.auth.deviceTokens ?? []
+        )
+        let mayPersistHandoffs =
+            assembled.usedBootstrapToken &&
+            bootstrapHandoffPersistenceAllowed
+        let requestedRoleHandoff = mayPersistHandoffs
+            ? handoffGrants.last(where: { $0.role == assembled.params.role })
+            : nil
 
-        if let stored = assembled.storedCredential,
-           token == stored.token {
-            // Preserve the approved grant for an unchanged stored token.
-            scopes = stored.scopes
-        } else {
-            scopes = hello.auth.scopes
+        if let token = hello.auth.deviceToken {
+            let scopes: [String]
+            if let stored = assembled.storedCredential,
+               token == stored.token {
+                // Preserve the approved grant for an unchanged stored token.
+                scopes = stored.scopes
+            } else {
+                scopes = hello.auth.scopes
+            }
+
+            // When a trusted bootstrap response also hands off a token for the
+            // same requested role, keep the primary reconnect token in its own
+            // partition so the operator handoff can occupy the normal lookup
+            // key used by the next operator connection.
+            let primaryStorageOverride = requestedRoleHandoff == nil
+                ? nil
+                : Self.bootstrapPrimaryStorageRole(
+                    requestedRole: assembled.params.role
+                )
+
+            let credential = OpenClawDeviceCredential(
+                deviceID: deviceID,
+                role: hello.auth.role,
+                requestedRole: assembled.params.role,
+                storageRoleOverride: primaryStorageOverride,
+                scopes: scopes,
+                token: token
+            )
+
+            let expected = primaryStorageOverride == nil
+                ? assembled.storedCredential
+                : nil
+
+            // A stale handshake cannot overwrite a newer grant. A separately
+            // partitioned bootstrap-primary record is insert-only.
+            _ = try await credentialStore.compareAndSave(
+                credential,
+                expected: expected
+            )
         }
 
-        let credential = OpenClawDeviceCredential(
-            deviceID: deviceID,
-            role: hello.auth.role,
-            requestedRole: assembled.params.role,
-            scopes: scopes,
-            token: token
-        )
+        guard mayPersistHandoffs else { return }
 
-        // The stored credential captured during assemble() is the compare token.
-        // A stale handshake must not overwrite a grant that a newer handshake
-        // has already rotated after this snapshot was taken.
-        _ = try await credentialStore.compareAndSave(
-            credential,
-            expected: assembled.storedCredential
-        )
+        for grant in handoffGrants {
+            let credential = OpenClawDeviceCredential(
+                deviceID: deviceID,
+                role: grant.role,
+                requestedRole: grant.role,
+                scopes: grant.scopes,
+                token: grant.token
+            )
+
+            // The requested operator slot is the same snapshot loaded during
+            // assemble(). Other handoff roles are insert-only because this
+            // handshake did not read their prior state.
+            let expected = grant.role == assembled.params.role
+                ? assembled.storedCredential
+                : nil
+
+            _ = try await credentialStore.compareAndSave(
+                credential,
+                expected: expected
+            )
+        }
+    }
+
+    private func normalizedBootstrapHandoffGrants(
+        _ grants: [OpenClawHelloOK.Auth.DeviceTokenGrant]
+    ) -> [OpenClawHelloOK.Auth.DeviceTokenGrant] {
+        // Pre-auth frames already have a byte ceiling; additionally bound the
+        // number of secure-store mutations a single Hello may request.
+        guard grants.count <= Self.maximumBootstrapHandoffTokens else {
+            return []
+        }
+
+        var order: [String] = []
+        var latestByRole: [
+            String: OpenClawHelloOK.Auth.DeviceTokenGrant
+        ] = [:]
+
+        for grant in grants {
+            let role = grant.role.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            guard !role.isEmpty, !grant.token.isEmpty else { continue }
+
+            if latestByRole[role] == nil {
+                order.append(role)
+            }
+            // Duplicate roles are an in-band rotation: the last valid grant in
+            // this authoritative Hello wins before the single CAS write.
+            latestByRole[role] = .init(
+                token: grant.token,
+                role: role,
+                scopes: grant.scopes
+            )
+        }
+
+        return order.compactMap { latestByRole[$0] }
+    }
+
+    private static func bootstrapPrimaryStorageRole(
+        requestedRole: String
+    ) -> String {
+        "bootstrap-primary-v1|\(requestedRole)"
     }
 }
