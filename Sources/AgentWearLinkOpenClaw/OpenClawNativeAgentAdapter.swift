@@ -133,6 +133,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                             to: continuation
                         )
                         continuation.finish()
+                    case "timeout":
+                        throw Self.terminalRunTimeoutError(terminal)
                     default:
                         throw OpenClawNativeAdapterError.unexpectedWaitStatus(
                             terminal.status
@@ -233,7 +235,12 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
             let result = try await wait(pollTimeoutMilliseconds)
 
             switch result.status {
-            case "timeout", "pending":
+            case "pending":
+                continue
+            case "timeout":
+                if Self.isTerminalRunTimeout(result) {
+                    return result
+                }
                 continue
             default:
                 return result
@@ -242,6 +249,43 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
 
         throw OpenClawNativeAdapterError.terminalWaitLimitExceeded(
             maximumPolls: maximumPolls
+        )
+    }
+
+    /// Distinguishes a run-owned terminal timeout from a wait-only deadline.
+    ///
+    /// Current OpenClaw returns only `status: "timeout"` for a bare
+    /// `agent.wait` deadline. Gateway draining may add `timeoutPhase` without
+    /// terminal metadata, so phase/provider fields alone are intentionally not
+    /// sufficient. A completed terminal snapshot, explicit terminal liveness,
+    /// terminal reply, or pending terminal error stops polling.
+    nonisolated static func isTerminalRunTimeout(
+        _ result: OpenClawAgentWaitResult
+    ) -> Bool {
+        guard result.status == "timeout" else { return false }
+
+        if result.pendingError == true {
+            return true
+        }
+        if result.endedAt != nil {
+            return true
+        }
+        if result.livenessState == "terminal" {
+            return true
+        }
+        if result.terminalReply != nil {
+            return true
+        }
+        return false
+    }
+
+    nonisolated static func terminalRunTimeoutError(
+        _ result: OpenClawAgentWaitResult
+    ) -> OpenClawNativeAdapterError {
+        .terminalRunTimedOut(
+            timeoutPhase: result.timeoutPhase,
+            providerStarted: result.providerStarted,
+            gatewayMessage: result.error
         )
     }
 
@@ -272,4 +316,9 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
 public enum OpenClawNativeAdapterError: Error, Sendable, Equatable {
     case unexpectedWaitStatus(String)
     case terminalWaitLimitExceeded(maximumPolls: Int)
+    case terminalRunTimedOut(
+        timeoutPhase: String?,
+        providerStarted: Bool?,
+        gatewayMessage: String?
+    )
 }
