@@ -32,6 +32,10 @@ private actor DispatcherSocket: OpenClawWebSocket {
         }
     }
 
+    func sentCount() -> Int {
+        sentFrames.count
+    }
+
     func lastRequestID() async throws -> String {
         while sentFrames.isEmpty {
             await Task.yield()
@@ -44,6 +48,88 @@ private actor DispatcherSocket: OpenClawWebSocket {
             throw OpenClawFrameError.malformedFrame
         }
         return id
+    }
+}
+
+private actor AsyncGate {
+    private var entered = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func block() async {
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+            entered = true
+            let waiters = enteredWaiters
+            enteredWaiters.removeAll(keepingCapacity: false)
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { continuation in
+            enteredWaiters.append(continuation)
+        }
+    }
+
+    func open() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
+private actor GenerationGateSocket: OpenClawWebSocket {
+    private let gate: AsyncGate
+    private var connected = false
+    private var generation: UInt64 = 0
+    private var sentGenerations: [UInt64] = []
+
+    init(gate: AsyncGate) {
+        self.gate = gate
+    }
+
+    func connect() async {
+        guard !connected else { return }
+        generation &+= 1
+        connected = true
+    }
+
+    func currentConnectionGeneration() async -> UInt64 {
+        generation
+    }
+
+    func send(text: String) async throws {
+        guard connected else { throw AWLOpenClawError.disconnected }
+        sentGenerations.append(generation)
+    }
+
+    func send(
+        text: String,
+        connectionGeneration expectedGeneration: UInt64
+    ) async throws {
+        await gate.block()
+        try Task.checkCancellation()
+        guard connected,
+              generation == expectedGeneration else {
+            throw AWLOpenClawError.disconnected
+        }
+        sentGenerations.append(generation)
+    }
+
+    func receive() async throws -> String {
+        try await Task.sleep(for: .seconds(60))
+        throw AWLOpenClawError.disconnected
+    }
+
+    func close() async {
+        connected = false
+    }
+
+    func sentCount() -> Int {
+        sentGenerations.count
     }
 }
 
@@ -92,7 +178,6 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         await dispatcher.stop()
     }
 
-
     func testRequestDeadlineFailsAndCleansRegistry() async throws {
         let socket = DispatcherSocket()
         let registry = OpenClawRPCRegistry()
@@ -120,6 +205,112 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         await socket.close()
     }
 
+    func testStopDuringRegistryRegistrationCannotResurrectRequest() async throws {
+        let socket = DispatcherSocket()
+        let registrationGate = AsyncGate()
+        let registry = OpenClawRPCRegistry(
+            beforeRegister: {
+                await registrationGate.block()
+            }
+        )
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(),
+            registry: registry
+        )
+        await dispatcher.start()
+
+        let requestTask = Task {
+            try await dispatcher.request(
+                method: "health",
+                params: EmptyParams()
+            )
+        }
+
+        await registrationGate.waitUntilEntered()
+        await dispatcher.stop()
+        await registrationGate.open()
+
+        do {
+            _ = try await requestTask.value
+            XCTFail("Expected retired registration to fail")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(error, .disconnected)
+        }
+
+        XCTAssertEqual(await registry.count, 0)
+        XCTAssertEqual(await socket.sentCount(), 0)
+        await socket.close()
+    }
+
+    func testStopBeforeBlockedSendCannotGhostSendAfterReconnect() async throws {
+        let gate = AsyncGate()
+        let socket = GenerationGateSocket(gate: gate)
+        await socket.connect()
+
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+        await dispatcher.start()
+
+        let requestTask = Task {
+            try await dispatcher.request(
+                method: "health",
+                params: EmptyParams()
+            )
+        }
+
+        await gate.waitUntilEntered()
+
+        let stopTask = Task {
+            await dispatcher.stop()
+        }
+        await Task.yield()
+
+        await socket.close()
+        await socket.connect()
+        await gate.open()
+        await stopTask.value
+
+        do {
+            _ = try await requestTask.value
+            XCTFail("Expected retired request to fail")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(error, .disconnected)
+        }
+
+        XCTAssertEqual(await socket.sentCount(), 0)
+        await socket.close()
+    }
+
+    func testStopAfterSendSurfacesUncertainDelivery() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+        await dispatcher.start()
+
+        let requestTask = Task {
+            try await dispatcher.request(
+                method: "health",
+                params: EmptyParams()
+            )
+        }
+
+        _ = try await socket.lastRequestID()
+        await dispatcher.stop()
+
+        do {
+            _ = try await requestTask.value
+            XCTFail("Expected uncertain delivery")
+        } catch let error as AWLOpenClawError {
+            XCTAssertEqual(error, .deliveryUncertain)
+        }
+
+        await socket.close()
+    }
 
     func testLivenessUsesTwoIntervalThresholdWithoutHotLooping() async throws {
         let socket = DispatcherSocket()
