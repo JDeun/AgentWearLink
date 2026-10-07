@@ -7,6 +7,7 @@ private actor DispatcherSocket: OpenClawWebSocket {
     private var waiter: CheckedContinuation<String, Error>?
     private var sentFrames: [String] = []
     private let sentSignal = OpenClawTestCountSignal()
+    private let receiveSignal = OpenClawTestCountSignal()
     private var generation: UInt64 = 1
 
     func connect() async {}
@@ -30,13 +31,26 @@ private actor DispatcherSocket: OpenClawWebSocket {
     }
 
     func receive() async throws -> String {
-        if !inbound.isEmpty { return inbound.removeFirst() }
-
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { waiter = $0 }
-        } onCancel: {
-            Task { await self.cancelPendingReceive() }
+        let text: String
+        if !inbound.isEmpty {
+            text = inbound.removeFirst()
+        } else {
+            text = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { waiter = $0 }
+            } onCancel: {
+                Task { await self.cancelPendingReceive() }
+            }
         }
+
+        await receiveSignal.increment()
+        return text
+    }
+
+    func waitUntilReceived(_ count: Int) async throws {
+        try await receiveSignal.wait(
+            until: count,
+            label: "dispatcher socket received frame"
+        )
     }
 
     private func cancelPendingReceive() {
@@ -592,6 +606,48 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         XCTAssertEqual(firstEvent.seq, 1)
         XCTAssertEqual(secondEvent.seq, 1)
 
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testGenericEventSubscriberFailsOnBoundedBufferOverflow() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(),
+            eventBufferLimit: 2
+        )
+        let events = await dispatcher.events()
+        await dispatcher.start()
+
+        for sequence in 1...4 {
+            await socket.push(
+                #"{"type":"event","event":"tick","payload":{},"seq":\#(sequence)}"#
+            )
+        }
+
+        // Waiting for the fourth receive proves the third event has already
+        // been routed, which deterministically overflows the 2-event subscriber.
+        try await socket.waitUntilReceived(4)
+
+        var iterator = events.makeAsyncIterator()
+        let second = try await iterator.next()
+        let third = try await iterator.next()
+        XCTAssertEqual(second?.seq, 2)
+        XCTAssertEqual(third?.seq, 3)
+
+        do {
+            _ = try await iterator.next()
+            XCTFail("Expected bounded generic event subscriber overflow")
+        } catch let error as OpenClawEventRoutingError {
+            XCTAssertEqual(error, .bufferOverflow)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        // A slow generic subscriber is isolated; it must not retire transport.
+        let running = await dispatcher.isRunning
+        XCTAssertTrue(running)
         await dispatcher.stop()
         await socket.close()
     }
