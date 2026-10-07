@@ -54,14 +54,17 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         let phases = lifecycle.phases()
         var iterator = phases.makeAsyncIterator()
 
-        XCTAssertEqual(await iterator.next(), .foreground)
+        let initial = await iterator.next()
+        XCTAssertEqual(initial, .foreground)
         await lifecycle.transition(to: .background)
         await lifecycle.transition(to: .foreground)
 
         // Event consumers must see the retirement edge even when the current
         // phase is already foreground again. Fresh state comes from currentPhase.
-        XCTAssertEqual(await iterator.next(), .background)
-        XCTAssertEqual(await lifecycle.currentPhase, .foreground)
+        let retirement = await iterator.next()
+        let latestPhase = await lifecycle.currentPhase
+        XCTAssertEqual(retirement, .background)
+        XCTAssertEqual(latestPhase, .foreground)
     }
 
     func testUnconsumedInitialPhaseCannotHideBackground() async {
@@ -72,9 +75,12 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         await lifecycle.transition(to: .foreground)
 
         var iterator = phases.makeAsyncIterator()
-        XCTAssertEqual(await iterator.next(), .foreground)
-        XCTAssertEqual(await iterator.next(), .background)
-        XCTAssertEqual(await lifecycle.currentPhase, .foreground)
+        let initial = await iterator.next()
+        let retirement = await iterator.next()
+        let latestPhase = await lifecycle.currentPhase
+        XCTAssertEqual(initial, .foreground)
+        XCTAssertEqual(retirement, .background)
+        XCTAssertEqual(latestPhase, .foreground)
     }
 
     func testForegroundReadinessRequiresFreshReacquisitionAfterBackground() async {
