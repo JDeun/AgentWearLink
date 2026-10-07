@@ -27,10 +27,104 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
 
 }
 
+private final class StreamingURLProtocolStub: URLProtocol, @unchecked Sendable {
+    private static let metricsLock = NSLock()
+    private nonisolated(unsafe) static var chunksSentStorage = 0
+    private nonisolated(unsafe) static var onStopStorage: (() -> Void)?
+    static let totalChunks = 64
+
+    private let stateLock = NSLock()
+    private var stopped = false
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    static func reset(onStop: (() -> Void)? = nil) {
+        metricsLock.lock()
+        chunksSentStorage = 0
+        onStopStorage = onStop
+        metricsLock.unlock()
+    }
+
+    static func chunksSent() -> Int {
+        metricsLock.lock()
+        defer { metricsLock.unlock() }
+        return chunksSentStorage
+    }
+
+    private static func recordChunk() {
+        metricsLock.lock()
+        chunksSentStorage += 1
+        metricsLock.unlock()
+    }
+
+    private static func stopHandler() -> (() -> Void)? {
+        metricsLock.lock()
+        defer { metricsLock.unlock() }
+        return onStopStorage
+    }
+
+    override func startLoading() {
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Transfer-Encoding": "chunked"]
+              ) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        sendChunk(at: 0)
+    }
+
+    private func sendChunk(at index: Int) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.01) { [weak self] in
+            guard let self else { return }
+
+            self.stateLock.lock()
+            let isStopped = self.stopped
+            self.stateLock.unlock()
+            guard !isStopped else { return }
+
+            guard index < Self.totalChunks else {
+                self.client?.urlProtocolDidFinishLoading(self)
+                return
+            }
+
+            Self.recordChunk()
+            self.client?.urlProtocol(
+                self,
+                didLoad: Data(repeating: 65, count: 4)
+            )
+            self.sendChunk(at: index + 1)
+        }
+    }
+
+    override func stopLoading() {
+        stateLock.lock()
+        let shouldNotify = !stopped
+        stopped = true
+        stateLock.unlock()
+
+        if shouldNotify {
+            Self.stopHandler()?()
+        }
+    }
+}
+
 final class HTTPAgentTransportTests: XCTestCase {
     private func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
+        return URLSession(configuration: configuration)
+    }
+
+    private func makeStreamingSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StreamingURLProtocolStub.self]
         return URLSession(configuration: configuration)
     }
 
@@ -169,6 +263,41 @@ final class HTTPAgentTransportTests: XCTestCase {
                 .transport("response exceeds configured byte limit")
             )
         }
+    }
+
+    func testCancelsStreamingResponseBeforeFullBodyAccumulation() async throws {
+        let stopped = expectation(description: "streaming response cancelled")
+        StreamingURLProtocolStub.reset {
+            stopped.fulfill()
+        }
+        defer {
+            StreamingURLProtocolStub.reset()
+        }
+
+        let transport = HTTPAgentTransport(
+            configuration: .init(
+                endpoint: URL(string: "https://example.invalid")!,
+                maximumResponseBytes: 8
+            ),
+            session: makeStreamingSession()
+        )
+        let request = AgentRequest(interactionID: InteractionID(), text: "hello")
+
+        do {
+            for try await _ in await transport.send(request) {}
+            XCTFail("Expected incremental byte limit failure")
+        } catch let error as AWLError {
+            XCTAssertEqual(
+                error,
+                .transport("response exceeds configured byte limit")
+            )
+        }
+
+        await fulfillment(of: [stopped], timeout: 1.0)
+        XCTAssertLessThan(
+            StreamingURLProtocolStub.chunksSent(),
+            StreamingURLProtocolStub.totalChunks
+        )
     }
 
     func testCancellingUnknownInteractionDoesNotCreateState() async {
