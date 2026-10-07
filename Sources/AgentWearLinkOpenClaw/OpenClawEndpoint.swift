@@ -61,9 +61,27 @@ public struct OpenClawEndpoint: Sendable, Equatable {
 
     static func isLoopbackHost(_ host: String) -> Bool {
         let normalized = host.lowercased()
-        return normalized == "localhost"
-            || normalized == "::1"
-            || normalized.hasPrefix("127.")
+        if normalized == "localhost" || normalized == "::1" {
+            return true
+        }
+
+        let octets = normalized.split(
+            separator: ".",
+            omittingEmptySubsequences: false
+        )
+        guard octets.count == 4 else { return false }
+
+        var values: [UInt8] = []
+        values.reserveCapacity(4)
+        for octet in octets {
+            guard !octet.isEmpty,
+                  octet.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  let value = UInt8(octet) else {
+                return false
+            }
+            values.append(value)
+        }
+        return values[0] == 127
     }
 
     private static func isTailnetHostname(_ host: String) -> Bool {
