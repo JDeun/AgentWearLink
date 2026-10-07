@@ -18,14 +18,16 @@ public actor OpenClawAgentRunClient {
     public func submit(
         message: String,
         sessionKey: String?,
-        idempotencyKey: String
+        idempotencyKey: String,
+        attachments: [OpenClawAgentAttachment]? = nil
     ) async throws -> OpenClawAgentAccepted {
         let response = try await dispatcher.request(
             method: "agent",
             params: OpenClawAgentParams(
                 message: message,
                 sessionKey: sessionKey,
-                idempotencyKey: idempotencyKey
+                idempotencyKey: idempotencyKey,
+                attachments: attachments
             )
         )
         return try decodePayload(response, as: OpenClawAgentAccepted.self)
