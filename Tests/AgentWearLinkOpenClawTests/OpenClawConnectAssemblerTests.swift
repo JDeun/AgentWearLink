@@ -8,6 +8,7 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
 
     private func makeHello(
         token: String,
+        role: String = "operator",
         scopes: [String] = ["operator.read"],
         connectionID: String = "cas-test"
     ) throws -> OpenClawHelloOK {
@@ -23,7 +24,7 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
                 "events": [],
             ],
             "auth": [
-                "role": "operator",
+                "role": role,
                 "scopes": scopes,
                 "deviceToken": token,
             ],
@@ -582,6 +583,62 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
             role: "operator"
         )
         XCTAssertEqual(persisted, current)
+    }
+
+
+    func testGatewayRoleDowngradePersistsUnderRequestedRoleAndReusesGrant() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: store
+        )
+
+        let first = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(bootstrapToken: "bootstrap"),
+            challenge: challenge
+        )
+        XCTAssertEqual(first.params.role, "operator")
+
+        try await assembler.persistHello(
+            makeHello(
+                token: "downgraded-token",
+                role: "viewer",
+                scopes: ["operator.read"]
+            ),
+            assembled: first
+        )
+
+        let requestedRoleGrant = try await store.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        XCTAssertEqual(requestedRoleGrant?.token, "downgraded-token")
+        XCTAssertEqual(requestedRoleGrant?.scopes, ["operator.read"])
+        XCTAssertNil(
+            try await store.load(
+                deviceID: deviceID,
+                role: "viewer"
+            )
+        )
+
+        let reconnect = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write", "operator.admin"],
+            credentials: .init(bootstrapToken: "must-not-be-used"),
+            challenge: .init(nonce: "reconnect", ts: 456)
+        )
+
+        XCTAssertTrue(reconnect.usedStoredCredential)
+        XCTAssertFalse(reconnect.usedBootstrapToken)
+        XCTAssertEqual(reconnect.effectiveToken, "downgraded-token")
+        XCTAssertEqual(reconnect.params.role, "operator")
+        XCTAssertEqual(reconnect.params.scopes, ["operator.read"])
     }
 
 
