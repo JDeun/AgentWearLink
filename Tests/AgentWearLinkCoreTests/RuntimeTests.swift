@@ -93,6 +93,71 @@ private final class StartupTrackingDevice: DeviceAdapter, @unchecked Sendable {
     }
 }
 
+private actor RuntimeHoldingAgent: AgentAdapter {
+    private(set) var connects = 0
+    private(set) var disconnects = 0
+    private(set) var requested: [InteractionID] = []
+    private(set) var cancelled: [InteractionID] = []
+    private var continuations: [
+        InteractionID: AsyncThrowingStream<AgentResponse, Error>.Continuation
+    ] = [:]
+    private let requestSignal = TestCountSignal()
+    private let cancelSignal = TestCountSignal()
+
+    func connect() async throws { connects += 1 }
+
+    func disconnect() async {
+        disconnects += 1
+        let active = continuations.values
+        continuations.removeAll(keepingCapacity: false)
+        for continuation in active {
+            continuation.finish()
+        }
+    }
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        requested.append(request.interactionID)
+        await requestSignal.increment()
+
+        let pair = AsyncThrowingStream<AgentResponse, Error>.makeStream(
+            bufferingPolicy: .bufferingOldest(1)
+        )
+        continuations[request.interactionID] = pair.continuation
+        return pair.stream
+    }
+
+    func cancel(interactionID: InteractionID) async {
+        cancelled.append(interactionID)
+        continuations.removeValue(forKey: interactionID)?.finish()
+        await cancelSignal.increment()
+    }
+
+    func waitUntilRequestCount(_ count: Int) async throws {
+        try await requestSignal.wait(
+            until: count,
+            label: "runtime holding agent request count \(count)"
+        )
+    }
+
+    func waitUntilCancelCount(_ count: Int) async throws {
+        try await cancelSignal.wait(
+            until: count,
+            label: "runtime holding agent cancel count \(count)"
+        )
+    }
+
+    func snapshot() -> (
+        connects: Int,
+        disconnects: Int,
+        requested: [InteractionID],
+        cancelled: [InteractionID]
+    ) {
+        (connects, disconnects, requested, cancelled)
+    }
+}
+
 private actor LifecycleAgent: AgentAdapter {
     private(set) var connects = 0
     private(set) var disconnects = 0
@@ -250,6 +315,11 @@ private final class RestartableEndingDevice: DeviceAdapter, @unchecked Sendable 
             return active
         }
         active?.finish()
+    }
+
+    func emit(_ event: InteractionEvent) {
+        let active = lock.withLock { continuation }
+        active?.yield(event)
     }
 
     func finishUnexpectedly() {
@@ -607,6 +677,57 @@ final class RuntimeTests: XCTestCase {
         await runtime.stop()
     }
 
+
+
+    func testGlobalDeviceFailureCancelsAllInteractionsAndTearsDownRuntime() async throws {
+        let device = RestartableEndingDevice()
+        let agent = RuntimeHoldingAgent()
+        let recorder = RuntimeRecorder()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent) { event in
+            await recorder.append(event)
+        }
+
+        try await runtime.start()
+
+        let first = InteractionID()
+        let second = InteractionID()
+        device.emit(.text(first, "first"))
+        device.emit(.text(second, "second"))
+        try await agent.waitUntilRequestCount(2)
+
+        device.emit(.failed(nil, .device("registration lost")))
+
+        try await agent.waitUntilCancelCount(2)
+        try await recorder.waitUntilCount(1)
+        try await waitUntilTestCondition("global failure runtime teardown") {
+            let state = await agent.snapshot()
+            return state.disconnects == 1
+        }
+
+        let agentState = await agent.snapshot()
+        XCTAssertEqual(agentState.connects, 1)
+        XCTAssertEqual(agentState.disconnects, 1)
+        XCTAssertEqual(Set(agentState.requested), Set([first, second]))
+        XCTAssertEqual(agentState.cancelled.count, 2)
+        XCTAssertEqual(Set(agentState.cancelled), Set([first, second]))
+
+        let deviceState = device.snapshot()
+        XCTAssertEqual(deviceState.disconnects, 1)
+        XCTAssertFalse(deviceState.hasActiveSubscription)
+
+        let events = await recorder.events
+        XCTAssertEqual(events, [.failed(nil, .device("registration lost"))])
+
+        // A terminal global failure retires only the failed generation; the
+        // runtime remains restartable after teardown completes.
+        try await runtime.start()
+        await runtime.stop()
+
+        let restartedAgentState = await agent.snapshot()
+        XCTAssertEqual(restartedAgentState.connects, 2)
+        XCTAssertEqual(restartedAgentState.disconnects, 2)
+        XCTAssertEqual(restartedAgentState.cancelled.count, 2)
+    }
 
     func testUnexpectedDeviceEventStreamFinishFailsAndCleansUpRuntime() async throws {
         let device = RestartableEndingDevice()

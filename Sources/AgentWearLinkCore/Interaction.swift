@@ -15,6 +15,10 @@ public enum InteractionEvent: Sendable, Equatable, CustomStringConvertible, Cust
     case interrupted(InteractionID)
     case turnCompleted(InteractionID)
     case sessionEnded(InteractionID)
+
+    /// An ID-scoped failure terminates that interaction. A nil-ID device
+    /// failure means the active device/session generation is no longer usable;
+    /// other nil-ID errors remain non-terminal global diagnostics.
     case failed(InteractionID?, AWLError)
 
     public var interactionID: InteractionID? {
@@ -64,4 +68,20 @@ public enum AWLError: Error, Sendable, Equatable {
     case overloaded(String)
     case timeout
     case cancelled
+}
+
+
+extension InteractionEvent {
+    /// Only an ID-less device error retires the active runtime generation.
+    /// Other ID-less errors may be global diagnostics and must not implicitly
+    /// cancel unrelated interactions.
+    var isTerminalGlobalDeviceFailure: Bool {
+        guard case let .failed(id, error) = self, id == nil else {
+            return false
+        }
+        guard case .device = error else {
+            return false
+        }
+        return true
+    }
 }

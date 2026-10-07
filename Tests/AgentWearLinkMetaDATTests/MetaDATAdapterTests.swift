@@ -209,6 +209,25 @@ final class MetaDATAdapterTests: XCTestCase {
     }
 
 
+
+    func testGlobalSessionFailurePreservesNilInteractionIdentity() async throws {
+        let session = RestartableMetaSession()
+        let adapter = MetaDATAdapter(session: session)
+        let stream = adapter.events()
+        var iterator = stream.makeAsyncIterator()
+
+        try await adapter.connect()
+        session.emit(.failed(nil, "registration became unavailable"))
+
+        let event = await iterator.next()
+        XCTAssertEqual(
+            event,
+            .failed(nil, .device("registration became unavailable"))
+        )
+
+        await adapter.disconnect()
+    }
+
     func testFailedConnectFinishesOnlyItsPublicSubscriptionAndCanRetry() async throws {
         let session = RestartableMetaSession(connectFailures: 1)
         let adapter = MetaDATAdapter(session: session)
