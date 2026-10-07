@@ -30,6 +30,16 @@ public protocol DeviceAdapter: Sendable {
     func events() -> AsyncStream<InteractionEvent>
 }
 
+/// Host-side sink for normalized runtime output.
+///
+/// Output capabilities belong to the sink that can actually execute them, not
+/// automatically to the wearable DeviceAdapter. The runtime sends only its
+/// externally committed InteractionEvent stream through this boundary.
+public protocol InteractionOutputSink: Sendable {
+    var capabilities: CapabilitySet { get }
+    func consume(_ event: InteractionEvent) async
+}
+
 public enum AgentCancellationOutcome: Sendable, Equatable {
     /// The adapter completed its cancellation handling with no known
     /// uncertainty that needs to be surfaced by Core.
