@@ -24,24 +24,6 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
-    func testRejectsBearerCredentialsOnRemotePlainHTTPAtConnectBoundary() async {
-        let transport = HTTPAgentTransport(configuration: .init(
-            endpoint: URL(string: "http://example.invalid/agent")!, bearerToken: "secret"
-        ))
-        do {
-            try await transport.connect()
-            XCTFail("Expected insecure credential transport rejection")
-        } catch let error as AWLError {
-            XCTAssertEqual(error, .transport("bearer credentials require HTTPS or an explicit loopback HTTP endpoint"))
-        } catch { XCTFail("Unexpected error: \(error)") }
-    }
-
-    func testAllowsBearerCredentialsOnHTTPSAndLoopbackHTTP() async throws {
-        for endpoint in ["https://example.invalid/agent", "http://localhost:8080/agent", "http://127.0.0.1:8080/agent", "http://[::1]:8080/agent"] {
-            let transport = HTTPAgentTransport(configuration: .init(endpoint: URL(string: endpoint)!, bearerToken: "secret"))
-            try await transport.connect()
-        }
-    }
 
 }
 
@@ -50,6 +32,50 @@ final class HTTPAgentTransportTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [URLProtocolStub.self]
         return URLSession(configuration: configuration)
+    }
+
+    func testRejectsBearerCredentialsOnRemotePlainHTTPAtConnectBoundary() async {
+        let transport = HTTPAgentTransport(configuration: .init(
+            endpoint: URL(string: "http://example.invalid/agent")!,
+            bearerToken: "secret"
+        ))
+
+        do {
+            try await transport.connect()
+            XCTFail("Expected insecure credential transport rejection")
+        } catch let error as AWLError {
+            XCTAssertEqual(
+                error,
+                .transport("bearer credentials require HTTPS or an explicit loopback HTTP endpoint")
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testAllowsBearerCredentialsOnHTTPSAndLoopbackHTTP() async throws {
+        let endpoints = [
+            "https://example.invalid/agent",
+            "http://localhost:8080/agent",
+            "http://127.0.0.1:8080/agent",
+            "http://[::1]:8080/agent"
+        ]
+
+        for endpoint in endpoints {
+            let transport = HTTPAgentTransport(configuration: .init(
+                endpoint: URL(string: endpoint)!,
+                bearerToken: "secret"
+            ))
+            try await transport.connect()
+        }
+    }
+
+    func testAllowsCredentialFreeRemoteHTTPForExplicitDevelopmentUse() async throws {
+        let transport = HTTPAgentTransport(configuration: .init(
+            endpoint: URL(string: "http://example.invalid/agent")!
+        ))
+
+        try await transport.connect()
     }
 
     func testConfigurationCarriesResponseBound() {
