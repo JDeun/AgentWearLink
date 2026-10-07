@@ -605,6 +605,7 @@ extension InteractionCoordinatorTests {
 
 private actor CapacityHoldingAgent: AgentAdapter {
     private var requestedIDs: [InteractionID] = []
+    private var cancelledIDs: [InteractionID] = []
     private var continuations: [
         InteractionID: AsyncThrowingStream<AgentResponse, Error>.Continuation
     ] = [:]
@@ -628,6 +629,7 @@ private actor CapacityHoldingAgent: AgentAdapter {
     }
 
     func cancel(interactionID: InteractionID) async {
+        cancelledIDs.append(interactionID)
         continuations.removeValue(forKey: interactionID)?.finish()
     }
 
@@ -639,6 +641,7 @@ private actor CapacityHoldingAgent: AgentAdapter {
     }
 
     func requests() -> [InteractionID] { requestedIDs }
+    func cancellations() -> [InteractionID] { cancelledIDs }
 
     func complete(_ id: InteractionID) {
         guard let continuation = continuations.removeValue(forKey: id) else { return }
@@ -786,5 +789,58 @@ extension InteractionCoordinatorTests {
         XCTAssertEqual(failures.count, 1)
         let cancellations = await agent.cancellations()
         XCTAssertEqual(cancellations, [id])
+    }
+}
+
+
+extension InteractionCoordinatorTests {
+    func testGlobalDeviceFailureCancelsEveryInFlightInteractionExactlyOnce() async throws {
+        let agent = CapacityHoldingAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let first = InteractionID()
+        let second = InteractionID()
+
+        await coordinator.handle(.text(first, "first"))
+        await coordinator.handle(.text(second, "second"))
+        try await agent.waitUntilRequestCount(2)
+
+        await coordinator.handle(.failed(nil, .device("session lost")))
+        try await recorded.waitUntilCount(1)
+
+        XCTAssertEqual(await coordinator.inFlightInteractionCount(), 0)
+        let cancellations = await agent.cancellations()
+        XCTAssertEqual(Set(cancellations), Set([first, second]))
+        XCTAssertEqual(cancellations.count, 2)
+        XCTAssertEqual(
+            await recorded.values,
+            [.failed(nil, .device("session lost"))]
+        )
+    }
+
+    func testGlobalNonDeviceDiagnosticDoesNotCancelInFlightInteraction() async throws {
+        let agent = CapacityHoldingAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "active"))
+        try await agent.waitUntilRequestCount(1)
+
+        await coordinator.handle(.failed(nil, .transport("diagnostic")))
+        try await recorded.waitUntilCount(1)
+
+        XCTAssertEqual(await coordinator.inFlightInteractionCount(), 1)
+        XCTAssertTrue(await agent.cancellations().isEmpty)
+        XCTAssertEqual(
+            await recorded.values,
+            [.failed(nil, .transport("diagnostic"))]
+        )
+
+        await coordinator.cancelAll()
     }
 }
