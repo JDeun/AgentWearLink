@@ -2,22 +2,31 @@
 
 AgentWearLink pins Meta Wearables DAT **1.0.0** in `Adapters/MetaDAT`. Vendor SDK types remain outside `AgentWearLinkCore`.
 
-## Implemented code-side foundation
+## Implementation status by evidence level
 
-The concrete integration now includes:
+### Production-wired today
+
+The vendor-linked production adapter currently includes:
 
 - `Wearables.configure()` bootstrap and Meta registration handling
 - deterministic selected-device choice plus link/compatibility loss handling
 - `DeviceSession` startup, bounded timeout, state/error monitoring, and teardown
+- MockDeviceKit isolation from the production dependency graph
+- pinned SDK and full iPhone reference-stack compile gates for iOS Simulator
+
+### Implemented and deterministically tested, but not yet fully production-wired
+
+The following slices exist as code and have deterministic helper/integration coverage, but they are not yet all composed into the concrete vendor session/adapter path. Production composition is tracked by #230:
+
 - live capability derivation from current readiness
-- camera configuration, ignition/first-frame readiness, bounded shutter/photo-result handling, normalization, cancellation generation, and deterministic mock fixtures
-- Speech transcript stream handling with final-only filtering and duplicate suppression
+- camera configuration, ignition/first-frame readiness, bounded shutter/photo-result handling, normalization, and cancellation generations
+- Speech transcript handling with final-only filtering and duplicate suppression
 - independent Voice Invocation listener, acknowledgement, and bounded reopen/backoff policy
 - foreground/background media invalidation and fresh-readiness rules
-- MockDeviceKit host bootstrap and deterministic mock fixtures live in the separate `AgentWearLinkMetaDATTestSupport` target; the production integration target does not link MockDeviceKit
-- pinned SDK compile gates for iOS Simulator
 
-These are code-side claims. They are not substitutes for physical Ray-Ban Meta evidence.
+MockDeviceKit host bootstrap and deterministic mock fixtures live in the separate `AgentWearLinkMetaDATTestSupport` target; the production integration target does not link MockDeviceKit.
+
+These are code-side evidence claims, not physical-device claims. Helper-level coverage also does not prove that a feature is reachable through the shipping production adapter until #230 is complete.
 
 ## Deliberately not claimed as physically validated
 
@@ -51,6 +60,8 @@ The Swift package keeps production integration and MockDeviceKit test support in
 Root `swift test` passing means Core/runtime contracts pass. It does **not** prove the concrete MWDAT integration or physical glasses.
 
 ## Lifecycle invariants
+
+These are required production invariants. Deterministic helper coverage exists for the relevant slices, while end-to-end enforcement through the concrete camera/Speech/Voice session path remains part of #230.
 
 - Subscribe to session state/error streams before `start()` so startup transitions are not missed.
 - A stopped or invalidated session is not resurrected.
