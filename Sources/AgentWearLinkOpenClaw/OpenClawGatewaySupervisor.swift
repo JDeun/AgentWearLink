@@ -190,6 +190,45 @@ public actor OpenClawGatewaySupervisor {
         }
     }
 
+    /// Restores a transport for a run that was already accepted remotely.
+    ///
+    /// The caller supplies the generation on which its safe status/read
+    /// continuation failed. If another recovery already produced a newer ready
+    /// generation, reuse it. Otherwise coalesce onto the supervisor's single
+    /// reconnect transition. This method never replays the accepted mutation.
+    func recoverAcceptedRunTransport(
+        after failedGeneration: UInt64
+    ) async throws -> UInt64? {
+        try Task.checkCancellation()
+
+        if transportGeneration > failedGeneration {
+            let ready = await state.connectionState == .ready
+            let running = await dispatcher.isRunning
+            if ready && running {
+                return transportGeneration
+            }
+        }
+
+        guard !stopped, !stopping else { return nil }
+
+        await reconnect(
+            closeCode: 1_001,
+            closeReason: "accepted agent run status recovery"
+        )
+
+        try Task.checkCancellation()
+
+        guard !stopped, !stopping,
+              transportGeneration > failedGeneration else {
+            return nil
+        }
+
+        let ready = await state.connectionState == .ready
+        let running = await dispatcher.isRunning
+        guard ready && running else { return nil }
+        return transportGeneration
+    }
+
     private func runReconnect(
         closeCode: Int,
         closeReason: String,
