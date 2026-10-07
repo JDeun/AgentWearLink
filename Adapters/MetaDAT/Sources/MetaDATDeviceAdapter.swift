@@ -202,8 +202,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             throw AWLError.device("Meta DAT application is not registered")
         }
 
-        registrationTask = Task { [weak self] in
-            for await state in wearables.registrationStateStream() {
+        let registrationWearables = wearables
+        registrationTask = Task { [weak self, registrationWearables] in
+            for await state in registrationWearables.registrationStateStream() {
                 guard !Task.isCancelled else { break }
                 guard case .registered = state else {
                     await self?.handleRegistrationLoss(generation: generation)
