@@ -8,6 +8,9 @@ public actor OpenClawGatewayConnection {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let handshakeTimeout: Duration
+    private var nextConnectGeneration: UInt64 = 0
+    private var activeConnectGeneration: UInt64?
+    private var disconnectInProgress = false
 
     public init(
         socket: any OpenClawWebSocket,
@@ -29,13 +32,26 @@ public actor OpenClawGatewayConnection {
         clientIdentity: OpenClawGatewayClientIdentity = .backend,
         locale: String = "en-US"
     ) async throws -> OpenClawHelloOK {
+        guard activeConnectGeneration == nil, !disconnectInProgress else {
+            throw OpenClawHandshakeError.connectInProgress
+        }
+
+        nextConnectGeneration &+= 1
+        let generation = nextConnectGeneration
+        activeConnectGeneration = generation
+
         await state.beginConnect()
         await socket.connect()
 
         do {
+            try ensureActiveConnect(generation)
+
             let challengeText = try await receiveHandshakeFrame(
-                timeoutError: .challengeTimeout
+                timeoutError: .challengeTimeout,
+                generation: generation
             )
+            try ensureActiveConnect(generation)
+
             let frame = try frameRouter.decodePreAuth(Data(challengeText.utf8))
 
             guard case let .event(event) = frame,
@@ -49,7 +65,9 @@ public actor OpenClawGatewayConnection {
                 throw OpenClawHandshakeError.invalidChallenge
             }
 
+            try ensureActiveConnect(generation)
             await state.beginAuthentication()
+            try ensureActiveConnect(generation)
 
             let assembled = try await assembler.assemble(
                 version: appVersion,
@@ -59,6 +77,7 @@ public actor OpenClawGatewayConnection {
                 clientIdentity: clientIdentity,
                 locale: locale
             )
+            try ensureActiveConnect(generation)
 
             let requestID = UUID().uuidString
             let request = OpenClawRequestFrame(
@@ -78,11 +97,16 @@ public actor OpenClawGatewayConnection {
                 throw OpenClawFrameError.malformedFrame
             }
 
+            try ensureActiveConnect(generation)
             try await socket.send(text: requestText)
+            try ensureActiveConnect(generation)
 
             let responseText = try await receiveHandshakeFrame(
-                timeoutError: .helloTimeout
+                timeoutError: .helloTimeout,
+                generation: generation
             )
+            try ensureActiveConnect(generation)
+
             let responseFrame = try frameRouter.decodePreAuth(
                 Data(responseText.utf8)
             )
@@ -95,10 +119,12 @@ public actor OpenClawGatewayConnection {
             guard response.ok else {
                 if let error = response.error,
                    let pairing = OpenClawPairingRequired(error: error) {
+                    try ensureActiveConnect(generation)
                     // Pairing rejection proves the stored device grant is no longer
                     // usable. Cleanup is best effort so Keychain/store failure cannot
                     // mask the authoritative Gateway handshake error.
                     try? await assembler.invalidateStoredCredentialIfUsed(assembled)
+                    try ensureActiveConnect(generation)
                     throw OpenClawHandshakeError.pairingRequired(pairing)
                 }
 
@@ -123,23 +149,54 @@ public actor OpenClawGatewayConnection {
                 guard error == .invalidPolicy else { throw error }
                 throw OpenClawHandshakeError.invalidPolicy
             }
+
+            // Persistent mutation and ready publication are both fenced by the
+            // same owned handshake generation. A disconnect/cancellation that
+            // wins before either boundary makes the stale connect fail closed.
+            try ensureActiveConnect(generation)
             try await assembler.persistHello(hello, assembled: assembled)
+            try ensureActiveConnect(generation)
             try await state.acceptHello(hello)
+            try ensureActiveConnect(generation)
+
+            activeConnectGeneration = nil
             return hello
         } catch {
-            await socket.close()
-            await state.disconnect()
+            if activeConnectGeneration == generation {
+                // Keep ownership until cleanup completes. That prevents a new
+                // connect from entering while this failure is still closing the
+                // shared physical socket/state.
+                await socket.close()
+                await state.disconnect()
+                if activeConnectGeneration == generation {
+                    activeConnectGeneration = nil
+                }
+            }
             throw error
         }
     }
 
     public func disconnect() async {
+        disconnectInProgress = true
+        nextConnectGeneration &+= 1
+        activeConnectGeneration = nil
+
         await socket.close()
         await state.disconnect()
+
+        disconnectInProgress = false
+    }
+
+    private func ensureActiveConnect(_ generation: UInt64) throws {
+        try Task.checkCancellation()
+        guard activeConnectGeneration == generation, !disconnectInProgress else {
+            throw OpenClawHandshakeError.connectInvalidated
+        }
     }
 
     private func receiveHandshakeFrame(
-        timeoutError: OpenClawHandshakeError
+        timeoutError: OpenClawHandshakeError,
+        generation: UInt64
     ) async throws -> String {
         let socket = self.socket
         let timeout = handshakeTimeout
@@ -155,28 +212,32 @@ public actor OpenClawGatewayConnection {
 
             do {
                 guard let outcome = try await group.next() else {
-                    await socket.close()
+                    if activeConnectGeneration == generation {
+                        await socket.close()
+                    }
                     throw timeoutError
                 }
+
+                try ensureActiveConnect(generation)
 
                 if let frame = outcome {
                     group.cancelAll()
                     return frame
                 }
 
-                // The deadline won. Close the physical transport before leaving
-                // the task-group scope so a receive implementation that does not
-                // promptly observe Swift task cancellation is still forced to
-                // unwind.
+                // The deadline won. Close the physical transport only while
+                // this handshake still owns it. A stale timeout must never
+                // retire a newer connection.
                 group.cancelAll()
-                await socket.close()
+                if activeConnectGeneration == generation {
+                    await socket.close()
+                }
                 throw timeoutError
             } catch {
-                // Outer task cancellation and receive failures must also retire
-                // the socket while still inside the group; otherwise the group
-                // could wait indefinitely for a blocked receive child.
                 group.cancelAll()
-                await socket.close()
+                if activeConnectGeneration == generation {
+                    await socket.close()
+                }
                 throw error
             }
         }
@@ -196,6 +257,8 @@ public actor OpenClawGatewayConnection {
 }
 
 public enum OpenClawHandshakeError: Error, Sendable, Equatable {
+    case connectInProgress
+    case connectInvalidated
     case challengeTimeout
     case helloTimeout
     case challengeRequired
