@@ -1,12 +1,25 @@
 private actor AgentEventSocket: OpenClawWebSocket {
     private var frames: [String]
-    init(frames: [String]) { self.frames = frames }
+    private let holdOpenAfterFrames: Bool
+
+    init(frames: [String], holdOpenAfterFrames: Bool = false) {
+        self.frames = frames
+        self.holdOpenAfterFrames = holdOpenAfterFrames
+    }
+
     func connect() async {}
     func send(text: String) async throws {}
+
     func receive() async throws -> String {
-        guard !frames.isEmpty else { throw AWLOpenClawError.disconnected }
-        return frames.removeFirst()
+        if !frames.isEmpty {
+            return frames.removeFirst()
+        }
+        if holdOpenAfterFrames {
+            try await Task.sleep(for: .seconds(3_600))
+        }
+        throw AWLOpenClawError.disconnected
     }
+
     func close() async {}
 }
 
@@ -158,7 +171,10 @@ final class OpenClawAgentRunTests: XCTestCase {
         )
 
         let state = OpenClawGatewayState()
-        let socket = AgentEventSocket(frames: frames)
+        let socket = AgentEventSocket(
+            frames: frames,
+            holdOpenAfterFrames: true
+        )
         await state.beginConnect()
         try await state.acceptHello(
             OpenClawHelloOK(
@@ -193,6 +209,7 @@ final class OpenClawAgentRunTests: XCTestCase {
                     if case let .assistant(_, .object(data)?) = update,
                        case let .string(delta)? = data["delta"] {
                         values.append(delta)
+                        if values.count == 50 { return values }
                     }
                 }
             } catch {
@@ -207,10 +224,11 @@ final class OpenClawAgentRunTests: XCTestCase {
                     if case let .assistant(_, .object(data)?) = update,
                        case let .string(delta)? = data["delta"] {
                         values.append(delta)
+                        if values.count == 50 { return values }
                     }
                 }
             } catch {
-                // Finite socket completion ends the synthetic connection.
+                // Test failure is asserted through the collected count below.
             }
             return values
         }
