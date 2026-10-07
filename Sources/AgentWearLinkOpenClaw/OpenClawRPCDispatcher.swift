@@ -38,6 +38,7 @@ public actor OpenClawRPCDispatcher {
     private var pendingAgentOverflowOrder: [String] = []
     private var finishedAgentRunIDs: Set<String> = []
     private var finishedAgentRunOrder: [String] = []
+    private var highestAgentSequenceByRunID: [String: Int] = [:]
 
     private var receiveTask: ReceiveTaskEntry?
     private var failedReceiveGeneration: UInt64?
@@ -527,6 +528,17 @@ public actor OpenClawRPCDispatcher {
             return
         }
 
+        // OpenClaw's payload.seq is monotonic per run. Replayed or stale events
+        // must not duplicate assistant deltas. Forward gaps remain a separate
+        // authoritative-state recovery concern (#280).
+        if let sequence = event.seq {
+            if let highest = highestAgentSequenceByRunID[runID],
+               sequence <= highest {
+                return
+            }
+            highestAgentSequenceByRunID[runID] = sequence
+        }
+
         if var subscribers = agentEventContinuations[runID], !subscribers.isEmpty {
             var delivered = false
             var overflowed = false
@@ -662,6 +674,7 @@ public actor OpenClawRPCDispatcher {
 
     private func rememberPendingAgentOverflow(_ runID: String) {
         _ = removePendingAgentEvents(runID: runID)
+        highestAgentSequenceByRunID.removeValue(forKey: runID)
         guard pendingAgentOverflowRunIDs.insert(runID).inserted else { return }
         pendingAgentOverflowOrder.append(runID)
         while pendingAgentOverflowOrder.count > pendingAgentEventLimit {
@@ -670,6 +683,7 @@ public actor OpenClawRPCDispatcher {
     }
 
     private func rememberFinishedAgentRun(_ runID: String) {
+        highestAgentSequenceByRunID.removeValue(forKey: runID)
         guard finishedAgentRunIDs.insert(runID).inserted else { return }
         finishedAgentRunOrder.append(runID)
         while finishedAgentRunOrder.count > pendingAgentEventLimit {
@@ -684,6 +698,7 @@ public actor OpenClawRPCDispatcher {
         pendingAgentOverflowOrder.removeAll(keepingCapacity: false)
         finishedAgentRunIDs.removeAll(keepingCapacity: false)
         finishedAgentRunOrder.removeAll(keepingCapacity: false)
+        highestAgentSequenceByRunID.removeAll(keepingCapacity: false)
     }
 
     private func routeEventToSubscribers(_ event: OpenClawEventEnvelope) {
