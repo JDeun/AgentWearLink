@@ -134,13 +134,13 @@ final class MetaDATDeviceEventSource: @unchecked Sendable {
 /// This target is intentionally iOS/vendor-specific and must be compiled only
 /// from an iOS reference app that links MWDATCore. The root AWL Core package
 /// does not depend on Meta DAT.
-public actor MetaDATDeviceAdapter: DeviceAdapter {
+public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public static let defaultEventBufferLimit = 64
 
     /// Only production-wired capabilities are advertised. Raw audio remains
     /// unavailable: DAT Speech yields normalized on-device transcripts rather
     /// than exposing microphone PCM through this adapter.
-    public nonisolated let capabilities: CapabilitySet = [.speechInput]
+    public nonisolated let capabilities: CapabilitySet = [.speechInput, .cameraSnapshot]
 
     private let wearables: any WearablesInterface
     private var deviceSession: DeviceSession?
@@ -155,6 +155,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     private let speechTranscriptStream = MetaDATSpeechTranscriptStream()
     private let transcriptDeduplicator = MetaDATFinalTranscriptDeduplicator()
     private let finalTranscriptFilter = MetaDATFinalTranscriptFilter()
+    private let cameraSnapshotController: MetaDATCameraSnapshotController
     private nonisolated let eventSource: MetaDATDeviceEventSource
     private var generationFence = MetaDATSessionGenerationFence()
     private var selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
@@ -165,13 +166,19 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
     public init(
         wearables: any WearablesInterface = Wearables.shared,
         connectTimeout: Duration = .seconds(15),
-        eventBufferLimit: Int = MetaDATDeviceAdapter.defaultEventBufferLimit
+        eventBufferLimit: Int = MetaDATDeviceAdapter.defaultEventBufferLimit,
+        snapshotTimeout: Duration = .seconds(5),
+        maximumSnapshotBytes: Int = ImageAttachment.defaultMaximumBytes
     ) {
         precondition(connectTimeout > .zero)
         precondition(eventBufferLimit > 0)
         self.wearables = wearables
         self.connectTimeout = connectTimeout
         self.eventSource = MetaDATDeviceEventSource(bufferLimit: eventBufferLimit)
+        self.cameraSnapshotController = MetaDATCameraSnapshotController(
+            timeout: snapshotTimeout,
+            maximumBytes: maximumSnapshotBytes
+        )
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
@@ -195,8 +202,9 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             throw AWLError.device("Meta DAT application is not registered")
         }
 
-        registrationTask = Task { [weak self] in
-            for await state in wearables.registrationStateStream() {
+        let registrationWearables = wearables
+        registrationTask = Task { [weak self, registrationWearables] in
+            for await state in registrationWearables.registrationStateStream() {
                 guard !Task.isCancelled else { break }
                 guard case .registered = state else {
                     await self?.handleRegistrationLoss(generation: generation)
@@ -309,6 +317,40 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             tearDownSession(expectedGeneration: generation)
             throw error
         }
+    }
+
+    public func captureSnapshot(
+        interactionID: InteractionID
+    ) async throws -> ImageAttachment {
+        guard !stopping,
+              let session = deviceSession else {
+            throw AWLError.device("Meta DAT device session is not connected")
+        }
+
+        let generation = generationFence.current
+        let cameraStatus = try await wearables.checkPermissionStatus(.camera)
+        guard cameraStatus == .granted else {
+            throw AWLError.capabilityUnavailable(
+                "Meta DAT camera permission is not granted"
+            )
+        }
+
+        guard generationFence.owns(generation),
+              !stopping,
+              deviceSession === session else {
+            throw CancellationError()
+        }
+
+        let image = try await cameraSnapshotController.capture(from: session)
+
+        guard generationFence.owns(generation),
+              !stopping,
+              deviceSession === session else {
+            throw CancellationError()
+        }
+
+        _ = interactionID
+        return image
     }
 
     private func startSpeech(
@@ -561,6 +603,7 @@ public actor MetaDATDeviceAdapter: DeviceAdapter {
             return
         }
 
+        cameraSnapshotController.invalidate()
         stateTask?.cancel()
         errorTask?.cancel()
         registrationTask?.cancel()
