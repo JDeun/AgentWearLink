@@ -138,6 +138,27 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
+      - name: Verify production Meta target excludes MockDeviceKit
+        working-directory: Adapters/MetaDAT
+        run: |
+          set -euo pipefail
+          swift package dump-package > /tmp/awl-meta-package.json
+          python3 - <<'PY'
+          import json
+          with open("/tmp/awl-meta-package.json", "r", encoding="utf-8") as handle:
+              package = json.load(handle)
+          target = next(t for t in package["targets"] if t["name"] == "AgentWearLinkMetaDATIntegration")
+          encoded = json.dumps(target.get("dependencies", []))
+          if "MWDATMockDevice" in encoded:
+              raise SystemExit("production Meta target unexpectedly depends on MockDeviceKit")
+          print("Production Meta target excludes MockDeviceKit.")
+          PY
+          xcodebuild \
+            -scheme AgentWearLinkMetaDATIntegration \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            build
       - name: Build deterministic Meta DAT integration tests
         if: needs.changes.outputs.meta_behavior == 'true'
         timeout-minutes: 8
