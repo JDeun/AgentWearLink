@@ -1,6 +1,7 @@
 import Foundation
 
 public actor OpenClawRPCDispatcher {
+    public static let defaultEventBufferLimit = 64
     public static let defaultAgentEventBufferLimit = 64
     public static let defaultPendingAgentEventLimit = 128
 
@@ -49,6 +50,7 @@ public actor OpenClawRPCDispatcher {
     private let nowMilliseconds: @Sendable () -> Int64
     private let requestTimeout: Duration
     private let inboundMaximumBytes: Int
+    private let eventBufferLimit: Int
     private let agentEventBufferLimit: Int
     private let pendingAgentEventLimit: Int
 
@@ -58,6 +60,7 @@ public actor OpenClawRPCDispatcher {
         registry: OpenClawRPCRegistry = .init(),
         requestTimeout: Duration = .seconds(30),
         inboundMaximumBytes: Int = OpenClawFrameRouter.defaultInboundMaximumBytes,
+        eventBufferLimit: Int = OpenClawRPCDispatcher.defaultEventBufferLimit,
         agentEventBufferLimit: Int = OpenClawRPCDispatcher.defaultAgentEventBufferLimit,
         pendingAgentEventLimit: Int = OpenClawRPCDispatcher.defaultPendingAgentEventLimit,
         nowMilliseconds: @escaping @Sendable () -> Int64 = {
@@ -71,6 +74,8 @@ public actor OpenClawRPCDispatcher {
         self.requestTimeout = requestTimeout
         precondition(inboundMaximumBytes > 0)
         self.inboundMaximumBytes = inboundMaximumBytes
+        precondition(eventBufferLimit > 0)
+        self.eventBufferLimit = eventBufferLimit
         precondition(agentEventBufferLimit > 0)
         self.agentEventBufferLimit = agentEventBufferLimit
         precondition(pendingAgentEventLimit > 0)
@@ -80,7 +85,9 @@ public actor OpenClawRPCDispatcher {
 
     public func events() -> AsyncThrowingStream<OpenClawEventEnvelope, Error> {
         let id = UUID()
-        return AsyncThrowingStream { continuation in
+        return AsyncThrowingStream(
+            bufferingPolicy: .bufferingNewest(eventBufferLimit)
+        ) { continuation in
             eventContinuations[id] = continuation
             continuation.onTermination = { [weak self] _ in
                 Task { await self?.removeEventSubscriber(id) }
@@ -387,9 +394,7 @@ public actor OpenClawRPCDispatcher {
                             generation: receiveGeneration
                         )
                     }
-                    for continuation in eventContinuations.values {
-                        continuation.yield(event)
-                    }
+                    routeEventToSubscribers(event)
                 }
             }
         } catch is CancellationError {
@@ -681,6 +686,31 @@ public actor OpenClawRPCDispatcher {
         finishedAgentRunOrder.removeAll(keepingCapacity: false)
     }
 
+    private func routeEventToSubscribers(_ event: OpenClawEventEnvelope) {
+        var retired: [UUID] = []
+        retired.reserveCapacity(eventContinuations.count)
+
+        for (id, continuation) in eventContinuations {
+            switch continuation.yield(event) {
+            case .enqueued:
+                break
+            case .dropped:
+                continuation.finish(
+                    throwing: OpenClawEventRoutingError.bufferOverflow
+                )
+                retired.append(id)
+            case .terminated:
+                retired.append(id)
+            @unknown default:
+                retired.append(id)
+            }
+        }
+
+        for id in retired {
+            eventContinuations[id] = nil
+        }
+    }
+
     private func removeEventSubscriber(_ id: UUID) {
         eventContinuations[id] = nil
     }
@@ -722,6 +752,10 @@ public actor OpenClawRPCDispatcher {
 
 public enum OpenClawRPCDispatcherError: Error, Sendable, Equatable {
     case deadlineExceeded
+}
+
+public enum OpenClawEventRoutingError: Error, Sendable, Equatable {
+    case bufferOverflow
 }
 
 public enum OpenClawAgentEventRoutingError: Error, Sendable, Equatable {
