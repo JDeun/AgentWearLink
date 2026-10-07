@@ -28,7 +28,17 @@ private actor DispatcherSocket: OpenClawWebSocket {
 
     func receive() async throws -> String {
         if !inbound.isEmpty { return inbound.removeFirst() }
-        return try await withCheckedThrowingContinuation { waiter = $0 }
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { waiter = $0 }
+        } onCancel: {
+            Task { await self.cancelPendingReceive() }
+        }
+    }
+
+    private func cancelPendingReceive() {
+        waiter?.resume(throwing: CancellationError())
+        waiter = nil
     }
 
     func close() async {
