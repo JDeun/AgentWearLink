@@ -476,8 +476,8 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
     }
 
     func testPendingAgentBufferEnforcesNegotiatedByteBudget() async throws {
-        let first = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"one"}},"seq":1}"#
-        let second = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"two"}},"seq":2}"#
+        let first = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"one"},"seq":1},"seq":1}"#
+        let second = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"two"},"seq":2},"seq":2}"#
         let totalBytes = first.utf8.count + second.utf8.count
         let maximumBufferedBytes = totalBytes - 1
 
@@ -522,8 +522,8 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
     }
 
     func testPendingAgentBufferUsesFreshReconnectBudget() async throws {
-        let first = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"one"}},"seq":1}"#
-        let second = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"two"}},"seq":2}"#
+        let first = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"one"},"seq":1},"seq":1}"#
+        let second = #"{"type":"event","event":"agent","payload":{"runId":"r","stream":"assistant","data":{"delta":"two"},"seq":2},"seq":2}"#
         let totalBytes = first.utf8.count + second.utf8.count
 
         let socket = DispatcherSocket()
