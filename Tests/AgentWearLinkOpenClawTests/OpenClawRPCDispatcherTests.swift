@@ -315,7 +315,8 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertEqual(await socket.sentCount(), 0)
+        let sentCount = await socket.sentCount()
+        XCTAssertEqual(sentCount, 0)
     }
 
     func testStopAfterSendHandoffReportsDeliveryUncertain() async throws {
@@ -354,7 +355,8 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertEqual(await socket.sentCount(), 1)
+        let sentCount = await socket.sentCount()
+        XCTAssertEqual(sentCount, 1)
     }
 
 
