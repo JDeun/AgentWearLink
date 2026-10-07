@@ -49,6 +49,24 @@ public struct OpenClawHelloOK: Decodable, Sendable, Equatable {
     public let auth: Auth
     public let policy: Policy
 
+    public init(
+        type: String,
+        protocolVersion: Int,
+        server: Server,
+        features: Features,
+        snapshot: Snapshot? = nil,
+        auth: Auth,
+        policy: Policy
+    ) {
+        self.type = type
+        self.protocolVersion = protocolVersion
+        self.server = server
+        self.features = features
+        self.snapshot = snapshot
+        self.auth = auth
+        self.policy = policy
+    }
+
     enum CodingKeys: String, CodingKey {
         case type
         case protocolVersion = "protocol"
