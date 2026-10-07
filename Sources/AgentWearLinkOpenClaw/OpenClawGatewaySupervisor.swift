@@ -86,9 +86,7 @@ public actor OpenClawGatewaySupervisor {
             let interval = max(1_000, tickIntervalMilliseconds)
 
             do {
-                try await Task.sleep(
-                    nanoseconds: UInt64(interval) * 1_000_000
-                )
+                try await Task.sleep(for: .milliseconds(interval))
             } catch {
                 return
             }
@@ -96,8 +94,12 @@ public actor OpenClawGatewaySupervisor {
             guard !stopped else { return }
 
             let running = await dispatcher.isRunning
+            let doubledInterval = interval.multipliedReportingOverflow(by: 2)
+            let staleTimeout = doubledInterval.overflow
+                ? Int.max
+                : doubledInterval.partialValue
             let stale = await dispatcher.isStale(
-                timeoutMilliseconds: interval * 2
+                timeoutMilliseconds: staleTimeout
             )
 
             if !running || stale {
@@ -137,9 +139,7 @@ public actor OpenClawGatewaySupervisor {
             )
             serverMinimumDelay = 0
             do {
-                try await Task.sleep(
-                    nanoseconds: UInt64(delay) * 1_000_000
-                )
+                try await Task.sleep(for: .milliseconds(delay))
             } catch {
                 return
             }

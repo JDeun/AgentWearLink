@@ -248,6 +248,40 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
         XCTAssertNil(remaining)
     }
 
+    func testInvalidPolicyIsTypedHandshakeFailureAndDoesNotPersistGrant() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let credentialStore = InMemoryOpenClawDeviceCredentialStore()
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: credentialStore
+        )
+        let connection = OpenClawGatewayConnection(
+            socket: InvalidPolicyHandshakeSocket(),
+            assembler: assembler
+        )
+
+        do {
+            _ = try await connection.connect(
+                appVersion: "0.1.0",
+                credentials: .init(bootstrapToken: "bootstrap")
+            )
+            XCTFail("Expected invalid-policy handshake failure")
+        } catch let error as OpenClawHandshakeError {
+            XCTAssertEqual(error, .invalidPolicy)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let saved = try await credentialStore.load(
+            deviceID: deviceID,
+            role: "operator"
+        )
+        XCTAssertNil(saved)
+    }
+
     func testTransientGatewayErrorPreservesStoredCredential() async throws {
         let identity = OpenClawDeviceIdentity.generate()
         let deviceID = try identity.deviceID
@@ -410,6 +444,45 @@ private actor PairingRequiredHandshakeSocket: OpenClawWebSocket {
             "waitForResolution":true,
             "pauseReconnect":true
           }
+        }}
+        """
+    }
+
+    func close() async {}
+}
+
+
+private actor InvalidPolicyHandshakeSocket: OpenClawWebSocket {
+    private var sentFrames: [String] = []
+    private var receiveCount = 0
+
+    func connect() async {}
+
+    func send(text: String) async throws {
+        sentFrames.append(text)
+    }
+
+    func receive() async throws -> String {
+        defer { receiveCount += 1 }
+
+        if receiveCount == 0 {
+            return #"{"type":"event","event":"connect.challenge","payload":{"nonce":"abc","ts":1737264000000}}"#
+        }
+
+        guard let sent = sentFrames.last,
+              let data = sent.data(using: .utf8),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = json["id"] as? String else {
+            throw OpenClawFrameError.malformedFrame
+        }
+
+        return """
+        {"type":"res","id":"\(id)","ok":true,"payload":{
+          "type":"hello-ok","protocol":4,
+          "server":{"version":"2026.10","connId":"c-invalid-policy"},
+          "features":{"methods":[],"events":[]},
+          "auth":{"role":"operator","scopes":["operator.read"],"deviceToken":"must-not-persist"},
+          "policy":{"maxPayload":4096,"maxBufferedBytes":8192,"tickIntervalMs":\(Int.max)}
         }}
         """
     }

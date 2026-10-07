@@ -1,6 +1,8 @@
 import Foundation
 
 public actor OpenClawGatewayState {
+    public static let maximumTickIntervalMilliseconds = 3_600_000
+
     public private(set) var connectionState: GatewayConnectionState = .disconnected
     public private(set) var hello: OpenClawHelloOK?
     public private(set) var lastSequence: Int?
@@ -26,10 +28,15 @@ public actor OpenClawGatewayState {
         guard policy.maxPayload > 0,
               policy.maxBufferedBytes > 0,
               policy.tickIntervalMs > 0,
-              policy.tickIntervalMs <= 3_600_000,
-              policy.attachments?.maxBytes ?? 1 > 0,
-              policy.attachments?.maxImageBytes ?? 1 > 0 else {
+              policy.tickIntervalMs <= maximumTickIntervalMilliseconds else {
             throw AWLOpenClawError.invalidPolicy
+        }
+
+        if let attachments = policy.attachments {
+            guard attachments.maxBytes > 0,
+                  attachments.maxImageBytes > 0 else {
+                throw AWLOpenClawError.invalidPolicy
+            }
         }
     }
 

@@ -109,7 +109,12 @@ public actor OpenClawGatewayConnection {
             }
 
             let hello = try decodeHello(payload)
-            try OpenClawGatewayState.validateHello(hello)
+            do {
+                try OpenClawGatewayState.validateHello(hello)
+            } catch let error as AWLOpenClawError {
+                guard error == .invalidPolicy else { throw error }
+                throw OpenClawHandshakeError.invalidPolicy
+            }
             try await assembler.persistHello(hello, assembled: assembled)
             try await state.acceptHello(hello)
             return hello
@@ -143,5 +148,6 @@ public enum OpenClawHandshakeError: Error, Sendable, Equatable {
     case invalidChallenge
     case unexpectedConnectResponse
     case missingHello
+    case invalidPolicy
     case pairingRequired(OpenClawPairingRequired)
 }
