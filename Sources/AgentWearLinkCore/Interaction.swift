@@ -13,6 +13,7 @@ public enum InteractionEvent: Sendable, Equatable, CustomStringConvertible, Cust
     case text(InteractionID, String)
     case invocation(InteractionID, String?)
     case interrupted(InteractionID)
+    case turnCompleted(InteractionID)
     case sessionEnded(InteractionID)
     case failed(InteractionID?, AWLError)
 
@@ -22,6 +23,7 @@ public enum InteractionEvent: Sendable, Equatable, CustomStringConvertible, Cust
              let .text(id, _),
              let .invocation(id, _),
              let .interrupted(id),
+             let .turnCompleted(id),
              let .sessionEnded(id):
             return id
         case let .failed(id, _):
@@ -40,6 +42,8 @@ public enum InteractionEvent: Sendable, Equatable, CustomStringConvertible, Cust
             return "InteractionEvent.invocation(interactionID: \(id.rawValue.uuidString), phraseBytes: \(phraseDescription))"
         case let .interrupted(id):
             return "InteractionEvent.interrupted(interactionID: \(id.rawValue.uuidString))"
+        case let .turnCompleted(id):
+            return "InteractionEvent.turnCompleted(interactionID: \(id.rawValue.uuidString))"
         case let .sessionEnded(id):
             return "InteractionEvent.sessionEnded(interactionID: \(id.rawValue.uuidString))"
         case let .failed(id, _):
