@@ -429,6 +429,9 @@ final class RuntimeTests: XCTestCase {
         let first = Task { try await runtime.start() }
         try await agent.waitUntilConnectCount(1)
         let second = Task { try await runtime.start() }
+        try await waitUntilTestCondition("second start joined active startup") {
+            await runtime.startWaiterCountForTesting() == 1
+        }
 
         await agent.release()
         try await first.value
@@ -455,6 +458,9 @@ final class RuntimeTests: XCTestCase {
         try? await agent.waitUntilConnectCount(1)
 
         let second = Task { try await runtime.start() }
+        try? await waitUntilTestCondition("second start joined failing startup") {
+            await runtime.startWaiterCountForTesting() == 1
+        }
         await agent.release()
 
         for task in [first, second] {
@@ -571,8 +577,11 @@ final class RuntimeTests: XCTestCase {
         try await agent.waitUntilDisconnectCount(1)
 
         // Hold teardown inside disconnect() so start() must observe .stopping
-        // and wait for finishStopping(), independent of scheduler timing.
+        // and register as a stop waiter before teardown is released.
         let restarting = Task { try await runtime.start() }
+        try await waitUntilTestCondition("restart joined active stop") {
+            await runtime.stopWaiterCountForTesting() == 1
+        }
         await agent.releaseDisconnect()
 
         await stopping.value
