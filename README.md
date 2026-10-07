@@ -6,7 +6,7 @@
 
 AgentWearLink (AWL) normalizes wearable capabilities—speech, audio, camera snapshots, invocation, and output—behind replaceable adapters, then connects them to an existing AI agent runtime without moving the runtime's intelligence into AWL.
 
-> **Status:** pre-alpha. Core and OpenClaw foundations are implemented and tested; physical Ray-Ban Meta + iPhone validation is still in progress.
+> **Status:** pre-alpha. Core and OpenClaw foundations are implemented and tested. Meta DAT registration/device-session lifecycle is production-wired, while camera/Speech/Voice Invocation/capability/lifecycle helper slices still need composition into the concrete production session path (#230). Physical Ray-Ban Meta + iPhone validation is still in progress.
 
 ## Why
 
@@ -45,7 +45,7 @@ Meta DAT, OpenClaw, Tailscale, Telegram, and Apple TTS are reference integration
 - OpenClaw device identity, challenge proof, pairing, RPC dispatch, streaming agent runs, cancellation, and reconnect supervision
 - read-only OpenClaw health probe
 - explicit mutating OpenClaw text E2E probe
-- pinned Meta DAT 1.0.0 integration with registration/device lifecycle, camera, Speech, Voice Invocation, live capability, and lifecycle policies
+- pinned Meta DAT 1.0.0 integration with production-wired registration/device-session lifecycle; camera, Speech, Voice Invocation, live-capability, and foreground/background policy slices are implemented and deterministically tested as helpers but are not yet all reachable through the concrete production session path (#230)
 - bounded explicit vision contracts with pre-capture agent capability checks
 - Apple host output package with native `AVSpeechSynthesizer` bridge
 - deterministic reliability regression suite
