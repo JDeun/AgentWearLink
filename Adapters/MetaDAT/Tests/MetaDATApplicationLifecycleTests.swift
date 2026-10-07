@@ -37,10 +37,12 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         await readiness.handle(.foreground)
 
         XCTAssertTrue(ownership.permitsSessionAcquisition)
-        XCTAssertEqual(await readiness.state, .reacquiring)
+        let reacquiring = await readiness.state
+        XCTAssertEqual(reacquiring, .reacquiring)
 
         await readiness.markReacquired()
-        XCTAssertEqual(await readiness.state, .fresh)
+        let fresh = await readiness.state
+        XCTAssertEqual(fresh, .fresh)
     }
 
     func testBackgroundRetirementInvalidatesStartupGenerationAndForegroundUsesNewGeneration() {
