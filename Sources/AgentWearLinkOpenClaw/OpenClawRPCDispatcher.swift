@@ -79,32 +79,55 @@ public actor OpenClawRPCDispatcher {
         method: String,
         params: Params
     ) async throws -> OpenClawResponseEnvelope {
-        guard receiveTask != nil,
-              await state.connectionState == .ready else {
+        guard receiveTask != nil else {
             throw AWLOpenClawError.notReady
         }
+        let requestGeneration = generation
 
-        // Capture transport identity before validating the authenticated state.
-        // If reconnect retires this transport at any later point, the bound send
-        // below rejects rather than resolving the socket actor's new task.
-        guard let transportGeneration = await socket.transportGeneration() else {
+        guard await state.connectionState == .ready else {
+            throw AWLOpenClawError.notReady
+        }
+        guard isActive(generation: requestGeneration) else {
+            throw AWLOpenClawError.disconnected
+        }
+
+        // Capture transport identity while this dispatcher generation is active.
+        // Every actor hop below is followed by a generation check so stop() cannot
+        // retire the request and let it resume into a later dispatcher generation.
+        let capturedTransportGeneration = await socket.transportGeneration()
+        guard isActive(generation: requestGeneration) else {
+            throw AWLOpenClawError.disconnected
+        }
+        guard let transportGeneration = capturedTransportGeneration else {
             throw OpenClawTransportSendError.generationBindingUnavailable
         }
 
         if let textParams = params as? OpenClawAgentParams {
             try await state.validateOutboundFrameSize(textParams.message.utf8.count)
+            guard isActive(generation: requestGeneration) else {
+                throw AWLOpenClawError.disconnected
+            }
         }
 
         let id = UUID().uuidString
         let frame = OpenClawRequestFrame(id: id, method: method, params: params)
         let data = try encoder.encode(frame)
         try await state.validateOutboundFrameSize(data.count)
+        guard isActive(generation: requestGeneration) else {
+            throw AWLOpenClawError.disconnected
+        }
         guard let text = String(data: data, encoding: .utf8) else {
             throw OpenClawFrameError.malformedFrame
         }
 
         try await registry.register(id: id, method: method)
-        let requestGeneration = generation
+        guard isActive(generation: requestGeneration) else {
+            // register() is a separate actor hop. stop() may have drained the old
+            // registry while this call was suspended and registration may complete
+            // afterward; remove that late insertion before returning.
+            await registry.remove(id: id)
+            throw AWLOpenClawError.disconnected
+        }
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -217,11 +240,15 @@ public actor OpenClawRPCDispatcher {
         receiveTask = nil
     }
 
+    private func isActive(generation expected: UInt64) -> Bool {
+        generation == expected && receiveTask != nil
+    }
+
     private func markSendStarted(
         id: String,
         generation expected: UInt64
     ) -> Bool {
-        guard generation == expected,
+        guard isActive(generation: expected),
               responses[id] != nil,
               requestTasks[id] != nil,
               !Task.isCancelled else {
