@@ -65,7 +65,7 @@ A usable physical capability is the conservative intersection of:
 6. capability implemented by the AWL concrete bridge
 7. lifecycle state currently safe for the operation
 
-Multiple paired glasses must not be resolved by list order. Selection should prefer an eligible/connected compatible device and re-evaluate on roster/link/compatibility changes.
+Multiple paired glasses must not be resolved by list order. Selection ranks connected+donned above connected above merely compatible devices; equal-rank candidates use the stable `DeviceIdentifier` string as a deterministic lexical fallback until the host provides an explicit remembered/user preference. Once a session is created with `SpecificDeviceSelector`, AWL keeps that device pinned for the session and does not silently switch active work to another pair. Eligibility is re-evaluated only at defined lifecycle boundaries.
 
 ## Capability freshness
 
