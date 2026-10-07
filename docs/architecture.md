@@ -24,6 +24,9 @@ DeviceAdapter
               │
               ▼
         Agent Runtime
+
+Normalized agent output also leaves Core through a host-owned
+`InteractionOutputSink` (for example Apple TTS or UI text).
 ```
 
 ## Core contracts
@@ -37,8 +40,19 @@ Responsibilities:
 - emit normalized input/lifecycle events
 - install event subscriptions synchronously before `events()` returns
 - retain connect-time events in a finite buffer/coalescing slot until Core begins consumption
-- accept supported output commands
 - hide vendor SDK types from the core
+
+### InteractionOutputSink
+
+Responsibilities:
+
+- consume normalized `InteractionEvent` output from the runtime
+- own host response surfaces such as iPhone TTS or UI text
+- preserve interruption/terminal semantics without making an input device adapter own phone output
+- remain optional and replaceable at composition time
+
+The reference `AppleSpeechOutput` implements this contract. `AgentWearLinkRuntime`
+also keeps its closure-based output initializer for lightweight hosts.
 
 ### AgentAdapter
 
@@ -58,11 +72,13 @@ Initial capability vocabulary:
 - speechInput
 - rawAudioInput
 - cameraSnapshot
-- speakerOutput
-- textOutput
+- speakerOutput (reserved for a future device-owned callable output surface)
+- textOutput (reserved for a future device-owned callable output surface)
 - voiceInvocation
 
-Capabilities are negotiated, not assumed.
+Capabilities are negotiated, not assumed. Current reference DeviceAdapters do
+not advertise host iPhone TTS/UI as device capabilities; those surfaces are
+composed through `InteractionOutputSink`.
 
 ## Event model
 
