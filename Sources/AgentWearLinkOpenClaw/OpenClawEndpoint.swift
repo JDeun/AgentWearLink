@@ -49,6 +49,13 @@ public struct OpenClawEndpoint: Sendable, Equatable {
         self.exposure = exposure
     }
 
+    /// Conservative credential partition derived from this validated endpoint.
+    /// Hosts that intentionally use multiple aliases for one Gateway may supply
+    /// an explicit stable namespace to OpenClawConnectAssembler instead.
+    public var credentialNamespace: OpenClawGatewayCredentialNamespace {
+        .init(endpoint: self)
+    }
+
     public static func tailnetServe(hostname: String) throws -> Self {
         guard !hostname.isEmpty, !hostname.contains("/") else {
             throw OpenClawEndpointError.invalidHostname
