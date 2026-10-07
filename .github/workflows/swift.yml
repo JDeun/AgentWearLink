@@ -99,11 +99,16 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             build
+      - name: Install pinned XcodeGen
+        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
+        run: |
+          ./scripts/install-xcodegen.sh
+          echo "$PWD/.build/tools" >> "$GITHUB_PATH"
       - name: Generate minimal Meta DAT iOS app host
         if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
         working-directory: Adapters/MetaDAT/TestApp
         run: |
-          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen --version
           xcodegen generate
       - name: Compile minimal Meta DAT iOS app host
         if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true'
