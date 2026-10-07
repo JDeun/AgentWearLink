@@ -109,7 +109,17 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
 
         let client = runClient
         let sessionKey = sessionKey
-        let attachment = Self.makeImageAttachment(request.image)
+        let attachment: OpenClawAgentAttachment
+        do {
+            attachment = try Self.makeImageAttachment(request.image)
+        } catch {
+            let limit = responseBufferLimit
+            return AsyncThrowingStream(
+                bufferingPolicy: .bufferingOldest(limit)
+            ) { continuation in
+                continuation.finish(throwing: error)
+            }
+        }
 
         return makeResponseStream(
             interactionID: request.interactionID,
@@ -126,7 +136,16 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
 
     nonisolated static func makeImageAttachment(
         _ image: ImageAttachment
-    ) -> OpenClawAgentAttachment {
+    ) throws -> OpenClawAgentAttachment {
+        // Callers can construct ImageAttachment with a custom larger limit.
+        // The shipped OpenClaw path still enforces Core's canonical ceiling
+        // before any base64/network allocation.
+        guard image.data.count <= ImageAttachment.defaultMaximumBytes else {
+            throw AWLError.capabilityUnavailable(
+                "image payload exceeds configured limit"
+            )
+        }
+
         let mimeType: String
         let fileExtension: String
         switch image.format {
