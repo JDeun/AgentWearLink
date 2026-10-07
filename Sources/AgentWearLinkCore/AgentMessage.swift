@@ -1,6 +1,8 @@
 import Foundation
 
 public struct AgentRequest: Sendable, Equatable, Codable, CustomStringConvertible, CustomDebugStringConvertible {
+    public static let defaultMaximumTextBytes = 262_144
+
     public let interactionID: InteractionID
     public let text: String
 
@@ -9,11 +11,30 @@ public struct AgentRequest: Sendable, Equatable, Codable, CustomStringConvertibl
         self.text = text
     }
 
+    public var textUTF8ByteCount: Int {
+        text.utf8.count
+    }
+
+    public func validateMaximumTextBytes(_ maximumBytes: Int) throws {
+        precondition(maximumBytes > 0)
+        let actual = textUTF8ByteCount
+        guard actual <= maximumBytes else {
+            throw AgentRequestValidationError.payloadTooLarge(
+                actual: actual,
+                maximum: maximumBytes
+            )
+        }
+    }
+
     public var description: String {
         "AgentRequest(interactionID: \(interactionID.rawValue.uuidString), textBytes: \(text.utf8.count))"
     }
 
     public var debugDescription: String { description }
+}
+
+public enum AgentRequestValidationError: Error, Sendable, Equatable {
+    case payloadTooLarge(actual: Int, maximum: Int)
 }
 
 public enum AgentResponse: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
