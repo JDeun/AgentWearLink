@@ -444,9 +444,6 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         )
         // After the pairing-required handshake, the same bounded reconnect
         // transition should retry rather than stopping.
-        await fixture.socket.makeNextHandshakeSucceed()
-        // makeNextHandshakeSucceed() targets the same immediate next call, so
-        // explicitly mark call 3 after call 2 is observed below.
         let reconnect = Task {
             await fixture.supervisor.reconnect(
                 closeCode: 4_000,
