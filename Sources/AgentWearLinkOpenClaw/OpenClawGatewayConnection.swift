@@ -7,15 +7,19 @@ public actor OpenClawGatewayConnection {
     private let frameRouter = OpenClawFrameRouter()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let handshakeTimeout: Duration
 
     public init(
         socket: any OpenClawWebSocket,
         assembler: OpenClawConnectAssembler,
-        state: OpenClawGatewayState = .init()
+        state: OpenClawGatewayState = .init(),
+        handshakeTimeout: Duration = .seconds(10)
     ) {
+        precondition(handshakeTimeout > .zero)
         self.socket = socket
         self.assembler = assembler
         self.state = state
+        self.handshakeTimeout = handshakeTimeout
     }
 
     public func connect(
@@ -29,7 +33,9 @@ public actor OpenClawGatewayConnection {
         await socket.connect()
 
         do {
-            let challengeText = try await socket.receive()
+            let challengeText = try await receiveHandshakeFrame(
+                timeoutError: .challengeTimeout
+            )
             let frame = try frameRouter.decodePreAuth(Data(challengeText.utf8))
 
             guard case let .event(event) = frame,
@@ -74,7 +80,9 @@ public actor OpenClawGatewayConnection {
 
             try await socket.send(text: requestText)
 
-            let responseText = try await socket.receive()
+            let responseText = try await receiveHandshakeFrame(
+                timeoutError: .helloTimeout
+            )
             let responseFrame = try frameRouter.decodePreAuth(
                 Data(responseText.utf8)
             )
@@ -130,6 +138,50 @@ public actor OpenClawGatewayConnection {
         await state.disconnect()
     }
 
+    private func receiveHandshakeFrame(
+        timeoutError: OpenClawHandshakeError
+    ) async throws -> String {
+        let socket = self.socket
+        let timeout = handshakeTimeout
+
+        return try await withThrowingTaskGroup(of: String?.self) { group in
+            group.addTask {
+                try await socket.receive()
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                return nil
+            }
+
+            do {
+                guard let outcome = try await group.next() else {
+                    await socket.close()
+                    throw timeoutError
+                }
+
+                if let frame = outcome {
+                    group.cancelAll()
+                    return frame
+                }
+
+                // The deadline won. Close the physical transport before leaving
+                // the task-group scope so a receive implementation that does not
+                // promptly observe Swift task cancellation is still forced to
+                // unwind.
+                group.cancelAll()
+                await socket.close()
+                throw timeoutError
+            } catch {
+                // Outer task cancellation and receive failures must also retire
+                // the socket while still inside the group; otherwise the group
+                // could wait indefinitely for a blocked receive child.
+                group.cancelAll()
+                await socket.close()
+                throw error
+            }
+        }
+    }
+
     private func decodeChallenge(
         _ value: JSONValue
     ) throws -> OpenClawConnectChallenge {
@@ -144,6 +196,8 @@ public actor OpenClawGatewayConnection {
 }
 
 public enum OpenClawHandshakeError: Error, Sendable, Equatable {
+    case challengeTimeout
+    case helloTimeout
     case challengeRequired
     case invalidChallenge
     case unexpectedConnectResponse
