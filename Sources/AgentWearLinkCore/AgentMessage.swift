@@ -38,6 +38,8 @@ public enum AgentRequestValidationError: Error, Sendable, Equatable {
 }
 
 public enum AgentResponse: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
+    public static let defaultBufferLimit = 64
+
     case textDelta(InteractionID, String)
     case completed(InteractionID)
     case failed(InteractionID, AWLError)
