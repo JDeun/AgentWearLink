@@ -13,7 +13,10 @@ public actor OpenClawGatewaySupervisor {
     private let reconnectPolicy: GatewayReconnectPolicy
 
     private var watchdogTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectToken: UInt64 = 0
     private var stopped = true
+    private var stopping = false
     private var tickIntervalMilliseconds = 30_000
     public private(set) var transportGeneration: UInt64 = 0
 
@@ -42,7 +45,7 @@ public actor OpenClawGatewaySupervisor {
     }
 
     public func start() async throws {
-        guard stopped else { return }
+        guard stopped, !stopping, reconnectTask == nil else { return }
         stopped = false
         transportGeneration &+= 1
 
@@ -64,14 +67,32 @@ public actor OpenClawGatewaySupervisor {
     }
 
     public func stop() async {
+        guard !stopping else { return }
+        stopping = true
         stopped = true
         transportGeneration &+= 1
         watchdogTask?.cancel()
         watchdogTask = nil
+
+        // Invalidate ownership before awaiting transport teardown. A reconnect
+        // suspended in sleep/connect may resume while this actor is re-entrant,
+        // but it can no longer publish dispatcher readiness for this generation.
+        reconnectToken &+= 1
+        let inFlightReconnect = reconnectTask
+        reconnectTask = nil
+        inFlightReconnect?.cancel()
+
         // Retire the transport first so a receive() implementation that does not
         // promptly observe Swift task cancellation is still forced to unwind.
         await connection.disconnect()
         await dispatcher.stop()
+
+        // Do not allow a new start until the retired reconnect task has observed
+        // cancellation/token invalidation and completed its cleanup.
+        if let inFlightReconnect {
+            await inFlightReconnect.value
+        }
+        stopping = false
     }
 
     private func startWatchdog() {
@@ -117,18 +138,55 @@ public actor OpenClawGatewaySupervisor {
     ) async {
         // Module-internal so deterministic transition tests can drive the
         // reconnect state machine without waiting on the watchdog clock.
-        guard !stopped else { return }
+        guard !stopped, !stopping else { return }
+
+        // Coalesce every trigger onto one owned reconnect transition. Actor
+        // isolation alone is insufficient because the transition is re-entrant
+        // at socket, dispatcher, sleep, and handshake awaits.
+        if let inFlightReconnect = reconnectTask {
+            await inFlightReconnect.value
+            return
+        }
+
+        reconnectToken &+= 1
+        let token = reconnectToken
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runReconnect(
+                closeCode: closeCode,
+                closeReason: closeReason,
+                token: token
+            )
+        }
+        reconnectTask = task
+
+        await task.value
+
+        if reconnectToken == token {
+            reconnectTask = nil
+        }
+    }
+
+    private func runReconnect(
+        closeCode: Int,
+        closeReason: String,
+        token: UInt64
+    ) async {
+        guard reconnectIsActive(token) else { return }
 
         // A reconnect advances transport identity only. In-flight RPC/agent work is
         // intentionally not retained or replayed by the supervisor: its outcome is
         // uncertain once the old transport is retired.
         transportGeneration &+= 1
         await socket.close(code: closeCode, reason: closeReason)
+        guard reconnectIsActive(token) else { return }
+
         await dispatcher.stop()
+        guard reconnectIsActive(token) else { return }
 
         var attempt = 1
         var serverMinimumDelay = 0
-        while !stopped {
+        while reconnectIsActive(token) {
             if let maximum = reconnectPolicy.maximumAttempts,
                attempt > maximum {
                 // Exhausting the configured budget is terminal for this
@@ -140,6 +198,7 @@ public actor OpenClawGatewaySupervisor {
             }
 
             await state.beginReconnect(attempt: attempt)
+            guard reconnectIsActive(token) else { return }
 
             let delay = max(
                 reconnectPolicy.delayMilliseconds(forAttempt: attempt),
@@ -152,7 +211,7 @@ public actor OpenClawGatewaySupervisor {
                 return
             }
 
-            guard !stopped else { return }
+            guard reconnectIsActive(token) else { return }
 
             do {
                 let hello = try await connection.connect(
@@ -162,10 +221,26 @@ public actor OpenClawGatewaySupervisor {
                     clientIdentity: clientIdentity,
                     locale: locale
                 )
+
+                // stop() invalidates the token before tearing down the transport.
+                // A late successful handshake must therefore be retired rather
+                // than resurrecting dispatcher readiness.
+                guard reconnectIsActive(token) else {
+                    await connection.disconnect()
+                    return
+                }
+
                 tickIntervalMilliseconds = max(1_000, hello.policy.tickIntervalMs)
                 await dispatcher.start()
+
+                guard reconnectIsActive(token) else {
+                    await dispatcher.stop()
+                    await connection.disconnect()
+                    return
+                }
                 return
             } catch let error as OpenClawHandshakeError {
+                guard reconnectIsActive(token) else { return }
                 switch error {
                 case .pairingRequired:
                     // Pairing requires explicit external approval. Do not spin.
@@ -175,6 +250,7 @@ public actor OpenClawGatewaySupervisor {
                     attempt += 1
                 }
             } catch let error as AWLOpenClawError {
+                guard reconnectIsActive(token) else { return }
                 switch error {
                 case let .gateway(_, retryable, _) where !retryable:
                     stopped = true
@@ -186,8 +262,16 @@ public actor OpenClawGatewaySupervisor {
                     attempt += 1
                 }
             } catch {
+                guard reconnectIsActive(token) else { return }
                 attempt += 1
             }
         }
+    }
+
+    private func reconnectIsActive(_ token: UInt64) -> Bool {
+        !stopped
+            && !stopping
+            && reconnectToken == token
+            && !Task.isCancelled
     }
 }
