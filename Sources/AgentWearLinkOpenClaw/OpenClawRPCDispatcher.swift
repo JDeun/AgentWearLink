@@ -20,6 +20,7 @@ public actor OpenClawRPCDispatcher {
     private var requestTasks: [String: Task<Void, Never>] = [:]
     private var sendStarted: Set<String> = []
     private var generation: UInt64 = 0
+    private var stopping = false
     private var lastActivityMilliseconds: Int64?
     private let nowMilliseconds: @Sendable () -> Int64
     private let requestTimeout: Duration
@@ -56,7 +57,7 @@ public actor OpenClawRPCDispatcher {
     }
 
     public func start() {
-        guard receiveTask == nil else { return }
+        guard !stopping, receiveTask == nil else { return }
         generation &+= 1
         let receiveGeneration = generation
         lastActivityMilliseconds = nowMilliseconds()
@@ -70,7 +71,7 @@ public actor OpenClawRPCDispatcher {
     }
 
     public var isRunning: Bool {
-        receiveTask != nil
+        !stopping && receiveTask != nil
     }
 
     public func isStale(
@@ -89,7 +90,8 @@ public actor OpenClawRPCDispatcher {
         method: String,
         params: Params
     ) async throws -> OpenClawResponseEnvelope {
-        guard receiveTask != nil,
+        guard !stopping,
+              receiveTask != nil,
               await state.connectionState == .ready else {
             throw AWLOpenClawError.notReady
         }
@@ -166,6 +168,10 @@ public actor OpenClawRPCDispatcher {
     }
 
     public func stop() async {
+        guard !stopping else { return }
+        stopping = true
+        defer { stopping = false }
+
         generation &+= 1
 
         let ownedRequestTasks = Array(requestTasks.values)
