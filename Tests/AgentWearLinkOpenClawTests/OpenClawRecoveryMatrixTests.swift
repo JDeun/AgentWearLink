@@ -658,6 +658,56 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         XCTAssertTrue(GatewayConnectionState.ready.canSendRequests)
     }
 
+    func testTransportTransitionMatrixRestoresOnlyTransportAndNeverManufacturesAgentReplay() async throws {
+        let scenarios: [(name: String, closeCode: Int)] = [
+            ("wifi-to-cellular", 4_000),
+            ("tailnet-loss", 4_001),
+            ("gateway-restart", 1_001),
+            ("mac-wake", 4_002)
+        ]
+
+        for scenario in scenarios {
+            let fixture = makeSupervisor(
+                reconnectPolicy: .init(
+                    initialDelayMilliseconds: 1,
+                    maximumDelayMilliseconds: 1,
+                    maximumAttempts: 1
+                )
+            )
+            try await fixture.supervisor.start()
+
+            let initialGeneration = await fixture.supervisor.transportGeneration
+            await fixture.socket.makeNextHandshakeSucceed()
+
+            await fixture.supervisor.reconnect(
+                closeCode: scenario.closeCode,
+                closeReason: scenario.name
+            )
+
+            let finalGeneration = await fixture.supervisor.transportGeneration
+            let finalState = await fixture.state.connectionState
+            let dispatcherRunning = await fixture.dispatcher.isRunning
+            let connectionCount = await fixture.socket.connectionCount()
+            let agentSendCount = await fixture.socket.sentMethodCount("agent")
+
+            XCTAssertGreaterThan(
+                finalGeneration,
+                initialGeneration,
+                scenario.name
+            )
+            XCTAssertEqual(connectionCount, 2, scenario.name)
+            XCTAssertEqual(finalState, .ready, scenario.name)
+            XCTAssertTrue(dispatcherRunning, scenario.name)
+            XCTAssertEqual(
+                agentSendCount,
+                0,
+                "\(scenario.name) must restore transport only; application mutations are never synthesized or replayed"
+            )
+
+            await fixture.supervisor.stop()
+        }
+    }
+
     func testUncertainMutatingRequestIsNeverReplayedAcrossReconnect() async throws {
         let fixture = makeSupervisor()
         try await fixture.supervisor.start()
