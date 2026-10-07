@@ -13,6 +13,12 @@ public protocol DeviceAdapter: Sendable {
     /// partially failed connection, or when no connection was established.
     func disconnect() async
 
+    /// Produces a finite-buffer device event stream.
+    ///
+    /// Implementations must not rely on the default unbounded `AsyncStream`
+    /// buffering policy. If delivery cannot be kept lossless under the chosen
+    /// finite policy, the stream must surface overload explicitly rather than
+    /// allowing memory growth to remain unbounded.
     func events() -> AsyncStream<InteractionEvent>
 }
 
