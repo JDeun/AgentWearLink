@@ -4,27 +4,18 @@ import XCTest
 
 private actor RuntimeRecorder {
     var events: [InteractionEvent] = []
-    private var countWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private let eventCount = TestCountSignal()
 
-    func append(_ event: InteractionEvent) {
+    func append(_ event: InteractionEvent) async {
         events.append(event)
-
-        var pending: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
-        for waiter in countWaiters {
-            if events.count >= waiter.count {
-                waiter.continuation.resume()
-            } else {
-                pending.append(waiter)
-            }
-        }
-        countWaiters = pending
+        await eventCount.increment()
     }
 
-    func waitUntilCount(_ count: Int) async {
-        guard events.count < count else { return }
-        await withCheckedContinuation { continuation in
-            countWaiters.append((count, continuation))
-        }
+    func waitUntilCount(_ count: Int) async throws {
+        try await eventCount.wait(
+            until: count,
+            label: "runtime recorder event count \(count)"
+        )
     }
 }
 
@@ -132,19 +123,40 @@ private actor LifecycleAgent: AgentAdapter {
 
 private actor BlockingLifecycleAgent: AgentAdapter {
     private(set) var connects = 0
+    private(set) var disconnects = 0
+
+    private let connectSignal = TestCountSignal()
+    private let disconnectSignal = TestCountSignal()
+
     private var released = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var connectWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private let blockDisconnect: Bool
+    private var disconnectReleased: Bool
+    private var disconnectWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(blockDisconnect: Bool = false) {
+        self.blockDisconnect = blockDisconnect
+        self.disconnectReleased = !blockDisconnect
+    }
 
     func connect() async throws {
         connects += 1
+        await connectSignal.increment()
+
         if !released {
-            await withCheckedContinuation { waiters.append($0) }
+            await withCheckedContinuation { connectWaiters.append($0) }
         }
     }
 
-    private(set) var disconnects = 0
+    func disconnect() async {
+        disconnects += 1
+        await disconnectSignal.increment()
 
-    func disconnect() async { disconnects += 1 }
+        if !disconnectReleased {
+            await withCheckedContinuation { disconnectWaiters.append($0) }
+        }
+    }
 
     func responses(for request: AgentRequest) async -> AsyncThrowingStream<AgentResponse, Error> {
         AsyncThrowingStream { $0.finish() }
@@ -154,8 +166,28 @@ private actor BlockingLifecycleAgent: AgentAdapter {
 
     func release() {
         released = true
-        for waiter in waiters { waiter.resume() }
-        waiters.removeAll()
+        for waiter in connectWaiters { waiter.resume() }
+        connectWaiters.removeAll()
+    }
+
+    func releaseDisconnect() {
+        disconnectReleased = true
+        for waiter in disconnectWaiters { waiter.resume() }
+        disconnectWaiters.removeAll()
+    }
+
+    func waitUntilConnectCount(_ count: Int) async throws {
+        try await connectSignal.wait(
+            until: count,
+            label: "lifecycle agent connect count \(count)"
+        )
+    }
+
+    func waitUntilDisconnectCount(_ count: Int) async throws {
+        try await disconnectSignal.wait(
+            until: count,
+            label: "lifecycle agent disconnect count \(count)"
+        )
     }
 
     func connectCount() -> Int { connects }
@@ -284,7 +316,7 @@ final class RuntimeTests: XCTestCase {
 
         let id = InteractionID()
         await device.emit(.text(id, "hello"))
-        try await Task.sleep(for: .milliseconds(30))
+        try await recorder.waitUntilCount(2)
 
         let events = await recorder.events
         XCTAssertTrue(events.contains(.text(id, "echo: hello")))
@@ -302,7 +334,7 @@ final class RuntimeTests: XCTestCase {
         }
 
         try await runtime.start()
-        try await Task.sleep(for: .milliseconds(30))
+        try await recorder.waitUntilCount(2)
 
         let events = await recorder.events
         XCTAssertTrue(events.contains(.text(device.emittedID, "echo: during-connect")))
@@ -387,15 +419,16 @@ final class RuntimeTests: XCTestCase {
         let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
 
         let first = Task { try await runtime.start() }
-        try? await Task.sleep(for: .milliseconds(10))
-        let second = Task { try await runtime.start() }
-        try? await Task.sleep(for: .milliseconds(10))
+        try await agent.waitUntilConnectCount(1)
+
+        // The first start is suspended in connect(), so the second call must
+        // observe .starting and return without initiating another connection.
+        try await runtime.start()
 
         let connectCount = await agent.connectCount()
         XCTAssertEqual(connectCount, 1)
         await agent.release()
         try await first.value
-        try await second.value
         await runtime.stop()
     }
 
@@ -405,7 +438,7 @@ final class RuntimeTests: XCTestCase {
         let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
 
         let starting = Task { try await runtime.start() }
-        try await Task.sleep(for: .milliseconds(10))
+        try await agent.waitUntilConnectCount(1)
         let connectCount = await agent.connectCount()
         XCTAssertEqual(connectCount, 1)
 
@@ -441,25 +474,19 @@ final class RuntimeTests: XCTestCase {
 
     func testStartDuringStopWaitsForTeardownThenRestarts() async throws {
         let device = MockDeviceAdapter()
-        let agent = BlockingLifecycleAgent()
+        let agent = BlockingLifecycleAgent(blockDisconnect: true)
         let runtime = AgentWearLinkRuntime(device: device, agent: agent, output: { _ in })
 
         await agent.release()
         try await runtime.start()
 
         let stopping = Task { await runtime.stop() }
+        try await agent.waitUntilDisconnectCount(1)
 
-        // Do not assume sibling Task scheduling order. Wait until stop() has
-        // actually entered teardown before exercising start-during-stop.
-        for _ in 0..<100 {
-            let counts = await agent.counts()
-            if counts.1 >= 1 { break }
-            await Task.yield()
-        }
-        let enteredTeardown = await agent.counts()
-        XCTAssertGreaterThanOrEqual(enteredTeardown.1, 1)
-
+        // Teardown is held inside agent.disconnect(), so start() must wait for
+        // finishStopping() rather than racing a scheduler delay.
         let restarting = Task { try await runtime.start() }
+        await agent.releaseDisconnect()
 
         await stopping.value
         try await restarting.value
@@ -495,7 +522,7 @@ final class RuntimeTests: XCTestCase {
 
         try await runtime.start()
         device.finishUnexpectedly()
-        await recorder.waitUntilCount(1)
+        try await recorder.waitUntilCount(1)
 
         let events = await recorder.events
         XCTAssertEqual(
@@ -543,7 +570,7 @@ final class RuntimeTests: XCTestCase {
 
         try await runtime.start()
         device.finishUnexpectedly()
-        await recorder.waitUntilCount(1)
+        try await recorder.waitUntilCount(1)
 
         try await runtime.start()
         await runtime.stop()
