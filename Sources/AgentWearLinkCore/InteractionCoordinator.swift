@@ -42,6 +42,7 @@ public actor InteractionCoordinator {
     }
 
     private let agent: any AgentAdapter
+    private let diagnostics: AWLDiagnosticRecorder?
     private let maximumInFlightInteractions: Int
     private let maximumRequestTextBytes: Int
     private var tasks: [InteractionID: TaskEntry] = [:]
@@ -54,11 +55,13 @@ public actor InteractionCoordinator {
         agent: any AgentAdapter,
         maximumInFlightInteractions: Int = InteractionCoordinator.defaultMaximumInFlightInteractions,
         maximumRequestTextBytes: Int = InteractionCoordinator.defaultMaximumRequestTextBytes,
+        diagnostics: AWLDiagnosticRecorder? = nil,
         output: @escaping @Sendable (InteractionEvent) async -> Void
     ) {
         precondition(maximumInFlightInteractions > 0)
         precondition(maximumRequestTextBytes > 0)
         self.agent = agent
+        self.diagnostics = diagnostics
         self.maximumInFlightInteractions = maximumInFlightInteractions
         self.maximumRequestTextBytes = maximumRequestTextBytes
         self.outputQueue = InteractionOutputQueue(output: output)
@@ -66,11 +69,13 @@ public actor InteractionCoordinator {
 
     public func activate(runtimeGeneration: UInt64) {
         activeRuntimeGeneration = runtimeGeneration
+        diagnostics?.record(.init(kind: .runtimeActivated, generation: runtimeGeneration))
     }
 
     public func deactivate(runtimeGeneration: UInt64) async {
         guard activeRuntimeGeneration == runtimeGeneration else { return }
         activeRuntimeGeneration = nil
+        diagnostics?.record(.init(kind: .runtimeRetired, generation: runtimeGeneration))
         await cancelAll()
     }
 
@@ -115,9 +120,13 @@ public actor InteractionCoordinator {
 
     private func submit(_ request: AgentRequest) async {
         let id = request.interactionID
-        guard tasks[id] == nil else { return }
+        guard tasks[id] == nil else {
+            diagnostics?.record(.init(kind: .requestDuplicate, interactionID: id))
+            return
+        }
 
         guard request.textUTF8ByteCount <= maximumRequestTextBytes else {
+            diagnostics?.record(.init(kind: .requestOversize, interactionID: id))
             await outputQueue.emit(
                 .failed(
                     id,
@@ -128,6 +137,7 @@ public actor InteractionCoordinator {
         }
 
         guard tasks.count < maximumInFlightInteractions else {
+            diagnostics?.record(.init(kind: .requestCapacity, interactionID: id))
             await outputQueue.emit(
                 .failed(
                     id,
@@ -138,6 +148,7 @@ public actor InteractionCoordinator {
         }
 
         let generation = UUID()
+        diagnostics?.record(.init(kind: .requestAccepted, interactionID: id))
         let task = Task { [agent] in
             do {
                 let responses = await agent.responses(for: request)
@@ -234,6 +245,11 @@ public actor InteractionCoordinator {
         // queue serializes committed emissions, so a later interruption/session
         // end cannot become externally visible before an already-committed
         // response and then be followed by stale text from the retired task.
+        if case .turnCompleted = event {
+            diagnostics?.record(.init(kind: .responseCompleted, interactionID: id))
+        } else if case .failed = event {
+            diagnostics?.record(.init(kind: .responseFailed, interactionID: id))
+        }
         await outputQueue.emit(event)
 
         return tasks[id]?.generation == generation
@@ -266,6 +282,7 @@ public actor InteractionCoordinator {
 
     public func cancel(_ id: InteractionID) async {
         guard let entry = tasks.removeValue(forKey: id) else { return }
+        diagnostics?.record(.init(kind: .cancellationRequested, interactionID: id))
         entry.task.cancel()
         let outcome = await agent.cancellationOutcome(interactionID: id)
         await emitCancellationDiagnosticIfNeeded(outcome)
@@ -275,6 +292,7 @@ public actor InteractionCoordinator {
         _ outcome: AgentCancellationOutcome
     ) async {
         guard case let .uncertain(error) = outcome else { return }
+        diagnostics?.record(.init(kind: .cancellationUncertain))
 
         // Nil-ID non-device failures are diagnostics, not runtime-terminal
         // device/session failures. This preserves the local lifecycle event

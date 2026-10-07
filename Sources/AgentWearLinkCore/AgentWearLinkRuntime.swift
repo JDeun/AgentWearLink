@@ -28,12 +28,13 @@ public actor AgentWearLinkRuntime {
     public init(
         device: any DeviceAdapter,
         agent: any AgentAdapter,
+        diagnostics: AWLDiagnosticRecorder? = nil,
         output: @escaping @Sendable (InteractionEvent) async -> Void
     ) {
         self.device = device
         self.agent = agent
         self.output = output
-        self.coordinator = InteractionCoordinator(agent: agent, output: output)
+        self.coordinator = InteractionCoordinator(agent: agent, diagnostics: diagnostics, output: output)
     }
 
     /// Convenience production composition for a typed host output sink.
@@ -43,7 +44,8 @@ public actor AgentWearLinkRuntime {
     public init(
         device: any DeviceAdapter,
         agent: any AgentAdapter,
-        outputSink: any InteractionOutputSink
+        outputSink: any InteractionOutputSink,
+        diagnostics: AWLDiagnosticRecorder? = nil
     ) {
         self.device = device
         self.agent = agent
@@ -52,7 +54,7 @@ public actor AgentWearLinkRuntime {
             await outputSink.consume(event)
         }
         self.output = output
-        self.coordinator = InteractionCoordinator(agent: agent, output: output)
+        self.coordinator = InteractionCoordinator(agent: agent, diagnostics: diagnostics, output: output)
     }
 
     public func start() async throws {
