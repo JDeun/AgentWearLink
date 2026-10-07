@@ -23,7 +23,26 @@ jobs:
       - name: Test core package
         run: swift test
 
+  meta-dat-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      required: ${{ steps.filter.outputs.meta }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
+        id: filter
+        with:
+          filters: |
+            meta:
+              - 'Adapters/MetaDAT/**'
+              - 'Sources/AgentWearLinkCore/**'
+              - 'Package.swift'
+              - 'Package.resolved'
+              - '.github/workflows/swift.yml'
+
   meta-dat-integration:
+    needs: meta-dat-changes
+    if: needs.meta-dat-changes.outputs.required == 'true'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
