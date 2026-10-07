@@ -533,7 +533,7 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(await socket.sentCount(), 1)
+        let sentCount = await socket.sentCount()\n        XCTAssertEqual(sentCount, 1)
     }
 
     func testFailedDeviceTokenRecoveryIsNotRetriedAgain() async throws {
@@ -573,7 +573,7 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(await socket.sentCount(), 2)
+        let sentCount = await socket.sentCount()\n        XCTAssertEqual(sentCount, 2)
     }
 
     private func decodedConnectParams(_ frame: String) throws -> OpenClawConnectParamsDecoded {
