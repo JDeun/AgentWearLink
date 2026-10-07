@@ -14,6 +14,7 @@ Meta Wearables DAT, physical glasses, or a live OpenClaw deployment.
 | Cancellation race | Generation-scoped coordinator/HTTP state | Rapid invoke/cancel/reinvoke |
 | Media bounds | Image attachment enforces configured byte limit | Oversized DAT snapshot handling |
 | Camera privacy | Vision requires explicit snapshot call and capability | Verify no capture before explicit interaction |
+| Camera stream heap growth (pinned DAT) | One-shot photo capture now stops and releases the owning Camera on every completion/error/cancellation, not merely its Stream (#303); generation fencing prevents late cross-capture reuse | Profile actual retained heap on target iPhone; vendor internal allocation may persist even after Camera.stop() |
 | Media retention | Core values are in-memory only; no persistence API | Inspect iOS host caches/logs |
 | Credentials | Secret-sentinel regression plus redacted OpenClaw configuration diagnostics | Verify Keychain credential reuse/rotation/revocation in deployment |
 | Background state | Meta code-side invalidation/fresh-readiness policy is deterministic-tested | Lock/pocket physical iPhone and exercise invocation/recovery |
@@ -46,3 +47,13 @@ evidence:
 The read-only `awl-openclaw-probe` validates reachability/authentication. The
 explicitly mutating `awl-openclaw-chat-probe` validates P0-B text submission and
 streaming and must not be automatically retried after uncertain transport failure.
+
+## Pinned Meta DAT camera heap risk (#303)
+
+The source-level mitigation for photo-only operation is to allocate a fresh
+camera owner for each explicit capture and retire **both** the Stream and Camera
+on success, timeout, error, cancellation, and session teardown. This avoids
+keeping long-lived AWL media ownership between still photos but cannot prove
+that the pinned vendor SDK releases allocations internally. Do not enable
+continuous raw-audio/camera streaming solely based on this mitigation. Memory
+profiling on a physical iPhone and upstream #324 status remain required.
