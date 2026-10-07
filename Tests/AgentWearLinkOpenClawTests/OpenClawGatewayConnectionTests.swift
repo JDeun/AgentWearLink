@@ -30,6 +30,60 @@ private actor MockOpenClawWebSocket: OpenClawWebSocket {
     func closed() -> Bool { didClose }
 }
 
+private actor StalledHandshakeSocket: OpenClawWebSocket {
+    private let emitChallengeBeforeStall: Bool
+    private var receiveCount = 0
+    private var sentFrames: [String] = []
+    private var receiveWaiter: CheckedContinuation<String, Error>?
+    private var blockedReceive = false
+    private var blockedReceiveWaiter: CheckedContinuation<Void, Never>?
+    private var didClose = false
+
+    init(emitChallengeBeforeStall: Bool) {
+        self.emitChallengeBeforeStall = emitChallengeBeforeStall
+    }
+
+    func connect() async {}
+
+    func send(text: String) async throws {
+        sentFrames.append(text)
+    }
+
+    func receive() async throws -> String {
+        if emitChallengeBeforeStall && receiveCount == 0 {
+            receiveCount += 1
+            return #"{"type":"event","event":"connect.challenge","payload":{"nonce":"timeout-test","ts":1737264000000}}"#
+        }
+
+        receiveCount += 1
+        blockedReceive = true
+        blockedReceiveWaiter?.resume()
+        blockedReceiveWaiter = nil
+
+        return try await withCheckedThrowingContinuation { continuation in
+            receiveWaiter = continuation
+        }
+    }
+
+    func close() async {
+        didClose = true
+        if let receiveWaiter {
+            self.receiveWaiter = nil
+            receiveWaiter.resume(throwing: AWLOpenClawError.disconnected)
+        }
+    }
+
+    func waitUntilReceiveIsBlocked() async {
+        if blockedReceive { return }
+        await withCheckedContinuation { continuation in
+            blockedReceiveWaiter = continuation
+        }
+    }
+
+    func closed() -> Bool { didClose }
+    func sentCount() -> Int { sentFrames.count }
+}
+
 final class OpenClawGatewayConnectionTests: XCTestCase {
     private func makeAssembler() -> OpenClawConnectAssembler {
         OpenClawConnectAssembler(
@@ -131,6 +185,83 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
             rawRepresentation: identity.publicKeyRaw
         )
         XCTAssertTrue(publicKey.isValidSignature(signature, for: payload))
+    }
+
+    func testChallengeWaitTimesOutAndClosesSocket() async {
+        let socket = StalledHandshakeSocket(emitChallengeBeforeStall: false)
+        let state = OpenClawGatewayState()
+        let connection = OpenClawGatewayConnection(
+            socket: socket,
+            assembler: makeAssembler(),
+            state: state,
+            handshakeTimeout: .milliseconds(10)
+        )
+
+        do {
+            _ = try await connection.connect(appVersion: "0.1.0")
+            XCTFail("Expected challenge timeout")
+        } catch let error as OpenClawHandshakeError {
+            XCTAssertEqual(error, .challengeTimeout)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(await socket.closed())
+        XCTAssertEqual(await state.connectionState, .disconnected)
+    }
+
+    func testHelloWaitTimesOutAfterConnectRequestAndClosesSocket() async {
+        let socket = StalledHandshakeSocket(emitChallengeBeforeStall: true)
+        let state = OpenClawGatewayState()
+        let connection = OpenClawGatewayConnection(
+            socket: socket,
+            assembler: makeAssembler(),
+            state: state,
+            handshakeTimeout: .milliseconds(10)
+        )
+
+        do {
+            _ = try await connection.connect(appVersion: "0.1.0")
+            XCTFail("Expected hello timeout")
+        } catch let error as OpenClawHandshakeError {
+            XCTAssertEqual(error, .helloTimeout)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(await socket.sentCount(), 1)
+        XCTAssertTrue(await socket.closed())
+        XCTAssertEqual(await state.connectionState, .disconnected)
+    }
+
+    func testCancellationDuringHandshakeClosesSocketAndCannotPublishReady() async {
+        let socket = StalledHandshakeSocket(emitChallengeBeforeStall: false)
+        let state = OpenClawGatewayState()
+        let connection = OpenClawGatewayConnection(
+            socket: socket,
+            assembler: makeAssembler(),
+            state: state,
+            handshakeTimeout: .seconds(30)
+        )
+
+        let connectTask = Task {
+            try await connection.connect(appVersion: "0.1.0")
+        }
+
+        await socket.waitUntilReceiveIsBlocked()
+        connectTask.cancel()
+
+        do {
+            _ = try await connectTask.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(await socket.closed())
+        XCTAssertEqual(await state.connectionState, .disconnected)
     }
 
     func testMissingChallengeClosesSocket() async {
