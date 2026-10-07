@@ -16,6 +16,9 @@ struct OpenClawSubmissionIdentity: Sendable, Equatable {
 }
 
 public actor OpenClawNativeAgentAdapter: AgentAdapter {
+    public static let defaultMaximumTerminalWaitPolls = 10
+    public static let defaultTerminalPollTimeoutMilliseconds = 30_000
+
     private let supervisor: OpenClawGatewaySupervisor
     private let dispatcher: OpenClawRPCDispatcher
     private let runClient: OpenClawAgentRunClient
@@ -26,18 +29,26 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
     }
 
     private let sessionKey: String?
+    private let maximumTerminalWaitPolls: Int
+    private let terminalPollTimeoutMilliseconds: Int
     private var runs: [InteractionID: RunContext] = [:]
 
     public init(
         supervisor: OpenClawGatewaySupervisor,
         dispatcher: OpenClawRPCDispatcher,
         runClient: OpenClawAgentRunClient,
-        sessionKey: String? = nil
+        sessionKey: String? = nil,
+        maximumTerminalWaitPolls: Int = OpenClawNativeAgentAdapter.defaultMaximumTerminalWaitPolls,
+        terminalPollTimeoutMilliseconds: Int = OpenClawNativeAgentAdapter.defaultTerminalPollTimeoutMilliseconds
     ) {
+        precondition(maximumTerminalWaitPolls > 0)
+        precondition(terminalPollTimeoutMilliseconds > 0)
         self.supervisor = supervisor
         self.dispatcher = dispatcher
         self.runClient = runClient
         self.sessionKey = sessionKey
+        self.maximumTerminalWaitPolls = maximumTerminalWaitPolls
+        self.terminalPollTimeoutMilliseconds = terminalPollTimeoutMilliseconds
     }
 
     public func connect() async throws {
@@ -163,12 +174,32 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
         client: OpenClawAgentRunClient,
         runID: String
     ) async throws -> OpenClawAgentWaitResult {
-        while true {
-            try Task.checkCancellation()
-            let result = try await client.wait(
+        let maximumPolls = maximumTerminalWaitPolls
+        let pollTimeoutMilliseconds = terminalPollTimeoutMilliseconds
+
+        return try await Self.pollUntilTerminal(
+            maximumPolls: maximumPolls,
+            pollTimeoutMilliseconds: pollTimeoutMilliseconds
+        ) { timeoutMilliseconds in
+            try await client.wait(
                 runID: runID,
-                timeoutMilliseconds: 30_000
+                timeoutMilliseconds: timeoutMilliseconds
             )
+        }
+    }
+
+    static func pollUntilTerminal(
+        maximumPolls: Int,
+        pollTimeoutMilliseconds: Int,
+        wait: @escaping @Sendable (Int) async throws -> OpenClawAgentWaitResult
+    ) async throws -> OpenClawAgentWaitResult {
+        precondition(maximumPolls > 0)
+        precondition(pollTimeoutMilliseconds > 0)
+
+        for _ in 0..<maximumPolls {
+            try Task.checkCancellation()
+            let result = try await wait(pollTimeoutMilliseconds)
+
             switch result.status {
             case "timeout", "pending":
                 continue
@@ -176,6 +207,10 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
                 return result
             }
         }
+
+        throw OpenClawNativeAdapterError.terminalWaitLimitExceeded(
+            maximumPolls: maximumPolls
+        )
     }
 
     /// Projects only explicit append semantics into Core's textDelta event.
@@ -204,4 +239,5 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter {
 
 public enum OpenClawNativeAdapterError: Error, Sendable, Equatable {
     case unexpectedWaitStatus(String)
+    case terminalWaitLimitExceeded(maximumPolls: Int)
 }

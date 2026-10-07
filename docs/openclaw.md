@@ -17,6 +17,8 @@ The primary adapter is `OpenClawNativeAgentAdapter`. It uses the native Gateway 
 
 A reconnect restores transport readiness. It does **not** silently replay an in-flight request whose delivery or completion is uncertain.
 
+Accepted native runs also have a bounded terminal-wait policy: by default AWL performs at most 10 `agent.wait` polls with a 30-second Gateway timeout per poll. Repeated `pending`/`timeout` results therefore end in a typed local failure instead of retaining an interaction indefinitely. Expiry cleans the local run/update context and never resubmits the accepted run.
+
 The native dispatcher treats negotiated `policy.maxBufferedBytes` as the byte budget for its own pre-subscription agent-event backlog, measured using received raw frame sizes. This is separate from the local per-frame inbound limit and the count-bounded active subscriber queues. Exceeding the negotiated backlog budget retires the current transport generation; a reconnect reads the replacement budget from the new hello snapshot.
 
 Outbound native agent text is preflighted against the current negotiated `policy.maxPayload` before JSON frame encoding, and the completed frame is checked again for exact protocol size. The Chat Completions compatibility path similarly uses `maximumRequestBytes` before body encoding and again on the final JSON body. These checks complement Core's default 256 KiB request-text admission budget rather than replacing Gateway policy.
