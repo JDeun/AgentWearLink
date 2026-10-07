@@ -124,8 +124,7 @@ final class OpenClawAgentRunTests: XCTestCase {
         )
         let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
         let client = OpenClawAgentRunClient(dispatcher: dispatcher)
-        let events = await dispatcher.events()
-        let updates = await client.updates(from: events, runID: "run-1")
+        let updates = await client.updates(runID: "run-1")
         await dispatcher.start()
 
         var deltas: [String] = []
@@ -141,6 +140,93 @@ final class OpenClawAgentRunTests: XCTestCase {
         }
 
         XCTAssertEqual(deltas, ["hel", "lo"])
+        await dispatcher.stop()
+    }
+
+    func testRunScopedRoutingDoesNotFanOutOtherRuns() async throws {
+        var frames: [String] = []
+        for index in 0..<50 {
+            frames.append(
+                #"{"type":"event","event":"agent","seq":#(index * 2 + 1),"payload":{"runId":"run-a","stream":"assistant","seq":#(index),"data":{"delta":"a#(index)"}}}"#
+            )
+            frames.append(
+                #"{"type":"event","event":"agent","seq":#(index * 2 + 2),"payload":{"runId":"run-b","stream":"assistant","seq":#(index),"data":{"delta":"b#(index)"}}}"#
+            )
+        }
+        frames.append(
+            #"{"type":"event","event":"agent","seq":101,"payload":{"runId":"malformed"}}"#
+        )
+
+        let state = OpenClawGatewayState()
+        let socket = AgentEventSocket(frames: frames)
+        await state.beginConnect()
+        try await state.acceptHello(
+            OpenClawHelloOK(
+                type: "hello-ok",
+                protocolVersion: 4,
+                server: .init(version: "test", connId: "c1"),
+                features: .init(methods: [], events: ["agent"]),
+                auth: .init(role: "operator", scopes: ["operator.read"], deviceToken: nil),
+                policy: .init(
+                    maxPayload: 1024,
+                    maxBufferedBytes: 2048,
+                    tickIntervalMs: 15000,
+                    attachments: nil
+                )
+            )
+        )
+
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: state,
+            agentEventBufferLimit: 64,
+            pendingAgentEventLimit: 128
+        )
+        let client = OpenClawAgentRunClient(dispatcher: dispatcher)
+        let updatesA = await client.updates(runID: "run-a")
+        let updatesB = await client.updates(runID: "run-b")
+
+        let collectA = Task { () -> [String] in
+            var values: [String] = []
+            do {
+                for try await update in updatesA {
+                    if case let .assistant(_, .object(data)?) = update,
+                       case let .string(delta)? = data["delta"] {
+                        values.append(delta)
+                    }
+                }
+            } catch {
+                // Finite socket completion ends the synthetic connection.
+            }
+            return values
+        }
+        let collectB = Task { () -> [String] in
+            var values: [String] = []
+            do {
+                for try await update in updatesB {
+                    if case let .assistant(_, .object(data)?) = update,
+                       case let .string(delta)? = data["delta"] {
+                        values.append(delta)
+                    }
+                }
+            } catch {
+                // Finite socket completion ends the synthetic connection.
+            }
+            return values
+        }
+
+        await dispatcher.start()
+
+        let a = await collectA.value
+        let b = await collectB.value
+
+        XCTAssertEqual(a.count, 50)
+        XCTAssertEqual(b.count, 50)
+        XCTAssertTrue(a.allSatisfy { $0.hasPrefix("a") })
+        XCTAssertTrue(b.allSatisfy { $0.hasPrefix("b") })
+        XCTAssertFalse(a.contains(where: { $0.hasPrefix("b") }))
+        XCTAssertFalse(b.contains(where: { $0.hasPrefix("a") }))
+
         await dispatcher.stop()
     }
 
