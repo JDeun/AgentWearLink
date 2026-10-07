@@ -2,6 +2,67 @@ import XCTest
 @testable import AgentWearLinkMetaDATIntegration
 
 final class MetaDATApplicationLifecycleTests: XCTestCase {
+    func testApplicationOwnershipStartsFromHostSuppliedBackgroundPhase() {
+        let ownership = MetaDATApplicationOwnershipState(
+            initialPhase: .background
+        )
+
+        XCTAssertEqual(ownership.phase, .background)
+        XCTAssertFalse(ownership.permitsSessionAcquisition)
+    }
+
+    func testBackgroundTransitionRetiresOwnedSessionExactlyOnce() {
+        var ownership = MetaDATApplicationOwnershipState(
+            initialPhase: .foreground
+        )
+
+        XCTAssertTrue(ownership.permitsSessionAcquisition)
+        XCTAssertTrue(ownership.transition(to: .background))
+        XCTAssertFalse(ownership.permitsSessionAcquisition)
+
+        // Duplicate host callbacks are idempotent and cannot retire a newer
+        // generation a second time.
+        XCTAssertFalse(ownership.transition(to: .background))
+    }
+
+    func testForegroundTransitionRequiresFreshSessionAcquisition() async {
+        var ownership = MetaDATApplicationOwnershipState(
+            initialPhase: .background
+        )
+        let readiness = MetaDATForegroundReadiness(
+            initialPhase: .background
+        )
+
+        XCTAssertFalse(ownership.transition(to: .foreground))
+        await readiness.handle(.foreground)
+
+        XCTAssertTrue(ownership.permitsSessionAcquisition)
+        XCTAssertEqual(await readiness.state, .reacquiring)
+
+        await readiness.markReacquired()
+        XCTAssertEqual(await readiness.state, .fresh)
+    }
+
+    func testBackgroundRetirementInvalidatesStartupGenerationAndForegroundUsesNewGeneration() {
+        var ownership = MetaDATApplicationOwnershipState(
+            initialPhase: .foreground
+        )
+        var fence = MetaDATSessionGenerationFence()
+
+        let startup = fence.begin()
+        XCTAssertTrue(fence.owns(startup))
+
+        XCTAssertTrue(ownership.transition(to: .background))
+        XCTAssertTrue(fence.retire(ifOwned: startup))
+        XCTAssertFalse(fence.owns(startup))
+
+        XCTAssertFalse(ownership.transition(to: .foreground))
+        let reacquired = fence.begin()
+
+        XCTAssertNotEqual(startup, reacquired)
+        XCTAssertTrue(fence.owns(reacquired))
+    }
+
     func testPublishesInitialAndDistinctHostPhases() async throws {
         let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
         let phases = lifecycle.phases()
