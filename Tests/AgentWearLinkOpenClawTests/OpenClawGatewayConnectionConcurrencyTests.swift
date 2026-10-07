@@ -300,7 +300,7 @@ private actor ControlledHandshakeSocket: OpenClawWebSocket {
 
         let auth: String
         if let deviceToken {
-            auth = #""auth":{"role":"operator","scopes":["operator.read"],"deviceToken":"#(deviceToken)"}"#
+            auth = #""auth":{"role":"operator","scopes":["operator.read"],"deviceToken":"\#(deviceToken)"}"#
         } else {
             auth = #""auth":{"role":"operator","scopes":["operator.read"]}"#
         }
