@@ -19,6 +19,16 @@ struct MetaDATTestHostApp: App {
     @State private var allowVision = false
     @State private var experimentalStandalonePhoto = false
     @State private var photoPrompt = "Describe the photo."
+    // Opt-in *foreground launch* convenience. Only non-secret endpoint and
+    // session metadata are stored; the approved device grant stays in Keychain.
+    @AppStorage("awl.reference.voiceWakeStartupEnabled")
+    private var voiceWakeStartupEnabled = false
+    @AppStorage("awl.reference.voiceWakeStartupHostname")
+    private var voiceWakeStartupHostname = ""
+    @AppStorage("awl.reference.voiceWakeStartupSession")
+    private var voiceWakeStartupSession = ""
+    @State private var voiceWakeStartupStatus = "auto-wake-disabled"
+    @State private var attemptedVoiceWakeThisLaunch = false
 
     var body: some Scene {
         WindowGroup {
@@ -109,12 +119,43 @@ struct MetaDATTestHostApp: App {
                 if !ProcessInfo.processInfo.arguments.contains(
                     MetaDATMockHostBootstrap.launchArgument
                 ) {
+                    ScrollView {
+                        VStack(spacing: 8) {
                     Text(referenceHost.status)
                         .accessibilityIdentifier("awl-reference-runtime-state")
                     TextField("Mac mini hostname (*.ts.net)", text: $gatewayHostname)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("awl-gateway-hostname")
+                    Text(voiceWakeStartupStatus)
+                        .accessibilityIdentifier("awl-auto-wake-state")
+                    if voiceWakeStartupEnabled {
+                        Button("Disable foreground voice-wake startup") {
+                            voiceWakeStartupEnabled = false
+                            voiceWakeStartupHostname = ""
+                            voiceWakeStartupSession = ""
+                            voiceWakeStartupStatus = "auto-wake-disabled"
+                        }
+                        .accessibilityIdentifier("awl-disable-auto-wake")
+                    } else {
+                        Button("Enable next foreground launch (approved grant only)") {
+                            let hostname = gatewayHostname.trimmingCharacters(
+                                in: .whitespacesAndNewlines
+                            )
+                            guard (try? OpenClawEndpoint.tailnetServe(hostname: hostname))
+                                    != nil else {
+                                voiceWakeStartupStatus = "auto-wake-invalid-private-host"
+                                return
+                            }
+                            voiceWakeStartupHostname = hostname
+                            voiceWakeStartupSession = targetSessionKey.trimmingCharacters(
+                                in: .whitespacesAndNewlines
+                            )
+                            voiceWakeStartupEnabled = true
+                            voiceWakeStartupStatus = "auto-wake-armed-for-next-launch"
+                        }
+                        .accessibilityIdentifier("awl-enable-auto-wake")
+                    }
                     SecureField("Gateway token (first approval; optional on approved reconnect)", text: $bootstrapToken)
                         .accessibilityIdentifier("awl-gateway-token")
                     TextField("Existing OpenClaw session key (optional)", text: $targetSessionKey)
@@ -204,6 +245,9 @@ struct MetaDATTestHostApp: App {
                         Task { await referenceHost.startRegistration() }
                     }
                     .accessibilityIdentifier("awl-meta-register")
+                        }
+                    }
+                    .accessibilityIdentifier("awl-reference-controls-scroll")
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
@@ -211,6 +255,9 @@ struct MetaDATTestHostApp: App {
                     await referenceHost.applicationPhase(
                         newPhase == .active ? .foreground : .background
                     )
+                    if newPhase == .active, state == "host-ready" {
+                        await startOptedInForegroundVoiceWakeOnce()
+                    }
                 }
             }
             .onOpenURL { url in
@@ -222,6 +269,9 @@ struct MetaDATTestHostApp: App {
                     ) else {
                         await referenceHost.configureWearables()
                         state = "host-ready"
+                        if scenePhase == .active {
+                            await startOptedInForegroundVoiceWakeOnce()
+                        }
                         return
                     }
 
@@ -260,5 +310,33 @@ struct MetaDATTestHostApp: App {
                     }
                 }
         }
+    }
+
+    @MainActor
+    private func startOptedInForegroundVoiceWakeOnce() async {
+        // Does not launch an iOS process in the background or assume special
+        // Hey Meta/lock-screen privileges. Once per foreground app process only.
+        guard voiceWakeStartupEnabled,
+              !attemptedVoiceWakeThisLaunch,
+              scenePhase == .active,
+              !ProcessInfo.processInfo.arguments.contains(
+                  MetaDATMockHostBootstrap.launchArgument
+              ) else { return }
+        attemptedVoiceWakeThisLaunch = true
+
+        // Explicit, validated Tailnet hostname is the only persisted route.
+        // The original bearer is never persisted or restored; #590's scoped
+        // approved Keychain grant admission must pass before socket startup.
+        voiceWakeStartupStatus = "auto-wake-connecting"
+        await referenceHost.connect(
+            hostname: voiceWakeStartupHostname,
+            token: "",
+            sessionKey: voiceWakeStartupSession,
+            enableVision: false,
+            voiceWake: true
+        )
+        voiceWakeStartupStatus = referenceHost.status == "voice-wake-runtime-started"
+            ? "auto-wake-runtime-started"
+            : "auto-wake-needs-foreground-approval-or-setup"
     }
 }
