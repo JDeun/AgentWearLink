@@ -14,8 +14,10 @@ same recorder; omitting it leaves instrumentation disabled.
 - Hosts may explicitly call `snapshot()` or `drain()` to collect sanitized
   evidence. Keep export off by default. A recorder should not be persisted without
   an explicit product privacy decision.
-- The Meta vendor adapter, iOS foreground/background, and on-device UI evidence
-  still require additional wiring and physical validation before #330 can close.
+- The concrete Meta adapter and iOS reference host now share this recorder.
+  The host exports an allowlisted, bounded JSON report only after an explicit
+  **Copy sanitized diagnostics** action. This is a code-side capability, not
+  evidence that physical iPhone/glasses logs or caches have been audited.
 
 Sample integration:
 
@@ -35,7 +37,13 @@ only a local interaction identifier (where applicable), a generation and the
 closed event kind. No transcript, capture bytes, error text, device identity or
 credential is passed to diagnostics.
 
-This provides code-side correlation only. A production host must explicitly
-inject one recorder into its runtime and device/agent adapters and opt in to a
-sanitized export before claiming deployment observability. Hardware-verified
-privacy and log/cache inspection remain required for #330/#59.
+The reference iOS host explicitly injects the same recorder into its
+runtime, Meta device, and OpenClaw supervisor and exposes a manual export.
+`AWLDiagnosticEvidence.export` strips correlation UUIDs into local ordinals,
+limits event count, and reports dropped history. Production consumers must
+make an independent privacy decision before persisting any evidence.
+
+**Evidence boundary:** deterministic Core/Meta tests cover bounded diagnostic
+fields and lifecycle correlation. Hardware log/cache inspection, credential
+redaction, background transitions and reconnection evidence remain under
+#59/#119. No device behavior is inferred from a green simulator build.
