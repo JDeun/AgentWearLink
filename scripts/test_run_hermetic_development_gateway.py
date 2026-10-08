@@ -132,7 +132,7 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
             ):
                 self.assertTrue(approve_one_isolated_pairing(
                     "/usr/bin/node", checkout, env,
-                    input_stream=Terminal("isolated-request-123\\n"),
+                    input_stream=Terminal("isolated-request-123\n"),
                 ))
                 self.assertEqual(command.call_count, 2)
                 self.assertEqual(command.call_args.args[0][-3:],
@@ -147,7 +147,7 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
             ):
                 self.assertFalse(approve_one_isolated_pairing(
                     "/usr/bin/node", checkout, env,
-                    input_stream=Terminal("unrelated-request-999\\n"),
+                    input_stream=Terminal("unrelated-request-999\n"),
                 ))
                 self.assertEqual(command.call_count, 1)
 
