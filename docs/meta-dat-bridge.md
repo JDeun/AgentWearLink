@@ -183,7 +183,6 @@ an independently verified response-handle contract for all action types.
 Vendor MockDeviceKit launch simulation and physical locked/pocketed behavior
 remain open on #95/#115/#6.
 
-
 ### MockDeviceKit Voice Invocation UI acceptance
 
 The test host recognizes `--awl-meta-voice-ui-testing` only after the
