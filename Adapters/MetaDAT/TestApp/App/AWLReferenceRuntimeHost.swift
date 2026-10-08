@@ -18,6 +18,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     private let diagnostics = AWLDiagnosticRecorder(capacity: 256)
     private var runtime: AgentWearLinkRuntime?
     private var device: MetaDATDeviceAdapter?
+    private var visionAgent: OpenClawNativeAgentAdapter?
+    private var outputSink: AppleSpeechOutput?
+    private var visionTask: Task<Void, Never>?
     private var configured = false
 
     func configureWearables() async {
@@ -56,10 +59,18 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     }
 
     func applicationPhase(_ phase: MetaDATApplicationPhase) async {
+        if phase == .background {
+            visionTask?.cancel()
+        }
         await lifecycle.transition(to: phase)
     }
 
-    func connect(hostname: String, token: String, sessionKey: String) async {
+    func connect(
+        hostname: String,
+        token: String,
+        sessionKey: String,
+        enableVision: Bool
+    ) async {
         guard runtime == nil else {
             status = "already-connected"
             return
@@ -113,7 +124,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 dispatcher: dispatcher,
                 runClient: OpenClawAgentRunClient(dispatcher: dispatcher),
                 sessionKey: sessionKey.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .isEmpty ? nil : sessionKey
+                    .isEmpty ? nil : sessionKey,
+                supportsVisionInput: enableVision
             )
             let concreteDevice = MetaDATDeviceAdapter(
                 applicationLifecycle: lifecycle,
@@ -133,6 +145,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             // either transport, so no device event is lost during connect.
             runtime = composed
             device = concreteDevice
+            visionAgent = agent
+            outputSink = sink
             do {
                 try await composed.start()
                 // Independent Voice Invocation startup follows the upstream
@@ -143,6 +157,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 await composed.stop()
                 runtime = nil
                 device = nil
+                visionAgent = nil
+                outputSink = nil
                 status = "connection-failed"
             }
         } catch {
@@ -150,13 +166,73 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         }
     }
 
+    /// Explicit one-shot photo flow, never invoked by background/session
+    /// lifecycle changes or implicit voice events. It shares the exact agent
+    /// and output sink used by the connected text runtime.
+    func captureAndAsk(prompt: String) async {
+        guard visionTask == nil else {
+            status = "photo-already-running"
+            return
+        }
+        guard runtime != nil,
+              let device, let visionAgent, let outputSink else {
+            status = "not-connected"
+            return
+        }
+        guard visionAgent.supportsVisionInput else {
+            status = "vision-not-enabled"
+            return
+        }
+        let question = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else {
+            status = "photo-prompt-required"
+            return
+        }
+
+        let id = InteractionID()
+        let coordinator = VisionCoordinator(device: device, agent: visionAgent)
+        status = "capturing-photo"
+        visionTask = Task { [weak self] in
+            do {
+                let responses = try await coordinator.responses(
+                    interactionID: id,
+                    prompt: question
+                )
+                for try await response in responses {
+                    try Task.checkCancellation()
+                    await outputSink.consume(response)
+                }
+                if !Task.isCancelled {
+                    self?.status = "photo-completed"
+                }
+            } catch is CancellationError {
+                await outputSink.interrupt(interactionID: id)
+            } catch {
+                await outputSink.consume(
+                    AgentResponse.failed(
+                        id,
+                        .agent("Explicit image request failed")
+                    )
+                )
+                self?.status = "photo-failed"
+            }
+            self?.visionTask = nil
+        }
+    }
+
     func disconnect() async {
         status = "disconnecting"
+        let oldVisionTask = visionTask
+        oldVisionTask?.cancel()
+        await oldVisionTask?.value
+        visionTask = nil
         if let runtime {
             await runtime.stop()
         }
         runtime = nil
         device = nil
+        visionAgent = nil
+        outputSink = nil
         status = "disconnected"
     }
 }
