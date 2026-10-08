@@ -15,7 +15,16 @@ public actor MetaDATVoiceWakeDeviceAdapter: DeviceAdapter {
     }
 
     public nonisolated var capabilities: CapabilitySet {
-        vendor.capabilities
+        Self.exposedCapabilities(vendor.capabilities)
+    }
+
+    /// Core sees only surfaces that this DeviceAdapter projection implements.
+    /// Foreground Speech is available after handoff, but the wake wrapper is
+    /// not a SnapshotCapturingDevice and must not advertise camera snapshots.
+    nonisolated static func exposedCapabilities(
+        _ available: CapabilitySet
+    ) -> CapabilitySet {
+        available.intersection([.voiceInvocation, .speechInput])
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
