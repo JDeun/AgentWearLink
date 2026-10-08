@@ -19,6 +19,14 @@ public enum AWLDiagnosticKind: String, Sendable, Equatable, Codable {
     case transportRecovered
     case transportStopped
     case transportFailed
+    case metaConnectStarted
+    case metaSessionReady
+    case metaMediaRetired
+    case metaBackgroundRetired
+    case metaSnapshotRequested
+    case metaSnapshotCompleted
+    case metaSnapshotFailed
+    case metaTranscriptAccepted
 }
 
 public struct AWLDiagnosticEvent: Sendable, Equatable {
