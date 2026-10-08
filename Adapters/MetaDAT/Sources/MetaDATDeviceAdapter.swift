@@ -260,7 +260,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         // a different listener that restarted after a disconnect/reconnect.
         guard voiceStartFence.owns(voiceLease),
               voiceInvocationChannel != nil else { return }
-        let phase = await applicationLifecycle?.currentPhase ?? .foreground
+        // Without a host lifecycle source, foreground ownership is unknown.
+        // Never interpret missing evidence as permission to start media.
+        let phase = await applicationLifecycle?.currentPhase ?? .background
         if phase == .background {
             // Cold launches may deliver the acknowledgement before SwiftUI
             // reports .active. Keep one fenced handoff pending for foreground;
@@ -817,7 +819,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
               deviceSession != nil else {
             return
         }
-        yieldEvent(.failed(nil, .device(message)))
+        emitMediaFailure(message)
         tearDownSession(expectedGeneration: generation)
     }
 
@@ -881,15 +883,13 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             cameraReady: false
         )
         diagnostics?.record(.init(kind: .metaBackgroundRetired, generation: generation))
-        yieldEvent(.failed(nil, .device("Meta DAT media retired on app background")))
+        emitMediaFailure("Meta DAT media retired on app background")
         tearDownSession(expectedGeneration: generation)
     }
 
     private func handleUnexpectedStop(generation: UInt64) {
         guard !stopping, generationFence.owns(generation) else { return }
-        yieldEvent(
-            .failed(nil, .device("Meta DAT device session stopped"))
-        )
+        emitMediaFailure("Meta DAT device session stopped")
         tearDownSession(expectedGeneration: generation)
     }
 
@@ -899,22 +899,28 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         // Registration ownership begins before DeviceSession creation. Do not
         // require deviceSession != nil here: revocation during startup must
         // invalidate the whole connect generation.
-        yieldEvent(
-            .failed(nil, .device("Meta DAT registration became unavailable"))
-        )
+        emitMediaFailure("Meta DAT registration became unavailable")
         tearDownSession(expectedGeneration: generation)
     }
 
     private func emitDeviceError(_ error: any Error, generation: UInt64) {
         guard !stopping, generationFence.owns(generation) else { return }
-        yieldEvent(.failed(nil, .device(MetaDATVendorFailurePolicy.message(
+        emitMediaFailure(MetaDATVendorFailurePolicy.message(
             for: error,
             surface: .session
-        ))))
+        ))
     }
 
     private func yieldEvent(_ event: InteractionEvent) {
         eventSource.yield(event)
+    }
+
+    private func emitMediaFailure(_ message: String) {
+        yieldEvent(MetaDATMediaFailurePolicy.event(
+            message,
+            preserveIndependentVoice:
+                foregroundMediaActivationOnVoiceLaunch && voiceInvocationChannel != nil
+        ))
     }
 
     private func tearDownSession(expectedGeneration: UInt64? = nil) {
