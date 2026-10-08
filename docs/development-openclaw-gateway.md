@@ -89,6 +89,35 @@ a fresh synthetic service namespace; their presence alone does not imply
 approval of a deployment identity. Do not confuse loopback probe success
 with iPhone/Tailnet/Ray-Ban physical evidence.
 
+## Credential-free real Gateway CI on a disposable macOS runner
+
+The dedicated [real Gateway smoke workflow](../.github/workflows/real-openclaw-gateway.yml)
+runs on GitHub-hosted **macOS 26**. It checks out the **exact protocol-v4
+source revision** recorded in `docs/openclaw-protocol-contract.md`, uses
+upstream-required Node.js 26 / pnpm, builds that real OpenClaw binary and
+starts an entirely new loopback-only Gateway in a temporary home with a
+random generated token. No personal OpenClaw login, model API key, Mac mini,
+Tailscale or wearable is supplied.
+
+For unattended CI **only**, `--ci-approve-single-request` permits a single
+synthetic pending device request to be approved **only in the Gateway just
+created by the runner**. Guardrails require GitHub Actions + CI markers,
+the exact localhost WebSocket endpoint, same randomly generated Gateway
+token, and a temporary HOME/state directory. A second concurrent pending
+request, unexpected endpoint/profile, missing markers or any ambiguity
+fails closed. This CI permission is not accepted in the normal local/TTY
+operator path and never approves an arbitrary or 'latest' pending request.
+The test does not print tokens, requests or Gateway messages.
+
+A successful workflow proves **real upstream Gateway connect/auth/health**
+and a second new Swift process health handshake on an independently
+validated adapter stack. It **does not** prove zero-bearer grant reuse
+because both processes still use the synthetic Gateway token. Nor does
+it prove incremental text, final terminal reconciliation or abort; those
+require the full isolated agent mode and separate acceptance evidence
+under #331. A failed build/handshake/probe is a test failure, not a reason
+to replace it with fixture-only success.
+
 ## Isolation and prerequisites
 
 - Launch a **separate development OpenClaw Gateway** on local loopback
