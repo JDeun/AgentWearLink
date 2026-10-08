@@ -184,6 +184,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
     private var connecting = false
     private var stopping = false
+    // Opt-in only: acknowledging LaunchApp may start media *after* the response
+    // handle returns, and only while this app is foreground.
+    private var foregroundMediaActivationOnVoiceLaunch = false
     private let connectTimeout: Duration
 
     public init(
@@ -212,6 +215,40 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         eventSource.stream()
     }
 
+    /// Opt in to post-acknowledgement foreground media activation. Disabled by
+    /// default and retired with Voice Invocation ownership; never authorize
+    /// background camera/Speech access via this method.
+    public func setForegroundMediaActivationOnVoiceLaunch(_ enabled: Bool) {
+        foregroundMediaActivationOnVoiceLaunch = enabled
+    }
+
+    private func activateMediaAfterAcknowledgedVoiceLaunch() async {
+        guard voiceInvocationChannel != nil else { return }
+        let isForeground = await applicationLifecycle?.currentPhase != .background
+        guard MetaDATVoiceMediaActivationPolicy.mayActivate(
+            optedIn: foregroundMediaActivationOnVoiceLaunch,
+            foreground: isForeground,
+            connecting: connecting,
+            sessionActive: deviceSession != nil,
+            stopping: stopping
+        ) else { return }
+
+        do {
+            // The acknowledgement event has already entered Core's event
+            // stream. Do not delay it on SDK media/session startup.
+            try await connect()
+        } catch {
+            guard foregroundMediaActivationOnVoiceLaunch,
+                  voiceInvocationChannel != nil else { return }
+            // Media is optional for the wake channel. Failure must not retire
+            // an otherwise healthy voice-only Core/Gateway runtime.
+            yieldEvent(.failed(
+                nil,
+                .capabilityUnavailable("Meta DAT foreground media handoff failed")
+            ))
+        }
+    }
+
     /// Starts the independent, registration-gated Voice Invocation channel.
     /// This never starts DeviceSession, Speech, or the camera stream.
     /// The host must subscribe to events() before enabling the channel.
@@ -226,7 +263,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             MetaDATVoiceInvocationChannel(
                 wearables: wearables,
                 diagnostics: diagnostics,
-                onEvent: { event in source.yield(event) },
+                onEvent: { [weak self] event in
+                    source.yield(event)
+                    if case .invocation = event {
+                        Task { await self?.activateMediaAfterAcknowledgedVoiceLaunch() }
+                    }
+                },
                 onReadiness: { ready in
                     capabilities.update(voiceInvocationReady: ready)
                 }
@@ -248,6 +290,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     /// Explicitly retires Voice Invocation without affecting DeviceSession.
     public func stopVoiceInvocationListening() async {
+        foregroundMediaActivationOnVoiceLaunch = false
         voiceStartFence.invalidate()
         let channel = voiceInvocationChannel
         voiceInvocationChannel = nil
