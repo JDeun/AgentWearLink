@@ -139,6 +139,9 @@ attempted merely by constructing/connecting the wake adapter.
 
 This is an optional production composition layer, not proof of OS-delivered
 cold launches, background entitlements, secure credential persistence, or
-wearable speaker output. To close #6 still requires an iOS host selecting this
-mode, a MockDeviceKit launch → Speech final text → Core → agent output test, and
-physical locked/pocketed-device acceptance.
+wearable speaker output. The test-only app-hosted MockDeviceKit scenario now
+includes a launch → foreground DAT Speech → final transcript → Core → isolated
+MockAgentAdapter output assertion; it must pass the pinned iOS CI before being
+counted as evidence. The production reference-host UI still needs an explicit
+opt-in mode wired to this new adapter. Physical locked/pocketed-device
+acceptance remains #6.
