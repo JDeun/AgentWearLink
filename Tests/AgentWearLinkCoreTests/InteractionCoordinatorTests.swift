@@ -322,6 +322,24 @@ private actor TypedFailureAgent: AgentAdapter {
     }
 }
 
+private struct UntrustedStreamError: Error, CustomStringConvertible {
+    var description: String { "sensitive-provider-token=synthetic-test-secret" }
+}
+
+private actor UntypedFailureAgent: AgentAdapter {
+    func connect() async throws {}
+    func disconnect() async {}
+    func cancel(interactionID: InteractionID) async {}
+
+    func responses(
+        for request: AgentRequest
+    ) async -> AsyncThrowingStream<AgentResponse, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: UntrustedStreamError())
+        }
+    }
+}
+
 private actor EmptyStreamAgent: AgentAdapter {
     func connect() async throws {}
     func disconnect() async {}
@@ -534,6 +552,26 @@ extension InteractionCoordinatorTests {
         XCTAssertTrue(events.contains(.failed(id, .timeout)))
     }
 
+
+    func testUntypedProviderStreamErrorNeverRevealsRawDescription() async throws {
+        let agent = UntypedFailureAgent()
+        let recorded = RecordedEvents()
+        let coordinator = InteractionCoordinator(agent: agent) { event in
+            await recorded.append(event)
+        }
+        let id = InteractionID()
+
+        await coordinator.handle(.text(id, "hello"))
+        try await recorded.waitUntilCount(1)
+
+        let events = await recorded.values
+        XCTAssertEqual(events, [
+            .failed(id, .agent("agent response failed (details redacted)"))
+        ])
+        XCTAssertFalse(
+            String(reflecting: events).contains("synthetic-test-secret")
+        )
+    }
 
     func testEmptyAgentStreamFailsInsteadOfSilentlyEnding() async throws {
         let agent = EmptyStreamAgent()
