@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""Run a real, pinned OpenClaw dev Gateway in disposable loopback state.
+
+This is an opt-in layer-2 integration runner; it never starts the owner's
+installed Gateway service, attaches to their Tailnet, or reuses live sessions.
+No provider credentials, Gateway responses, tokens or process output are logged.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import secrets
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+from dev_gateway_preflight import validate_config
+
+ROOT = Path(__file__).resolve().parent.parent
+GATEWAY_START_DEADLINE = 45
+PROBE_DEADLINE = 900
+_REVISION = re.compile(r"^[0-9a-fA-F]{40}$")
+
+
+def checkout_revision(checkout: Path, expected: str) -> bool:
+    """Validate the operator-pinned *source* checkout without editing it."""
+    if not _REVISION.fullmatch(expected) or not checkout.is_dir():
+        return False
+    if not (checkout / "dist" / "entry.js").is_file():
+        return False
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "-C", str(checkout), "status", "--porcelain",
+             "--untracked-files=no"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return head.lower() == expected.lower() and not dirty
+
+
+def isolated_environment(
+    original: dict[str, str],
+    *,
+    home: Path,
+    port: int,
+    revision: str,
+    token: str,
+    full_chat: bool,
+    prove_abort: bool,
+) -> dict[str, str]:
+    if not (1 <= port <= 65535):
+        raise ValueError("invalid local port")
+    if prove_abort and not full_chat:
+        raise ValueError("abort proof requires full chat opt-in")
+
+    # Strip inherited model/provider secrets. A full-chat development model
+    # should use a separate, deliberately isolated configuration/provider.
+    env = {
+        k: v for k, v in original.items()
+        if not (
+            k.endswith(("_API_KEY", "_PASSWORD", "_SECRET", "_ACCESS_TOKEN"))
+            or k.startswith(("AWL_", "OPENCLAW_", "ANTHROPIC_", "OPENAI_",
+                             "GEMINI_", "TAVILY_"))
+        )
+    }
+    env.update({
+        "OPENCLAW_STATE_DIR": str(home / "state"),
+        "OPENCLAW_CONFIG_PATH": str(home / "state" / "openclaw.json"),
+        "OPENCLAW_WORKSPACE_DIR": str(home / "workspace"),
+        "OPENCLAW_GATEWAY_PORT": str(port),
+        "OPENCLAW_GATEWAY_TOKEN": token,
+        "OPENCLAW_SKIP_CHANNELS": "1",
+        "OPENCLAW_LOAD_SHELL_ENV": "0",
+        "AWL_ALLOW_DEV_GATEWAY_TEST": "1",
+        "AWL_OPENCLAW_URL": f"ws://127.0.0.1:{port}",
+        "AWL_OPENCLAW_EXPOSURE": "loopback",
+        "AWL_OPENCLAW_TOKEN": token,
+        "AWL_OPENCLAW_SESSION_KEY": "agent:main:awl-dev-hermetic",
+        "AWL_DEV_GATEWAY_REVISION": revision,
+        "AWL_DEV_GATEWAY_HEALTH_ONLY": "0" if full_chat else "1",
+        "AWL_DEV_GATEWAY_PROVE_ABORT": "1" if prove_abort else "0",
+    })
+    return env
+
+
+def local_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def gateway_reachable(process: subprocess.Popen[bytes], port: int,
+                      *, deadline_seconds: int = GATEWAY_START_DEADLINE) -> bool:
+    deadline = time.monotonic() + deadline_seconds
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return False
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                return True
+        except OSError:
+            time.sleep(0.25)
+    return False
+
+
+def retire_owned_process(process: subprocess.Popen[bytes]) -> None:
+    """Never touch another Gateway: only our unique start_new_session group."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    if process.poll() is None:
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    if process.poll() is None:
+        process.wait()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--checkout", required=True,
+                        help="Local built OpenClaw Git checkout (not a service)")
+    parser.add_argument("--revision", required=True,
+                        help="Exact Git HEAD, 40 hex characters")
+    parser.add_argument("--full-chat", action="store_true",
+                        help="Opt in to a harmless real Gateway agent run")
+    parser.add_argument("--prove-abort", action="store_true",
+                        help="Opt in to accepted-run cancellation proof")
+    parser.add_argument("--config-template",
+                        help="Optional isolated dev Gateway config JSON file")
+    args = parser.parse_args(argv)
+
+    checkout = Path(args.checkout).expanduser().resolve()
+    if not checkout_revision(checkout, args.revision):
+        print("Isolated Gateway runner: revision, source cleanliness or built CLI mismatch.",
+              file=sys.stderr)
+        return 2
+    if args.prove_abort and not args.full_chat:
+        print("Isolated Gateway runner: abort requires full chat.", file=sys.stderr)
+        return 2
+    if args.full_chat and os.environ.get("AWL_DEV_ISOLATED_MODEL_ACK") != "1":
+        print("Isolated Gateway runner: acknowledge a harmless isolated model first.",
+              file=sys.stderr)
+        return 2
+    node = shutil.which("node")
+    if node is None:
+        print("Isolated Gateway runner: Node.js is unavailable.", file=sys.stderr)
+        return 2
+
+    with tempfile.TemporaryDirectory(prefix="awl-real-dev-gateway-") as directory:
+        temp = Path(directory)
+        (temp / "state").mkdir(mode=0o700)
+        (temp / "workspace").mkdir(mode=0o700)
+
+        if args.config_template:
+            template = Path(args.config_template).expanduser().resolve()
+            if not template.is_file() or not args.full_chat:
+                print("Isolated Gateway runner: config template requires full chat.",
+                      file=sys.stderr)
+                return 2
+            # Explicitly selected configuration is copied, never modified.
+            shutil.copyfile(template, temp / "state" / "openclaw.json")
+            (temp / "state" / "openclaw.json").chmod(0o600)
+
+        port = local_port()
+        env = isolated_environment(
+            dict(os.environ), home=temp, port=port,
+            revision=args.revision, token=secrets.token_urlsafe(32),
+            full_chat=args.full_chat, prove_abort=args.prove_abort,
+        )
+        try:
+            validate_config(env)
+        except ValueError:
+            print("Isolated Gateway runner: safety preflight failed.", file=sys.stderr)
+            return 2
+
+        # Use the actual checked-out CLI rather than an unrelated globally
+        # installed OpenClaw version. No force/restart/service commands.
+        command = [
+            node, str(checkout / "dist" / "entry.js"), "gateway",
+            "--dev", "--allow-unconfigured", "--bind", "loopback",
+            "--port", str(port), "--auth", "token", "--tailscale", "off",
+        ]
+        try:
+            gateway = subprocess.Popen(
+                command, cwd=checkout, env=env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, start_new_session=True,
+            )
+        except OSError:
+            print("Isolated Gateway runner: pinned Gateway did not start.",
+                  file=sys.stderr)
+            return 1
+
+        try:
+            if not gateway_reachable(gateway, port):
+                print("Isolated Gateway runner: loopback Gateway not ready.",
+                      file=sys.stderr)
+                return 1
+            # TCP readiness is NOT counted as authenticated Gateway proof.
+            # Existing production Swift probes verify connect/auth/health.
+            try:
+                result = subprocess.run(
+                    ["bash", str(ROOT / "scripts" /
+                                 "run-openclaw-development-gateway.sh")],
+                    cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=PROBE_DEADLINE, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                print("Isolated Gateway runner: bounded probes failed.",
+                      file=sys.stderr)
+                return 1
+            if result.returncode != 0:
+                print("Isolated Gateway runner: real probe did not pass.",
+                      file=sys.stderr)
+                return 1
+            print("Isolated Gateway runner: real loopback Gateway probes passed; "
+                  "no physical/Tailnet claim.")
+            return 0
+        finally:
+            retire_owned_process(gateway)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
