@@ -15,11 +15,28 @@ struct OpenClawSubmissionIdentity: Sendable, Equatable {
     }
 }
 
-private actor OpenClawEmittedTextAccumulator {
+/// Terminal reconciliation requires a prefix of emitted text. Keep this
+/// prefix bounded by UTF-8 bytes so a long-running Gateway stream cannot retain
+/// an arbitrarily large in-memory transcript.
+actor OpenClawEmittedTextAccumulator {
+    private let maximumBytes: Int
+    private var usedBytes = 0
     private var text = ""
 
-    func append(_ delta: String) {
+    init(maximumBytes: Int) {
+        precondition(maximumBytes > 0)
+        self.maximumBytes = maximumBytes
+    }
+
+    func append(_ delta: String) throws {
+        let count = delta.utf8.count
+        guard count <= maximumBytes - usedBytes else {
+            throw OpenClawNativeAdapterError.streamedTextBudgetExceeded(
+                maximumBytes: maximumBytes
+            )
+        }
         text += delta
+        usedBytes += count
     }
 
     func snapshot() -> String { text }
@@ -29,6 +46,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     public static let defaultMaximumTerminalWaitPolls = 10
     public static let defaultTerminalPollTimeoutMilliseconds = 30_000
     public static let defaultMaximumAcceptedRunRecoveries = 2
+    public static let defaultMaximumStreamedTextBytes = 1_048_576
 
     /// Explicit host/runtime capability decision. This defaults to false so the
     /// presence of the wire attachment schema alone never advertises vision.
@@ -51,6 +69,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     private let terminalPollTimeoutMilliseconds: Int
     private let maximumAcceptedRunRecoveries: Int
     private let responseBufferLimit: Int
+    private let maximumStreamedTextBytes: Int
     private var runs: [InteractionID: RunContext] = [:]
 
     public init(
@@ -62,12 +81,14 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         terminalPollTimeoutMilliseconds: Int = OpenClawNativeAgentAdapter.defaultTerminalPollTimeoutMilliseconds,
         maximumAcceptedRunRecoveries: Int = OpenClawNativeAgentAdapter.defaultMaximumAcceptedRunRecoveries,
         responseBufferLimit: Int = AgentResponse.defaultBufferLimit,
+        maximumStreamedTextBytes: Int = OpenClawNativeAgentAdapter.defaultMaximumStreamedTextBytes,
         supportsVisionInput: Bool = false
     ) {
         precondition(maximumTerminalWaitPolls > 0)
         precondition(terminalPollTimeoutMilliseconds > 0)
         precondition(maximumAcceptedRunRecoveries >= 0)
         precondition(responseBufferLimit > 0)
+        precondition(maximumStreamedTextBytes > 0)
         self.supervisor = supervisor
         self.dispatcher = dispatcher
         self.runClient = runClient
@@ -76,6 +97,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         self.terminalPollTimeoutMilliseconds = terminalPollTimeoutMilliseconds
         self.maximumAcceptedRunRecoveries = maximumAcceptedRunRecoveries
         self.responseBufferLimit = responseBufferLimit
+        self.maximumStreamedTextBytes = maximumStreamedTextBytes
         self.supportsVisionInput = supportsVisionInput
     }
 
@@ -298,7 +320,9 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         streamedText: String,
         recovered: Bool
     ) {
-        let accumulator = OpenClawEmittedTextAccumulator()
+        let accumulator = OpenClawEmittedTextAccumulator(
+            maximumBytes: maximumStreamedTextBytes
+        )
         var failedGeneration = await supervisor.transportGeneration
         var recoveryCount = 0
         var recovered = false
@@ -320,11 +344,13 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
                     // reconcile against the terminal reply instead.
                     guard emitLiveDeltas else { continue }
 
+                    // Admit cumulative text bytes before forwarding the
+                    // chunk. A rejected chunk never reaches downstream TTS/UI.
+                    try await accumulator.append(delta)
                     try Self.yieldResponse(
                         .textDelta(interactionID, delta),
                         to: continuation
                     )
-                    await accumulator.append(delta)
                 }
             }
 
@@ -664,6 +690,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
 }
 
 public enum OpenClawNativeAdapterError: Error, Sendable, Equatable {
+    case streamedTextBudgetExceeded(maximumBytes: Int)
     case submissionExecutionUncertain(idempotencyKey: String)
     case unexpectedWaitStatus(String)
     case terminalWaitLimitExceeded(maximumPolls: Int)
