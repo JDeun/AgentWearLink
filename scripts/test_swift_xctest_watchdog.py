@@ -46,14 +46,14 @@ class SwiftXCTestWatchdogTests(unittest.TestCase):
             f"Test Case '-[{case}]' passed (0.010 seconds)." for case in cases
         ) + "\n").encode("utf-8")
         self.assertTrue(verify_xctest_case_output(output, cases))
-        self.assertFalse(verify_xctest_case_output(b"Build complete!\\n", cases))
+        self.assertFalse(verify_xctest_case_output(b"Build complete!\n", cases))
         self.assertFalse(verify_xctest_case_output(output, cases + ["missing"]))
         self.assertFalse(verify_xctest_case_output(output, cases[:1]))
         self.assertFalse(verify_xctest_case_output(output + output, cases))
         self.assertFalse(verify_xctest_case_output(output, []))
 
     def test_pre_suite_classifier_rejects_any_test_activity_or_truncation(self):
-        startup = b"Building for debugging...\\nBuild complete! (0.2s)\\n"
+        startup = b"Building for debugging...\nBuild complete! (0.2s)\n"
         self.assertTrue(unstarted_xctest_timeout_output(startup, truncated=False))
         self.assertFalse(unstarted_xctest_timeout_output(startup, truncated=True))
         self.assertFalse(unstarted_xctest_timeout_output(b"", truncated=False))
@@ -72,7 +72,7 @@ class SwiftXCTestWatchdogTests(unittest.TestCase):
         class Process:
             pid = 987
             def __init__(self, capture):
-                capture.write(b"Build complete!\\n")
+                capture.write(b"Build complete!\n")
             def wait(self, timeout=None):
                 raise TimeoutExpired("swift", timeout)
             def poll(self):
@@ -92,7 +92,7 @@ class SwiftXCTestWatchdogTests(unittest.TestCase):
                 1, expected_xctest_cases=["Suite testOne"],
             )
         self.assertEqual(code, PRESTART_XCTEST_TIMEOUT)
-        self.assertEqual(output.buffer.getvalue(), b"Build complete!\\n")
+        self.assertEqual(output.buffer.getvalue(), b"Build complete!\n")
 
     def test_rejects_non_swift_or_invalid_deadline(self):
         with self.assertRaises(ValueError):
