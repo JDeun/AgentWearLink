@@ -26,6 +26,22 @@ final class OpenClawEmittedTextAccumulatorTests: XCTestCase {
         XCTAssertEqual(retained, "hello")
     }
 
+    func testTerminalOnlyResponseCannotBypassTextBudget() {
+        XCTAssertThrowsError(
+            try OpenClawNativeAgentAdapter.terminalReplySuffix(
+                streamedText: "",
+                terminalReply: .object(["text": .string("PRIVATE_OVER_BUDGET")]),
+                maximumBytes: 4
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? OpenClawNativeAdapterError,
+                .streamedTextBudgetExceeded(maximumBytes: 4)
+            )
+            XCTAssertFalse(String(reflecting: error).contains("PRIVATE_OVER_BUDGET"))
+        }
+    }
+
     func testRejectsMultibyteOverflowBeforeEmission() async throws {
         let accumulator = OpenClawEmittedTextAccumulator(maximumBytes: 7)
         try await accumulator.append("ok")
