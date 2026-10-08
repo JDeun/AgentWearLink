@@ -16,10 +16,21 @@ from run_hermetic_development_gateway import (
     retire_owned_process,
     safe_probe_phase,
     safe_probe_result,
+    negative_pairing_gateway_config,
 )
 
 
 class HermeticRealGatewayRunnerTests(unittest.TestCase):
+    def test_negative_gateway_disables_upstream_default_auto_pairing(self):
+        config = negative_pairing_gateway_config()
+        pairing = config["gateway"]["nodes"]["pairing"]
+        self.assertIs(pairing["autoApproveLocal"], False)
+        self.assertEqual(pairing["autoApproveCidrs"], [])
+        # Fail closed: this minimal config must not install persistent
+        # credentials, providers, Tailnet links or non-isolated workspace.
+        self.assertEqual(set(config.keys()), {"gateway"})
+        self.assertEqual(set(config["gateway"].keys()), {"nodes"})
+
     def test_allowlisted_environment_never_inherits_personal_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
             env = isolated_environment(

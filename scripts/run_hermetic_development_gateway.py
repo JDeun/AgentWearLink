@@ -65,6 +65,25 @@ def safe_probe_phase(path: Path) -> str:
 
 
 
+def negative_pairing_gateway_config() -> dict[str, object]:
+    """Disable the *upstream default* silent local device approval.
+
+    OpenClaw's autoApproveLocal is true by default. Without an explicit
+    override a loopback unapproved-device rejection is not a valid test.
+    This configuration is generated only inside the owned disposable state.
+    """
+    return {
+        "gateway": {
+            "nodes": {
+                "pairing": {
+                    "autoApproveLocal": False,
+                    "autoApproveCidrs": [],
+                }
+            }
+        }
+    }
+
+
 def checkout_revision(checkout: Path, expected: str) -> bool:
     """Validate the operator-pinned *source* checkout without editing it."""
     if not _REVISION.fullmatch(expected) or not checkout.is_dir():
@@ -304,6 +323,15 @@ def main(argv: list[str] | None = None) -> int:
             # Explicitly selected configuration is copied, never modified.
             shutil.copyfile(template, temp / "state" / "openclaw.json")
             (temp / "state" / "openclaw.json").chmod(0o600)
+
+        if args.expect_pairing_required:
+            # The pinned upstream defaults to silent localhost approval.
+            # Force explicit device-pairing rejection in disposable state only.
+            # This is not a production Mac mini / operator Gateway setting.
+            configuration = temp / "state" / "openclaw.json"
+            with configuration.open("x", encoding="utf-8") as stream:
+                json.dump(negative_pairing_gateway_config(), stream)
+            configuration.chmod(0o600)
 
         port = local_port()
         env = isolated_environment(

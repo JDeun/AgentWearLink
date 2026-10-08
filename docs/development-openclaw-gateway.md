@@ -97,7 +97,13 @@ The dedicated [real Gateway CI workflow](../.github/workflows/real-openclaw-gate
 uses GitHub-hosted macOS 26 to build the exact audited upstream
 OpenClaw revision under an ephemeral home, random loopback port,
 and synthetic token. It never accesses the owner's Mac mini, Tailnet,
-model credentials or personal sessions.
+model credentials or personal sessions. The pinned OpenClaw Gateway
+**silently approves local pairing by default** (`gateway.nodes.pairing.autoApproveLocal`
+defaults to `true`). For this negative-contract mode only, the runner
+writes a minimal private configuration into its fresh disposable
+`OPENCLAW_CONFIG_PATH` with `autoApproveLocal: false` and no
+trusted-CIDR auto-approval. The normal operator-approved development
+workflow and owner's production Gateway configuration remain unchanged.
 
 The automated gate only checks that the **real** OpenClaw Gateway
 rejects an unapproved, freshly generated AWL read-only device identity
