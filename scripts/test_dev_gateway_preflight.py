@@ -35,6 +35,10 @@ class DevelopmentGatewayPreflightTests(unittest.TestCase):
     def test_rejects_default_session_and_missing_revision(self):
         for change in [
             {"AWL_OPENCLAW_SESSION_KEY": "agent:main:main"},
+            {"AWL_OPENCLAW_SESSION_KEY": "agent:main:personal"},
+            {"AWL_OPENCLAW_SESSION_KEY": "agent:main:awl-dev-"},
+            {"AWL_OPENCLAW_SESSION_KEY": "agent:main:awl-dev-test:extra"},
+            {"AWL_OPENCLAW_SESSION_KEY": "agent:main:AWL-DEV-test"},
             {"AWL_DEV_GATEWAY_REVISION": ""},
             {"AWL_OPENCLAW_TOKEN": ""},
             {"AWL_OPENCLAW_BOOTSTRAP_TOKEN": "unwanted"},

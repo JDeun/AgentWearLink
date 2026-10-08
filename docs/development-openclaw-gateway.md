@@ -29,10 +29,14 @@ export AWL_DEV_GATEWAY_REVISION='<exact 40-character source commit>'
 bash scripts/run-openclaw-development-gateway.sh
 ```
 
-The validator rejects non-loopback endpoints (including Tailscale), default
-production-like session keys, embedded URL credentials, bootstrap handoff
-tokens, missing explicit opt-in and unpinned revision declarations. Only the
-script generates the harmless test message.
+The validator rejects non-loopback endpoints (including Tailscale), any
+session key outside the dedicated `agent:<id>:awl-dev-<name>` namespace,
+embedded URL credentials, bootstrap handoff tokens, missing explicit opt-in
+and unpinned revision declarations. This is a guard against accidentally
+targeting an existing personal session; a session prefix **cannot attest**
+that the Gateway process/configuration itself is isolated. Confirm the
+running process, profile directory, token and model/tools are development-only.
+Only the script generates the harmless test message.
 
 ## What passing means
 

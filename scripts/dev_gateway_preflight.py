@@ -50,8 +50,11 @@ def validate_config(config: dict[str, str]) -> dict[str, str]:
         raise ValueError("bootstrap grants must not be supplied to the development harness")
 
     session_key = config.get("AWL_OPENCLAW_SESSION_KEY", "").strip()
-    if not session_key or session_key == "agent:main:main":
-        raise ValueError("use an explicitly isolated development session key, not the default session")
+    # Fail closed on arbitrary existing session keys. A development marker alone
+    # does not prove the running Gateway is isolated; require both an explicit
+    # opt-in and an AWL-specific session namespace to reduce cross-use mistakes.
+    if not re.fullmatch(r"agent:[A-Za-z0-9_-]+:awl-dev-[A-Za-z0-9_-]+", session_key):
+        raise ValueError("use a dedicated agent:<id>:awl-dev-<name> development session key")
 
     revision = config.get("AWL_DEV_GATEWAY_REVISION", "")
     if not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
