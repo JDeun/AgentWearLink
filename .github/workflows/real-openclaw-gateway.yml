@@ -1,4 +1,4 @@
-name: Real isolated OpenClaw Gateway smoke
+name: Real isolated OpenClaw pairing contract
 
 # This is an actual upstream Gateway process, NOT an AWL WebSocket fixture.
 # No private tokens, models, Tailnet, Mac mini, or physical glasses are used.
@@ -58,22 +58,18 @@ jobs:
       - name: Compile real AWL production Gateway probe on macOS
         shell: bash
         run: swift build --product awl-openclaw-probe
-      - name: Real Gateway auth + health + independent reconnect
+      - name: Real Gateway refuses unapproved device identity (negative contract)
         shell: bash
         timeout-minutes: 10
-        env:
-          # Only when this workflow started a NEW, secret-free Gateway under
-          # a verified temp HOME, on a random loopback port, may it approve
-          # the ONE synthetic pending device ID. Multiple requests fail shut.
-          AWL_DEV_CI_REAL_GATEWAY: '1'
         run: |
           python3 -m unittest discover -s scripts -p 'test_run_hermetic_development_gateway.py'
           python3 scripts/run_hermetic_development_gateway.py \
             --checkout .awl-hermetic-upstream \
             --revision "$OPENCLAW_REVISION" \
-            --ci-approve-single-request
+            --expect-pairing-required
       - name: Evidence boundary
         if: always()
         run: |
-          echo "Actual Gateway auth/health only when the prior probe returned success."
-          echo "Layer-2 full chat/abort and hardware/Tailnet proofs are separate."
+          echo "Negative contract ONLY: an unapproved read-only device was rejected by real Gateway."
+          echo "Do not treat this as approved authentication, health, chat or cancellation proof."
+          echo "Actual pairing approval requires an operator against the disposable Gateway."
