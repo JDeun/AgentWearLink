@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Python configuration safety tests
-        run: python3 -m unittest discover -s scripts -p 'test_dev_gateway_preflight.py'
+        run: python3 -m unittest discover -s scripts -p 'test_dev_gateway_*.py'
       - name: Shell syntax
         run: bash -n scripts/run-openclaw-development-gateway.sh
 

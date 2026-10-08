@@ -9,23 +9,28 @@ python3 scripts/dev_gateway_preflight.py
 export AWL_OPENCLAW_EXPOSURE=loopback
 
 echo "Running production read-only OpenClaw connection and health RPC"
-swift run --quiet awl-openclaw-probe >/dev/null
+python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
+
+# A second process with the same read-only Keychain service exercises
+# another handshake. It does not prove tokenless persisted grant reuse.
+echo "Reconnecting production read-only OpenClaw health RPC"
+python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
 
 echo "Running production native adapter with explicit harmless agent turn"
 export AWL_ALLOW_MUTATING_PROBE=1
 export AWL_DEV_GATEWAY_ASSERT=1
 # The marker is synthetic and contains no user/private data. No tools requested.
 export AWL_OPENCLAW_CHAT_MESSAGE="AWL isolated integration check: reply with one short sentence."
-swift run --quiet awl-openclaw-chat-probe >/dev/null
+python3 scripts/dev_gateway_probe_runner.py awl-openclaw-chat-probe
 
 # Explicit additional real-Gateway proof. A slow, isolated development model
 # must keep the run active until chat.abort; an already-completed run cannot
 # count as confirmed remote cancellation. Never re-use production sessions.
 if [[ "${AWL_DEV_GATEWAY_PROVE_ABORT:-0}" == "1" ]]; then
   echo "Running isolated development Gateway accepted-run abort proof"
-  AWL_DEV_GATEWAY_ABORT_ASSERT=1 swift run --quiet awl-openclaw-chat-probe >/dev/null
+  AWL_DEV_GATEWAY_ABORT_ASSERT=1 python3 scripts/dev_gateway_probe_runner.py awl-openclaw-chat-probe
   echo "Real development Gateway chat.abort accepted-run confirmation passed."
 fi
 
-echo "Real development Gateway health + agent delta + terminal checks passed."
-echo "Still required for #331: native-adapter cancellation, reconnect, pairing and persistent identity proof."
+echo "Real development Gateway health, reconnect, agent delta and terminal checks passed."
+echo "Still required for #331: native-adapter cancellation, tokenless credential reuse, pairing and persistent identity proof."

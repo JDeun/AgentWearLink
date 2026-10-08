@@ -41,10 +41,23 @@ Only the script generates the harmless test message.
 ## What passing means
 
 1. The read-only production probe completes connect/auth + `health` RPC.
-2. The mutating production adapter submits one harmless agent request.
-3. At least one incremental assistant text delta arrives and exactly one
+2. A second **independent Swift process** connects with the same read-only
+   Keychain namespace and repeats `health`. This exercises a fresh handshake,
+   but does **not** prove persistent device-grant reuse: the configured
+   token may still authenticate both connections.
+3. The mutating production adapter submits one harmless agent request.
+4. At least one incremental assistant text delta arrives and exactly one
    terminal completion is observed before stream close.
-4. The harness exits nonzero for missing deltas or terminal events.
+5. The harness exits nonzero for missing deltas or terminal events.
+
+Every Swift command, including the optional abort probe below, has a
+300-second **process deadline** (including first-time Swift compilation).
+On timeout/interruption, the wrapper terminates the Swift process group;
+probe stdout/stderr is suppressed so untrusted Gateway replies, credentials
+and SDK error strings never enter shell or CI logs. Only stable result codes
+and redacted diagnostics are surfaced. Pairing approval must be inspected
+on the **isolated development Gateway**, not copied from probe output.
+CI tests only the wrapper and shell syntax without a live Gateway.
 
 The read-only and mutating validation identities are separate and may need
 separate local pairing. Their Keychain services remain distinct; the Gateway
@@ -82,7 +95,8 @@ must not be run against the owner's personal Mac mini Gateway or Tailnet.
 
 A passing harness invocation with sanitized evidence and exact actual Gateway
 revision, plus automated or repeatable isolated tests for pairing/reconnect
-credential reuse, abort/cancellation, event ordering, terminal reconciliation
+**credential reuse rather than token-backed reconnection**,
+full native adapter cancellation, event ordering, terminal reconciliation
 and cleanup. Until then this is the first **real Gateway smoke-test path**, not
-full integration acceptance. CI runs only preflight unit tests and shell syntax
+full integration acceptance. CI runs only preflight/process-runner unit tests and shell syntax
 checks without needing a live Gateway.
