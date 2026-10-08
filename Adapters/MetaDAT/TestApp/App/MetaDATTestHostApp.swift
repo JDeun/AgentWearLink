@@ -8,6 +8,13 @@ import AgentWearLinkMetaDATTestSupport
 @main
 struct MetaDATTestHostApp: App {
     @State private var state = "host-starting"
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var referenceHost = AWLReferenceRuntimeHost()
+    @State private var gatewayHostname = ""
+    @State private var bootstrapToken = ""
+    @State private var targetSessionKey = ""
+    @State private var allowVision = false
+    @State private var photoPrompt = "Describe the photo."
 
     var body: some Scene {
         WindowGroup {
@@ -33,11 +40,68 @@ struct MetaDATTestHostApp: App {
                 .disabled(!ProcessInfo.processInfo.arguments.contains(
                     MetaDATMockHostBootstrap.launchArgument
                 ))
+
+                if !ProcessInfo.processInfo.arguments.contains(
+                    MetaDATMockHostBootstrap.launchArgument
+                ) {
+                    Text(referenceHost.status)
+                        .accessibilityIdentifier("awl-reference-runtime-state")
+                    TextField("Mac mini hostname (*.ts.net)", text: $gatewayHostname)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("awl-gateway-hostname")
+                    SecureField("Development or deployment Gateway token", text: $bootstrapToken)
+                        .accessibilityIdentifier("awl-gateway-token")
+                    TextField("Existing OpenClaw session key (optional)", text: $targetSessionKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("awl-openclaw-session-key")
+                    Toggle("Enable vision only for a verified image-capable OpenClaw model", isOn: $allowVision)
+                        .accessibilityIdentifier("awl-vision-opt-in")
+                    Button("Connect reference runtime") {
+                        let suppliedToken = bootstrapToken
+                        bootstrapToken = ""
+                        Task {
+                            await referenceHost.connect(
+                                hostname: gatewayHostname,
+                                token: suppliedToken,
+                                sessionKey: targetSessionKey,
+                                enableVision: allowVision
+                            )
+                        }
+                    }
+                    .accessibilityIdentifier("awl-reference-connect")
+                    TextField("Photo question", text: $photoPrompt)
+                        .accessibilityIdentifier("awl-photo-prompt")
+                    Button("Capture one photo and ask OpenClaw") {
+                        Task { await referenceHost.captureAndAsk(prompt: photoPrompt) }
+                    }
+                    .accessibilityIdentifier("awl-reference-photo")
+                    Button("Disconnect reference runtime") {
+                        Task { await referenceHost.disconnect() }
+                    }
+                    .accessibilityIdentifier("awl-reference-disconnect")
+                    Button("Register with Meta AI") {
+                        Task { await referenceHost.startRegistration() }
+                    }
+                    .accessibilityIdentifier("awl-meta-register")
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                Task {
+                    await referenceHost.applicationPhase(
+                        newPhase == .active ? .foreground : .background
+                    )
+                }
+            }
+            .onOpenURL { url in
+                Task { await referenceHost.handleMetaCallback(url) }
             }
             .task {
                     guard ProcessInfo.processInfo.arguments.contains(
                         MetaDATMockHostBootstrap.launchArgument
                     ) else {
+                        await referenceHost.configureWearables()
                         state = "host-ready"
                         return
                     }
