@@ -115,7 +115,7 @@ struct MetaDATTestHostApp: App {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("awl-gateway-hostname")
-                    SecureField("Development or deployment Gateway token", text: $bootstrapToken)
+                    SecureField("Gateway token (first approval; optional on approved reconnect)", text: $bootstrapToken)
                         .accessibilityIdentifier("awl-gateway-token")
                     TextField("Existing OpenClaw session key (optional)", text: $targetSessionKey)
                         .textInputAutocapitalization(.never)
