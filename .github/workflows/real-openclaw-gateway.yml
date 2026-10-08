@@ -11,7 +11,12 @@ on:
       - 'scripts/dev_gateway_probe_runner.py'
       - 'scripts/run-openclaw-development-gateway.sh'
       - 'Sources/AgentWearLinkOpenClawProbe/**'
+      - 'Sources/AgentWearLinkOpenClaw/**'
   workflow_dispatch:
+
+concurrency:
+  group: real-gateway-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.run_attempt == 1 }}
 
 permissions:
   contents: read
