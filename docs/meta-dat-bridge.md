@@ -147,3 +147,17 @@ Voice Invocation does not yet wake an unconnected Core runtime. That separate
 hands-free cold-start gap remains on #95/#115/#230/#6. Tailscale connectivity,
 pairing authorization, actual headset capture and TTS routing must still be
 verified physically.
+
+## Explicit photo -> OpenClaw vision path
+
+The host also exposes an **explicit** user button for one-shot photo capture
+and a prompt. It uses `VisionCoordinator` over the same connected
+`MetaDATDeviceAdapter` and `OpenClawNativeAgentAdapter`, with the same
+bounded Apple speech sink. `supportsVisionInput` remains disabled until the
+operator deliberately enables the checkbox after verifying the selected
+OpenClaw model supports images. Snapshot media is not captured merely because
+the app becomes active or hears an invocation. Leaving the foreground or
+disconnecting cancels an in-flight photo/agent turn.
+
+This action is code-wired but still requires a real permissioned DAT device
+and image-capable OpenClaw session before declaring #58 complete.
