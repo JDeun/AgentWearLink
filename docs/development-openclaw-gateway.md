@@ -30,8 +30,10 @@ are deliberately excluded. Gateway stdout/stderr, model output, credentials
 and probe errors are suppressed.
 
 The default is the **read-only** acceptance gate: two separate Swift production
-health probes, each performing a fresh authenticated Gateway handshake. It
-proves neither remote persistent device token grant nor a model response.
+health probes, the second explicitly sending **no shared Gateway bearer**.
+A pass requires a device grant approved by the real Gateway and persisted in
+the same isolated Keychain service after the first `hello-ok`. It does not
+prove a model response, production Tailnet credentials, or revocation handling.
 If the isolated Gateway requires manual device-pairing approval, the test
 fails closed until the operator explicitly approves only that disposable
 Gateway's new identity. The runner cannot automatically approve pairings.
@@ -125,10 +127,13 @@ Only the script generates the harmless test message.
 ## What passing means
 
 1. The read-only production probe completes connect/auth + `health` RPC.
-2. A second **independent Swift process** connects with the same read-only
-   Keychain namespace and repeats `health`. This exercises a fresh handshake,
-   but does **not** prove persistent device-grant reuse: the configured
-   token may still authenticate both connections.
+2. A second **independent Swift process** connects with the same
+   endpoint-scoped read-only Keychain namespace, but **without the shared
+   Gateway bearer or a bootstrap token**. It must load and present the
+   server-approved read-only device grant, then pass an actual `health`
+   RPC. Missing, revoked, downgraded or over-privileged grants fail closed.
+   This distinguishes genuine device-grant reuse from two shared-token
+   handshakes.
 3. The mutating production adapter submits one harmless agent request.
 4. At least one incremental assistant text delta arrives and exactly one
    terminal completion is observed before stream close.
@@ -178,9 +183,10 @@ must not be run against the owner's personal Mac mini Gateway or Tailnet.
 ## Still required before #331 is complete
 
 A passing harness invocation with sanitized evidence and exact actual Gateway
-revision, plus automated or repeatable isolated tests for pairing/reconnect
-**credential reuse rather than token-backed reconnection**,
-full native adapter cancellation, event ordering, terminal reconciliation
-and cleanup. Until then this is the first **real Gateway smoke-test path**, not
+revision, plus a first approved handshake followed by a **strictly tokenless**
+second independent health probe, then the full native adapter's cancellation,
+incremental event ordering, terminal reconciliation, credential revocation
+and cleanup. The tokenless second-process path is implemented but still
+requires real Gateway execution evidence before it can be called verified. Until then this is the first **real Gateway smoke-test path**, not
 full integration acceptance. CI runs only preflight/process-runner unit tests and shell syntax
 checks without needing a live Gateway.
