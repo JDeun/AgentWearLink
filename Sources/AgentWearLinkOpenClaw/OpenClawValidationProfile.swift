@@ -1,3 +1,5 @@
+import Foundation
+
 public struct OpenClawValidationProfile: Sendable, Equatable {
     public let keychainService: String
     public let scopes: [String]
