@@ -10,6 +10,7 @@ struct MetaDATTestHostApp: App {
     @State private var state = "host-starting"
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var referenceHost = AWLReferenceRuntimeHost()
+    @StateObject private var mockVoice = AWLMockVoiceInvocationHarness()
     @State private var gatewayHostname = ""
     @State private var bootstrapToken = ""
     @State private var targetSessionKey = ""
@@ -21,6 +22,12 @@ struct MetaDATTestHostApp: App {
             VStack {
                 Text(state)
                     .accessibilityIdentifier("awl-meta-host-state")
+                if ProcessInfo.processInfo.arguments.contains(
+                    MetaDATMockHostBootstrap.voiceLaunchArgument
+                ) {
+                    Text(mockVoice.status)
+                        .accessibilityIdentifier("awl-meta-voice-state")
+                }
                 Button("Configure mock still fixture") {
                     Task {
                         do {
@@ -118,6 +125,11 @@ struct MetaDATTestHostApp: App {
 
                         for _ in 0..<50 {
                             if FileManager.default.fileExists(atPath: portFile) {
+                                if ProcessInfo.processInfo.arguments.contains(
+                                    MetaDATMockHostBootstrap.voiceLaunchArgument
+                                ) {
+                                    await mockVoice.start()
+                                }
                                 state = "host-ready"
                                 return
                             }

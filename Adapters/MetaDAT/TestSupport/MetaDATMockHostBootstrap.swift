@@ -12,6 +12,7 @@ import MWDATMockDevice
 /// activated accidentally in a release host.
 public enum MetaDATMockHostBootstrap {
     public static let launchArgument = "--awl-meta-ui-testing"
+    public static let voiceLaunchArgument = "--awl-meta-voice-ui-testing"
     public static let portFileEnvironment = "MWDAT_TEST_SERVER_PORT_FILE"
 
     public static func configureIfRequested(
@@ -23,7 +24,9 @@ public enum MetaDATMockHostBootstrap {
         #if DEBUG
         try Wearables.configure()
         MockDeviceKit.shared.enable(
-            config: MockDeviceKitConfig(initiallyRegistered: false)
+            config: MockDeviceKitConfig(
+                initiallyRegistered: arguments.contains(voiceLaunchArgument)
+            )
         )
         _ = try await MockDeviceKit.shared.startTestServer(
             portFilePath: environment[portFileEnvironment]
