@@ -92,6 +92,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p 'test_boot_ios_simulator.py'
           python3 -m unittest discover -s scripts -p 'test_swift_xctest_watchdog.py'
+          python3 -m unittest discover -s scripts -p 'test_run_openclaw_remaining_tests.py'
 
   core-test:
     needs: changes
@@ -163,19 +164,13 @@ jobs:
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 2
         run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 95 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawPairingTests
-      - name: Test remaining OpenClaw target
+      # Each discovered XCTest class runs in a separate process. Do not omit
+      # any classes that were not intentionally exercised in the named steps.
+      # Stop on the first failed/timeout class with its stable suite name.
+      - name: Test remaining OpenClaw classes (isolated)
         if: needs.changes.outputs.core_swift == 'true'
-        timeout-minutes: 4
-        run: |
-          python3 scripts/swift_xctest_watchdog.py --deadline-seconds 215 -- swift test \
-            --filter AgentWearLinkOpenClawTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawProtocolTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawGatewayConnectionTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawGatewayStateTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawPairingTests
+        timeout-minutes: 6
+        run: python3 scripts/run_openclaw_remaining_tests.py
       - name: Test Meta SDK-neutral target
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
