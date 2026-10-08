@@ -178,10 +178,18 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         let events = AsyncThrowingStream<Data, Error>(
             bufferingPolicy: .bufferingNewest(1)
         ) { continuation in
-            listener.arm(stream) { data in
-                _ = continuation.yield(data)
-                continuation.finish()
-            }
+            listener.arm(
+                stream,
+                onData: { data in
+                    _ = continuation.yield(data)
+                    continuation.finish()
+                },
+                onError: {
+                    continuation.finish(throwing: AWLError.device(
+                        "Meta DAT camera stream failed during photo capture"
+                    ))
+                }
+            )
 
             let waitToken = gate.install {
                 listener.cancel()

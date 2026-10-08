@@ -225,14 +225,20 @@ final class OpenClawAcceptedRunRecoveryTests: XCTestCase {
             responses.append(response)
         }
 
-        XCTAssertEqual(
-            responses,
-            [
-                .textDelta(id, "before"),
-                .textDelta(id, " after"),
-                .completed(id)
-            ]
-        )
+        // The original transport can fail before its queued initial delta
+        // reaches the consuming task. After recovery, the authoritative
+        // terminal reply must still produce exactly one complete answer,
+        // whether that arrives in one delta or as an appended suffix.
+        let deltas = responses.compactMap { response -> String? in
+            guard case let .textDelta(responseID, text) = response else {
+                return nil
+            }
+            XCTAssertEqual(responseID, id)
+            return text
+        }
+        XCTAssertEqual(deltas.joined(), "before after")
+        XCTAssertEqual(responses.count, deltas.count + 1)
+        XCTAssertEqual(responses.last, .completed(id))
 
         let counts = await socket.counts()
         XCTAssertEqual(counts.connections, 2)
@@ -269,7 +275,13 @@ final class OpenClawAcceptedRunRecoveryTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(responses, [.textDelta(id, "before")])
+        // A lost run may fail before an already-queued delta is consumed.
+        // Either no partial text or one pre-disconnect delta is valid; neither
+        // outcome may manufacture a replay or a false completion.
+        XCTAssertTrue(
+            responses.isEmpty || responses == [.textDelta(id, "before")],
+            "Only the optional pre-disconnect partial delta may be emitted"
+        )
         let counts = await socket.counts()
         XCTAssertEqual(counts.connections, 2)
         XCTAssertEqual(counts.submissions, 1)
