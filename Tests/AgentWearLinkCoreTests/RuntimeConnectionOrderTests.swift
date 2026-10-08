@@ -28,8 +28,12 @@ private actor ConnectionOrderDelayedAgent: AgentAdapter {
     private var gate: CheckedContinuation<Void, Never>?
 
     func connect() async throws {
-        await entered.increment()
-        await withCheckedContinuation { gate = $0 }
+        await withCheckedContinuation { continuation in
+            gate = continuation
+            // Publish the arrival only after the release continuation is
+            // installed, so an immediately waking test cannot miss it.
+            Task { await entered.increment() }
+        }
     }
 
     func waitUntilConnecting() async throws {
