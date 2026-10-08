@@ -72,9 +72,10 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         let stream = camera.stream
         firstFrameReadiness.reset()
         photoResultListener.cancel()
-        stream.start()
 
         do {
+            // waitForFirstFrame installs the first-frame listener and cancel
+            // gate before stream.start() can synchronously deliver a frame.
             try await waitForFirstFrame(stream, token: token)
             try ensureCurrent(token)
 
@@ -130,23 +131,28 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         let readiness = firstFrameReadiness
         let gate = waitGate
 
-        let events = AsyncThrowingStream<Data, Error>(
-            bufferingPolicy: .bufferingNewest(1)
-        ) { continuation in
-            readiness.observe(stream) {
-                _ = continuation.yield(Data())
-                continuation.finish()
-            }
+        let events = MetaDATCameraStartOrder.armBeforeStart(
+            observe: {
+                AsyncThrowingStream<Data, Error>(
+                    bufferingPolicy: .bufferingNewest(1)
+                ) { continuation in
+                    readiness.observe(stream) {
+                        _ = continuation.yield(Data())
+                        continuation.finish()
+                    }
 
-            let waitToken = gate.install {
-                readiness.reset()
-                continuation.finish(throwing: CancellationError())
-            }
-            continuation.onTermination = { _ in
-                gate.clear(waitToken)
-                readiness.reset()
-            }
-        }
+                    let waitToken = gate.install {
+                        readiness.reset()
+                        continuation.finish(throwing: CancellationError())
+                    }
+                    continuation.onTermination = { _ in
+                        gate.clear(waitToken)
+                        readiness.reset()
+                    }
+                }
+            },
+            start: { stream.start() }
+        )
 
         do {
             _ = try await MetaDATPhotoRace.run(
