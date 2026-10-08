@@ -38,6 +38,17 @@ struct AgentWearLinkOpenClawChatProbe {
             isolatedAbortSession = nil
         }
 
+        let keychainService: String
+        do {
+            keychainService = try OpenClawDevelopmentKeychainIsolation.service(
+                for: profile,
+                environment: env,
+                isLoopback: endpoint.exposure == .loopback
+            )
+        } catch {
+            fail("Isolated development Keychain configuration is invalid.", code: 2)
+        }
+
         let socket: URLSessionOpenClawWebSocket
         do {
             socket = try URLSessionOpenClawWebSocket(endpoint: endpoint)
@@ -49,11 +60,11 @@ struct AgentWearLinkOpenClawChatProbe {
         let assembler = OpenClawConnectAssembler(
             identityManager: .init(
                 store: KeychainOpenClawDeviceIdentityStore(
-                    service: profile.keychainService
+                    service: keychainService
                 )
             ),
             credentialStore: KeychainOpenClawDeviceCredentialStore(
-                service: profile.keychainService
+                service: keychainService
             ),
             gatewayNamespace: endpoint.credentialNamespace,
             bootstrapHandoffPersistenceAllowed:
