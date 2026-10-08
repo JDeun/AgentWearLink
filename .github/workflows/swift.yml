@@ -272,7 +272,9 @@ jobs:
             build-for-testing
       - name: Boot selected iPhone Simulator
         if: needs.changes.outputs.meta_behavior == 'true' || needs.changes.outputs.meta_ui == 'true'
-        timeout-minutes: 4
+        # Cold Xcode 26 CoreSimulator occasionally remains Booting after 175s;
+        # the helper still fails closed at 240s with individually bounded polls.
+        timeout-minutes: 5
         run: python3 scripts/boot_ios_simulator.py "${AWL_IOS_SIMULATOR_UDID}"
       - name: Execute deterministic Meta DAT integration tests
         if: needs.changes.outputs.meta_behavior == 'true'
@@ -311,9 +313,10 @@ jobs:
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing build-for-testing
       - name: Run MockDeviceKit server rendezvous UI test
         if: needs.changes.outputs.meta_ui == 'true'
-        # Xcode 26 can spend ~60s tearing down a successful XCUITest session.
-        # Keep this bounded while leaving headroom after the in-test deadlines fire.
-        timeout-minutes: 5
+        # PR #595 completed all UI assertions but hit the five-minute action
+        # deadline during XCTest teardown. Bound at eight minutes; never
+        # reinterpret a timed-out UI process as a passing test.
+        timeout-minutes: 8
         working-directory: Adapters/MetaDAT/TestApp
         run: |
           xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing test-without-building
