@@ -2,6 +2,7 @@ import AgentWearLinkCore
 import AgentWearLinkMetaDATIntegration
 import Foundation
 import SwiftUI
+import MWDATCore
 
 /// App-hosted MockDeviceKit voice test only. Exercises the public concrete
 /// MetaDATDeviceAdapter rather than a duplicate fake Voice Invocation source.
@@ -44,7 +45,20 @@ final class AWLMockVoiceInvocationHarness: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(100))
             }
             if self?.status == "voice-waiting" {
-                self?.status = "voice-not-listening"
+                // Test-only, non-secret readiness fields reveal which
+                // lifecycle precondition prevented a standalone lease.
+                let wearables = Wearables.shared
+                let isRegistered: Bool
+                if case .registered = wearables.registrationState {
+                    isRegistered = true
+                } else {
+                    isRegistered = false
+                }
+                let paired = wearables.devices
+                let connected = paired.filter { identifier in
+                    wearables.deviceForIdentifier(identifier)?.linkState == .connected
+                }.count
+                self?.status = "voice-not-listening-r\(isRegistered)-d\(paired.count)-c\(connected)"
             }
         }
     }
