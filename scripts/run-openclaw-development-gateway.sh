@@ -8,6 +8,14 @@ cd "$root"
 python3 scripts/dev_gateway_preflight.py
 export AWL_OPENCLAW_EXPOSURE=loopback
 
+if [[ "${AWL_DEV_GATEWAY_EXPECT_PAIRING:-0}" == "1" ]]; then
+  # Exactly one freshly generated, unapproved identity. No permission grant
+  # or follow-up health probe is attempted in this negative contract.
+  echo "Checking that the real Gateway refuses an unapproved read-only identity"
+  python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
+  exit $?
+fi
+
 echo "Running production read-only OpenClaw connection and health RPC"
 python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
 
