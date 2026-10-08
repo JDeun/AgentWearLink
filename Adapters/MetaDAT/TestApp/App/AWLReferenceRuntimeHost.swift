@@ -5,6 +5,7 @@ import AgentWearLinkOpenClaw
 import Foundation
 import MWDATCore
 import SwiftUI
+import UIKit
 
 /// Human-operated iOS reference composition. Neither test fixtures nor a
 /// production Mac mini hostname, pairing identity, token or session key are
@@ -22,6 +23,20 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     private var outputSink: AppleSpeechOutput?
     private var visionTask: Task<Void, Never>?
     private var configured = false
+
+    /// A deliberate local user gesture copies only typed and bounded
+    /// diagnostic evidence; no transport token, text or raw correlation UUID.
+    func copySanitizedDiagnostics() {
+        do {
+            UIPasteboard.general.string = try AWLDiagnosticEvidence.export(
+                from: diagnostics,
+                maximumEvents: 128
+            )
+            status = "sanitized-diagnostics-copied"
+        } catch {
+            status = "diagnostic-export-failed"
+        }
+    }
 
     func configureWearables() async {
         guard !configured else { return }
