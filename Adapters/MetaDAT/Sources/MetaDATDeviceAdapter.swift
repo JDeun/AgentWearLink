@@ -572,11 +572,21 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         _ error: any Error,
         generation: UInt64
     ) {
-        guard !stopping, generationFence.owns(generation) else { return }
-        yieldEvent(.failed(nil, .device(MetaDATVendorFailurePolicy.message(
-            for: error,
-            surface: .speech
-        ))))
+        guard !stopping, generationFence.owns(generation), speech != nil else { return }
+
+        // Speech is optional. A vendor transcript channel failure should only
+        // retire Speech; a nil-ID .device error would retire the entire Core
+        // runtime generation and unnecessarily drop healthy camera/agent work.
+        liveCapabilities.update(speechReady: false)
+        speechTask?.cancel()
+        speechTask = nil
+        speech?.stop()
+        speech = nil
+        if let speechErrorToken {
+            Task { await speechErrorToken.cancel() }
+        }
+        speechErrorToken = nil
+        yieldEvent(MetaDATSpeechFailurePolicy.event(for: error))
     }
 
     private func monitorSelectedDeviceSignals(
