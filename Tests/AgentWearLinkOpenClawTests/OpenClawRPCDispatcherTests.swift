@@ -985,6 +985,57 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
     }
 
 
+    func testHugeAndFractionalRunSequencesCannotTrapOrCorruptRouting() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState()
+        )
+        let runEvents = await dispatcher.agentEvents(runID: "run-untrusted-seq")
+        let genericEvents = await dispatcher.events()
+        await dispatcher.start()
+
+        let received = Task {
+            var iterator = genericEvents.makeAsyncIterator()
+            for _ in 0..<4 {
+                _ = try await iterator.next()
+            }
+        }
+
+        // Int(1e300) previously traps instead of failing. Invalid run-local
+        // sequences are treated as unsequenced; the outer Gateway sequence
+        // remains ordered and is validated by the normal state machine.
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"run-untrusted-seq","stream":"assistant","data":{"delta":"a"},"seq":1e300},"seq":1}"#
+        )
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"run-untrusted-seq","stream":"assistant","data":{"delta":"b"},"seq":-1e300},"seq":2}"#
+        )
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"run-untrusted-seq","stream":"assistant","data":{"delta":"c"},"seq":3.5},"seq":3}"#
+        )
+        await socket.push(
+            #"{"type":"event","event":"agent","payload":{"runId":"run-untrusted-seq","stream":"assistant","data":{"delta":"d"},"seq":4},"seq":4}"#
+        )
+
+        try await received.value
+        await dispatcher.finishAgentEvents(runID: "run-untrusted-seq")
+        var iterator = runEvents.makeAsyncIterator()
+        let a = try await iterator.next()
+        let b = try await iterator.next()
+        let c = try await iterator.next()
+        let d = try await iterator.next()
+        let end = try await iterator.next()
+        XCTAssertNil(a?.seq)
+        XCTAssertNil(b?.seq)
+        XCTAssertNil(c?.seq)
+        XCTAssertEqual(d?.seq, 4)
+        XCTAssertNil(end)
+
+        await dispatcher.stop()
+        await socket.close()
+    }
+
 }
 
 private struct EmptyParams: Encodable, Sendable {}
