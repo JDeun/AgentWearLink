@@ -31,12 +31,26 @@ struct AgentWearLinkOpenClawProbe {
         }
 
         let state = OpenClawGatewayState()
-        let identityStore = KeychainOpenClawDeviceIdentityStore(
-            service: keychainService
-        )
-        let credentialStore = KeychainOpenClawDeviceCredentialStore(
-            service: keychainService
-        )
+        // The unapproved-device rejection test deliberately has no persisted
+        // grant. Headless macOS runners may stall on Keychain dialogs, so
+        // the CI-only negative probe uses disposable in-memory stores.
+        // Operator-approved and tokenless-reuse probes retain real Keychain.
+        let ephemeralNegativePairing = environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1"
+        if ephemeralNegativePairing {
+            guard OpenClawDevelopmentNegativePairingPolicy.permitsEphemeralIdentity(
+                environment: environment,
+                isLoopback: endpoint.exposure == .loopback,
+                profile: profile
+            ) else {
+                fail("Negative pairing probe requires isolated loopback read-only state.", code: 2)
+            }
+        }
+        let identityStore: any OpenClawDeviceIdentityStore = ephemeralNegativePairing
+            ? InMemoryOpenClawDeviceIdentityStore()
+            : KeychainOpenClawDeviceIdentityStore(service: keychainService)
+        let credentialStore: any OpenClawDeviceCredentialStore = ephemeralNegativePairing
+            ? InMemoryOpenClawDeviceCredentialStore()
+            : KeychainOpenClawDeviceCredentialStore(service: keychainService)
         let assembler = OpenClawConnectAssembler(
             identityManager: .init(store: identityStore),
             credentialStore: credentialStore,
