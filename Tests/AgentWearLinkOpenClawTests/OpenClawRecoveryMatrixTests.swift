@@ -15,7 +15,7 @@ private struct SupervisorPairingResponse: Sendable {
 
 private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var connectCalls = 0
-    private let connectionSignal = OpenClawTestCountSignal()
+    private let pairingResponseSignal = OpenClawTestCountSignal()
     private var transportGenerationValue: UInt64 = 0
     private var handshakeStep = 0
     private var sentFrames: [String] = []
@@ -33,7 +33,6 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
 
     func connect() async {
         connectCalls += 1
-        await connectionSignal.increment()
         transportGenerationValue &+= 1
         handshakeStep = 0
 
@@ -96,6 +95,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
             }
 
             if let pairing = pairingResponses[connectCalls] {
+                await pairingResponseSignal.increment()
                 let retryAfter = pairing.retryAfterMilliseconds.map {
                     ",\"retryAfterMs\":\($0)"
                 } ?? ""
@@ -145,13 +145,13 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
         receiveWaiter = nil
     }
 
-    /// Await the actual socket connection event rather than spin/yielding
-    /// against a one-second CI scheduler deadline.
-    func waitForConnectionCount(atLeast target: Int) async throws {
-        try await connectionSignal.wait(
-            until: target,
+    /// The test waits until the *actual* mock Gateway pairing response is
+    /// emitted; merely observing an attempted connection is not sufficient.
+    func waitForPairingResponse() async throws {
+        try await pairingResponseSignal.wait(
+            until: 1,
             timeout: .seconds(5),
-            label: "socket connection count reached target"
+            label: "pairing response emitted"
         )
     }
 
@@ -618,7 +618,7 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
             )
         }
 
-        try await fixture.socket.waitForConnectionCount(atLeast: 2)
+        try await fixture.socket.waitForPairingResponse()
 
         await fixture.supervisor.stop()
         await reconnect.value
