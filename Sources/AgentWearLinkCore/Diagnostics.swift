@@ -36,6 +36,7 @@ public enum AWLDiagnosticKind: String, Sendable, Equatable, Codable {
     case metaVoiceRetryExhausted
     case metaVoiceNoEligibleDevice
     case metaVoiceAwaitingLink
+    case metaVoiceAwaitingCompatibility
     case metaVoiceEligibilityRetryExhausted
 }
 
