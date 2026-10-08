@@ -47,7 +47,10 @@ struct AgentWearLinkOpenClawProbe {
         let connection = OpenClawGatewayConnection(
             socket: socket,
             assembler: assembler,
-            state: state
+            state: state,
+            progress: { phase in
+                recordPhase(phase.rawValue, environment: environment)
+            }
         )
         let dispatcher = OpenClawRPCDispatcher(
             socket: socket,
@@ -68,7 +71,9 @@ struct AgentWearLinkOpenClawProbe {
         )
 
         do {
+            recordPhase("handshake-started", environment: environment)
             try await supervisor.start()
+            recordPhase("authenticated", environment: environment)
 
             let response = try await dispatcher.request(
                 method: "health",
@@ -82,10 +87,12 @@ struct AgentWearLinkOpenClawProbe {
             // The upstream health payload is not a public diagnostic contract:
             // it may grow to contain addresses or sensitive local configuration.
             // Report an allowlisted success flag only; no raw Gateway JSON.
+            recordPhase("health-accepted", environment: environment)
             print(#"{"ok":true}"#)
 
             await supervisor.stop()
         } catch let OpenClawHandshakeError.pairingRequired(pairing) {
+            recordPhase("pairing-required", environment: environment)
             await supervisor.stop()
             var lines = [
                 "OpenClaw device pairing is required."
@@ -96,9 +103,22 @@ struct AgentWearLinkOpenClawProbe {
             }
             fail(lines.joined(separator: "\n"), code: 3)
         } catch {
+            recordPhase("probe-error", environment: environment)
             await supervisor.stop()
             fail("OpenClaw probe failed (details redacted)", code: 1)
         }
+    }
+
+    /// Only known phase labels are written to disposable development state.
+    /// Raw Gateway frames are never persisted.
+    private static func recordPhase(
+        _ phase: String,
+        environment: [String: String]
+    ) {
+        guard environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1",
+              let path = environment["AWL_DEV_GATEWAY_PHASE_FILE"],
+              !path.isEmpty else { return }
+        try? phase.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
     private static func configuredEndpoint(
