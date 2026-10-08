@@ -15,6 +15,7 @@ private struct SupervisorPairingResponse: Sendable {
 
 private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var connectCalls = 0
+    private let connectionSignal = OpenClawTestCountSignal()
     private var transportGenerationValue: UInt64 = 0
     private var handshakeStep = 0
     private var sentFrames: [String] = []
@@ -32,6 +33,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
 
     func connect() async {
         connectCalls += 1
+        await connectionSignal.increment()
         transportGenerationValue &+= 1
         handshakeStep = 0
 
@@ -141,6 +143,16 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
 
         receiveWaiter?.resume(throwing: AWLOpenClawError.disconnected)
         receiveWaiter = nil
+    }
+
+    /// Await the actual socket connection event rather than spin/yielding
+    /// against a one-second CI scheduler deadline.
+    func waitForConnectionCount(atLeast target: Int) async throws {
+        try await connectionSignal.wait(
+            until: target,
+            timeout: .seconds(5),
+            label: "socket connection count reached target"
+        )
     }
 
     func connectionCount() -> Int { connectCalls }
@@ -606,11 +618,7 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
             )
         }
 
-        try await waitUntilOpenClawTestCondition(
-            "pairing wait entered"
-        ) {
-            await fixture.socket.connectionCount() >= 2
-        }
+        try await fixture.socket.waitForConnectionCount(atLeast: 2)
 
         await fixture.supervisor.stop()
         await reconnect.value
