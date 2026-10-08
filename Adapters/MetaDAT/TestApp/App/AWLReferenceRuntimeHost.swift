@@ -40,6 +40,21 @@ final class AWLReferenceRuntimeHost: ObservableObject {
 
     func configureWearables() async {
         guard !configured else { return }
+        // Fail before SDK initialization with test-only placeholder settings.
+        // No client token or other registration detail is sent to diagnostics.
+        guard let registration = Bundle.main.object(forInfoDictionaryKey: "MWDAT")
+                as? [String: Any],
+              let appID = registration["MetaAppID"] as? String,
+              !appID.isEmpty, appID != "0", !appID.contains("$("),
+              let clientToken = registration["ClientToken"] as? String,
+              !clientToken.isEmpty, !clientToken.contains("$("),
+              let teamID = registration["TeamID"] as? String,
+              !teamID.isEmpty, !teamID.contains("$("),
+              let link = registration["AppLinkURLScheme"] as? String,
+              link.contains("://"), !link.contains("$(") else {
+            status = "meta-local-provisioning-required"
+            return
+        }
         do {
             try Wearables.configure()
             configured = true
