@@ -30,7 +30,8 @@ PROBE_DEADLINE = 900
 _REVISION = re.compile(r"^[0-9a-fA-F]{40}$")
 _SAFE_PROBE_PHASES = frozenset({
     "handshake-started", "socket-opened",
-    "challenge-received", "connect-sent",
+    "challenge-received", "assemble-started", "assemble-complete",
+    "connect-sending", "connect-sent",
     "response-received", "authenticated",
     "health-accepted", "pairing-required", "probe-error",
 })
