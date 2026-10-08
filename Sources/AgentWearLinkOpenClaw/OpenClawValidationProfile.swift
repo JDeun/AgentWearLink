@@ -33,3 +33,37 @@ public struct OpenClawValidationProfile: Sendable, Equatable {
         clientIdentity: .backend
     )
 }
+
+
+public enum OpenClawDevelopmentKeychainIsolationError: Error, Sendable {
+    case invalidConfiguration
+}
+
+/// Opt-in, per-invocation Keychain identity partition for a disposable REAL
+/// development Gateway. Never alters the production profile or Tailnet grant.
+public enum OpenClawDevelopmentKeychainIsolation {
+    public static func service(
+        for profile: OpenClawValidationProfile,
+        environment: [String: String],
+        isLoopback: Bool
+    ) throws -> String {
+        guard let nonce = environment["AWL_DEV_KEYCHAIN_NONCE"] else {
+            return profile.keychainService
+        }
+        let readOnly = profile.keychainService
+            == OpenClawValidationProfile.readOnly.keychainService
+        let mutating = profile.keychainService
+            == OpenClawValidationProfile.mutating.keychainService
+        guard environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
+              isLoopback,
+              readOnly || mutating,
+              nonce.range(
+                of: #"^[0-9a-f]{20}$"#,
+                options: .regularExpression
+              ) != nil else {
+            throw OpenClawDevelopmentKeychainIsolationError.invalidConfiguration
+        }
+        return "dev.agentwearlink.openclaw.isolated."
+            + nonce + (readOnly ? ".read" : ".write")
+    }
+}
