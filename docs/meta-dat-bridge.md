@@ -183,7 +183,6 @@ an independently verified response-handle contract for all action types.
 Vendor MockDeviceKit launch simulation and physical locked/pocketed behavior
 remain open on #95/#115/#6.
 
-
 ### Reference host Voice Invocation ownership
 
 After the reference host successfully starts the connected runtime, it calls
