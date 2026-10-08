@@ -12,6 +12,17 @@ struct AgentWearLinkOpenClawProbe {
         let token = nonEmpty(environment["AWL_OPENCLAW_TOKEN"])
         let bootstrapToken = nonEmpty(environment["AWL_OPENCLAW_BOOTSTRAP_TOKEN"])
 
+        let keychainService: String
+        do {
+            keychainService = try OpenClawDevelopmentKeychainIsolation.service(
+                for: profile,
+                environment: environment,
+                isLoopback: endpoint.exposure == .loopback
+            )
+        } catch {
+            fail("Isolated development Keychain configuration is invalid.", code: 2)
+        }
+
         let socket: URLSessionOpenClawWebSocket
         do {
             socket = try URLSessionOpenClawWebSocket(endpoint: endpoint)
@@ -21,10 +32,10 @@ struct AgentWearLinkOpenClawProbe {
 
         let state = OpenClawGatewayState()
         let identityStore = KeychainOpenClawDeviceIdentityStore(
-            service: profile.keychainService
+            service: keychainService
         )
         let credentialStore = KeychainOpenClawDeviceCredentialStore(
-            service: profile.keychainService
+            service: keychainService
         )
         let assembler = OpenClawConnectAssembler(
             identityManager: .init(store: identityStore),
