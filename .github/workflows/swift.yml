@@ -135,6 +135,13 @@ jobs:
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 2
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests
+      # The handshake suite repeatedly caused a macOS XCTest stall after
+      # a passing actor-based test. Give its lifetime a fresh XCTest process,
+      # without disabling any tests or inflating the remaining suite deadline.
+      - name: Test OpenClaw Gateway handshake lifecycle
+        if: needs.changes.outputs.core_swift == 'true'
+        timeout-minutes: 3
+        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawGatewayConnectionTests
       - name: Test remaining OpenClaw target
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 4
@@ -144,7 +151,8 @@ jobs:
             --skip AgentWearLinkOpenClawTests.OpenClawProtocolTests \
             --skip AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests \
             --skip AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests
+            --skip AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests \
+            --skip AgentWearLinkOpenClawTests.OpenClawGatewayConnectionTests
       - name: Test Meta SDK-neutral target
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
