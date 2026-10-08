@@ -250,8 +250,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                            deviceID: identity.deviceID,
                            role: "operator"
                        ) {
-                        authorized = grant.scopes.contains("operator.write")
-                            && !grant.token.isEmpty
+                        authorized = OpenClawStoredGrantAdmission
+                            .permitsWriteRuntime(grant)
                     } else {
                         authorized = false
                     }
