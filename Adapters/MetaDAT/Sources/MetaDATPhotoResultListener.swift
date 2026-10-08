@@ -11,19 +11,24 @@ public final class MetaDATPhotoResultListener: @unchecked Sendable {
     private let generation = MetaDATListenerGeneration()
     private let lock = NSLock()
     private var token: (any AnyListenerToken)?
+    private var errorToken: (any AnyListenerToken)?
 
     public init() {}
 
     public func arm(
         _ stream: MWDATCamera.Stream,
-        onData: @escaping @Sendable (Data) -> Void
+        onData: @escaping @Sendable (Data) -> Void,
+        onError: @escaping @Sendable () -> Void
     ) {
         let listenerGeneration = generation.begin()
-        let retiredToken = lock.withLock { () -> (any AnyListenerToken)? in
-            defer { token = nil }
-            return token
+        let retired = lock.withLock { () -> [any AnyListenerToken] in
+            defer {
+                token = nil
+                errorToken = nil
+            }
+            return [token, errorToken].compactMap { $0 }
         }
-        if let retiredToken {
+        for retiredToken in retired {
             Task { await retiredToken.cancel() }
         }
 
@@ -33,25 +38,37 @@ public final class MetaDATPhotoResultListener: @unchecked Sendable {
             onData(photoData.data)
         }
 
-        let shouldCancelNewToken = lock.withLock { () -> Bool in
+        let newErrorToken = stream.errorPublisher.listen { _ in
+            guard gate.isCurrent(listenerGeneration) else { return }
+            onError()
+        }
+
+        let shouldCancelNewTokens = lock.withLock { () -> Bool in
             guard generation.isCurrent(listenerGeneration) else {
                 return true
             }
             token = newToken
+            errorToken = newErrorToken
             return false
         }
-        if shouldCancelNewToken {
-            Task { await newToken.cancel() }
+        if shouldCancelNewTokens {
+            Task {
+                await newToken.cancel()
+                await newErrorToken.cancel()
+            }
         }
     }
 
     public func cancel() {
         generation.invalidate()
-        let retiredToken = lock.withLock { () -> (any AnyListenerToken)? in
-            defer { token = nil }
-            return token
+        let retired = lock.withLock { () -> [any AnyListenerToken] in
+            defer {
+                token = nil
+                errorToken = nil
+            }
+            return [token, errorToken].compactMap { $0 }
         }
-        if let retiredToken {
+        for retiredToken in retired {
             Task { await retiredToken.cancel() }
         }
     }
