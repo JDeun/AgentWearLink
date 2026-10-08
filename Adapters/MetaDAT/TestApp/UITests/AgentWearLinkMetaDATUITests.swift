@@ -126,4 +126,74 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         XCTAssertTrue(unpaired)
     }
 
+
+    func testMockVoiceWakeHandsOffToSpeechAndCoreAgent() async throws {
+        let portFile = NSTemporaryDirectory() + "awl-mwdat-wake-\(UUID().uuidString).port"
+        defer { try? FileManager.default.removeItem(atPath: portFile) }
+
+        let app = XCUIApplication()
+        app.launchArguments = ["--awl-meta-ui-testing", "--awl-meta-wake-ui-testing"]
+        app.launchEnvironment["MWDAT_TEST_SERVER_PORT_FILE"] = portFile
+        app.launch()
+        defer { app.terminate() }
+
+        let host = app.staticTexts["awl-meta-host-state"]
+        XCTAssertTrue(host.waitForExistence(timeout: 15))
+        let hostReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "host-ready"),
+            object: host
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [hostReady], timeout: 20), .completed)
+
+        let client = MockDeviceTestClient(portFilePath: portFile)
+        XCTAssertTrue(await client.waitForServer(timeout: 15))
+        let deviceID = try XCTUnwrap(await client.pairDevice())
+        XCTAssertTrue(await client.powerOn(deviceId: deviceID))
+        XCTAssertTrue(await client.unfold(deviceId: deviceID))
+        XCTAssertTrue(await client.don(deviceId: deviceID))
+
+        let wake = app.staticTexts["awl-meta-wake-state"]
+        XCTAssertTrue(wake.waitForExistence(timeout: 10))
+        let listening = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "wake-listening"),
+            object: wake
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [listening], timeout: 25), .completed)
+
+        // The Meta response handle is acknowledged before this separate
+        // foreground media/Speech startup; LaunchApp contains no user text.
+        _ = await client.sendLaunchAppAction(deviceId: deviceID)
+        let acknowledged = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "wake-acknowledged"),
+            object: wake
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [acknowledged], timeout: 15), .completed)
+
+        let media = app.staticTexts["awl-meta-wake-media-state"]
+        let speechReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "wake-speech-ready"),
+            object: media
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [speechReady], timeout: 30),
+            .completed,
+            "Foreground media activation did not produce Speech readiness: \(media.label)"
+        )
+
+        let inject = app.buttons["awl-meta-send-mock-transcript"]
+        XCTAssertTrue(inject.waitForExistence(timeout: 5))
+        inject.tap()
+        let completed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "wake-agent-completed"),
+            object: wake
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [completed], timeout: 20),
+            .completed,
+            "Final DAT Speech did not reach Core and terminal MockAgent output: \(wake.label)"
+        )
+
+        XCTAssertTrue(await client.unpairDevice(deviceId: deviceID))
+    }
+
 }
