@@ -35,6 +35,24 @@ _SAFE_PROBE_PHASES = frozenset({
     "response-received", "authenticated",
     "health-accepted", "pairing-required", "probe-error",
 })
+_SAFE_PROBE_RESULTS = frozenset({
+    "challenge-timeout", "hello-timeout", "unexpected-connect-response",
+    "challenge-required", "invalid-challenge", "missing-hello",
+    "invalid-policy", "connect-invalidated", "handshake-other",
+    "gateway-auth-denied", "gateway-invalid-request",
+    "gateway-pairing-code", "gateway-device-token-rejected",
+    "gateway-other", "transport-disconnected", "protocol-mismatch",
+    "gateway-state-error", "frame-invalid", "decoding-failed", "other-error",
+})
+
+
+def safe_probe_result(path: Path) -> str:
+    """Never relay the raw Gateway, Keychain or Swift error payload."""
+    try:
+        category = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return "unobserved"
+    return category if category in _SAFE_PROBE_RESULTS else "unobserved"
 
 
 def safe_probe_phase(path: Path) -> str:
@@ -300,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
             env["AWL_DEV_GATEWAY_EXPECT_PAIRING"] = "1"
             env["AWL_DEV_GATEWAY_USE_BUILT_PROBE"] = "1"
             env["AWL_DEV_GATEWAY_PHASE_FILE"] = str(temp / "probe-phase")
+            env["AWL_DEV_GATEWAY_RESULT_FILE"] = str(temp / "probe-result")
         try:
             validate_config(env)
         except ValueError:
@@ -361,8 +380,10 @@ def main(argv: list[str] | None = None) -> int:
                     }
                     category = categories.get(result.returncode, "unexpected-exit")
                     phase = safe_probe_phase(temp / "probe-phase")
+                    failure = safe_probe_result(temp / "probe-result")
                     print("Isolated real Gateway negative-contract failed: "
-                          + category + " (last-phase=" + phase + ")",
+                          + category + " (last-phase=" + phase
+                          + ", failure-class=" + failure + ")",
                           file=sys.stderr)
                     return 1
                 if result.returncode == 0:
