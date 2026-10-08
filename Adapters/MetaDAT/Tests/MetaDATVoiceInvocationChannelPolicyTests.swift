@@ -12,6 +12,14 @@ final class MetaDATVoiceInvocationChannelPolicyTests: XCTestCase {
         XCTAssertNil(policy.delay(afterFailure: 2))
     }
 
+    func testDefaultPolicyRemainsFiniteButCoversSlowVoiceChannelAttach() {
+        let policy = MetaDATVoiceReopenPolicy()
+        XCTAssertEqual(policy.delays.count, 6)
+        XCTAssertEqual(policy.delay(afterFailure: 0), .milliseconds(250))
+        XCTAssertEqual(policy.delay(afterFailure: 5), .seconds(8))
+        XCTAssertNil(policy.delay(afterFailure: 6))
+    }
+
     func testVoiceCapabilityIsIndependentFromMediaSession() {
         var capabilities = MetaDATLiveCapabilities()
         capabilities.voiceInvocationReady = true
