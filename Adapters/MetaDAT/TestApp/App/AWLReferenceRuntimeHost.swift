@@ -183,8 +183,13 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         token: String,
         sessionKey: String,
         enableVision: Bool,
-        voiceOnly: Bool = false
+        voiceOnly: Bool = false,
+        voiceWake: Bool = false
     ) async {
+        guard !(voiceOnly && voiceWake) else {
+            status = "invalid-voice-mode"
+            return
+        }
         guard !connectionFence.isStarting, !disconnectInProgress else {
             status = "connection-in-progress"
             return
@@ -261,7 +266,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             // No camera/media DeviceSession is created in voice-only mode.
             // Core still owns a production agent, output and event subscription.
             let runtimeDevice: any DeviceAdapter
-            if voiceOnly {
+            if voiceWake {
+                runtimeDevice = MetaDATVoiceWakeDeviceAdapter(vendor: concreteDevice)
+            } else if voiceOnly {
                 runtimeDevice = MetaDATVoiceOnlyDeviceAdapter(vendor: concreteDevice)
             } else {
                 runtimeDevice = concreteDevice
@@ -277,7 +284,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             // either transport, so no device event is lost during connect.
             runtime = composed
             device = concreteDevice
-            visionAgent = voiceOnly ? nil : agent
+            // These projections do not implement SnapshotCapturingDevice.
+            // Do not enable an explicit camera request from a voice host.
+            visionAgent = (voiceOnly || voiceWake) ? nil : agent
             outputSink = sink
             do {
                 try await composed.start()
@@ -295,7 +304,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 // In media mode, start the independent listener only after the
                 // media runtime is ready. Voice-only DeviceAdapter.connect()
                 // already started it without touching DeviceSession.
-                if !voiceOnly {
+                if !voiceOnly && !voiceWake {
                     await concreteDevice.startVoiceInvocationListening()
                 }
                 guard connectionFence.isCurrent(attempt) else {
@@ -306,7 +315,11 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 }
                 // Channel registration may still be pending. This is not a
                 // claim that physical Hey Meta or locked-phone launch works.
-                status = voiceOnly ? "voice-only-runtime-started" : "connected"
+                if voiceWake {
+                    status = "voice-wake-runtime-started"
+                } else {
+                    status = voiceOnly ? "voice-only-runtime-started" : "connected"
+                }
             } catch {
                 await concreteDevice.stopVoiceInvocationListening()
                 await composed.stop()
