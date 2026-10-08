@@ -88,9 +88,26 @@ jobs:
       - name: Show Swift version
         if: needs.changes.outputs.swift == 'true'
         run: swift --version
-      - name: Test core package
+      # Each test target runs in its own XCTest process. This isolates Swift
+      # concurrency/task lifetime across modules and identifies the responsible
+      # suite if a macOS runner ever blocks after a passing test. Keep per-step
+      # deadlines smaller than the total job so logs distinguish test stalls.
+      - name: Test Core target
         if: needs.changes.outputs.swift == 'true'
-        run: swift test
+        timeout-minutes: 4
+        run: swift test --filter AgentWearLinkCoreTests
+      - name: Test OpenClaw target
+        if: needs.changes.outputs.swift == 'true'
+        timeout-minutes: 4
+        run: swift test --filter AgentWearLinkOpenClawTests
+      - name: Test Meta SDK-neutral target
+        if: needs.changes.outputs.swift == 'true'
+        timeout-minutes: 3
+        run: swift test --filter AgentWearLinkMetaDATTests
+      - name: Test Apple output target
+        if: needs.changes.outputs.swift == 'true'
+        timeout-minutes: 3
+        run: swift test --filter AgentWearLinkAppleOutputTests
       - name: Verify pinned OpenClaw protocol contract
         if: needs.changes.outputs.openclaw_contract == 'true'
         run: python3 scripts/verify-openclaw-protocol-contract.py
