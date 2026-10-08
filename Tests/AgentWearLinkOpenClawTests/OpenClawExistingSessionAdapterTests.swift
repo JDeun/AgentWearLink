@@ -246,7 +246,7 @@ final class OpenClawExistingSessionAdapterTests: XCTestCase {
                 responses,
                 [
                     .textDelta(id, "partial"),
-                    .failed(id, .agent("synthetic terminal failure"))
+                    .failed(id, .agent("OpenClaw agent run failed (details redacted)"))
                 ]
             )
             let waitedRunIDs = await socket.waitedRunIDsSnapshot()
