@@ -318,6 +318,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             }
         }
 
+        // The phase check above suspends this actor. Another caller may have
+        // started/finished a media connect while we awaited it, so repeat
+        // admission immediately before taking ownership of a new generation.
+        guard try MetaDATConnectAdmission.shouldStart(
+            connecting: connecting,
+            sessionActive: deviceSession != nil
+        ) else { return }
+
         liveCapabilities.update(
             sessionReady: false,
             speechReady: false,
