@@ -86,6 +86,15 @@ struct MetaDATTestHostApp: App {
                     }
                     .accessibilityIdentifier("awl-meta-capture-experimental-photo")
                     .disabled(state != "photo-fixture-ready")
+                    Button("Fail next experimental standalone photo") {
+                        do {
+                            try MetaDATMockHostBootstrap.failNextMockStandalonePhotoCapture()
+                        } catch {
+                            state = "experimental-photo-fault-setup-failed"
+                        }
+                    }
+                    .accessibilityIdentifier("awl-meta-fail-standalone-photo")
+                    .disabled(state != "photo-fixture-ready")
                     Button("Deny mock camera permission") {
                         do {
                             try MetaDATMockHostBootstrap.denyMockCameraPermission()
