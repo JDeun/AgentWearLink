@@ -34,6 +34,9 @@ public enum AWLDiagnosticKind: String, Sendable, Equatable, Codable {
     case metaVoiceInterfaceInvalid
     case metaVoiceChannelError
     case metaVoiceRetryExhausted
+    case metaVoiceNoEligibleDevice
+    case metaVoiceAwaitingLink
+    case metaVoiceEligibilityRetryExhausted
 }
 
 public struct AWLDiagnosticEvent: Sendable, Equatable {
