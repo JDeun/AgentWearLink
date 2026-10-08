@@ -28,6 +28,22 @@ ROOT = Path(__file__).resolve().parent.parent
 GATEWAY_START_DEADLINE = 45
 PROBE_DEADLINE = 900
 _REVISION = re.compile(r"^[0-9a-fA-F]{40}$")
+_SAFE_PROBE_PHASES = frozenset({
+    "handshake-started", "socket-opened",
+    "challenge-received", "connect-sent",
+    "response-received", "authenticated",
+    "health-accepted", "pairing-required", "probe-error",
+})
+
+
+def safe_probe_phase(path: Path) -> str:
+    """Emit only protocol-phase vocabulary, never file-supplied text."""
+    try:
+        phase = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return "unobserved"
+    return phase if phase in _SAFE_PROBE_PHASES else "unobserved"
+
 
 
 def checkout_revision(checkout: Path, expected: str) -> bool:
@@ -343,19 +359,7 @@ def main(argv: list[str] | None = None) -> int:
                         127: "probe-binary-unavailable",
                     }
                     category = categories.get(result.returncode, "unexpected-exit")
-                    # Report only a fixed phase ID, never Gateway frames.
-                    safe_phases = {
-                        "handshake-started", "socket-opened",
-                        "challenge-received", "connect-sent",
-                        "response-received", "authenticated",
-                        "health-accepted", "pairing-required", "probe-error",
-                    }
-                    try:
-                        phase = (temp / "probe-phase").read_text().strip()
-                    except OSError:
-                        phase = "unobserved"
-                    if phase not in safe_phases:
-                        phase = "unobserved"
+                    phase = safe_probe_phase(temp / "probe-phase")
                     print("Isolated real Gateway negative-contract failed: "
                           + category + " (last-phase=" + phase + ")",
                           file=sys.stderr)
