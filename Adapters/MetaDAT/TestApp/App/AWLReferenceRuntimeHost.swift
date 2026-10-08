@@ -135,7 +135,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             device = concreteDevice
             do {
                 try await composed.start()
-                await concreteDevice.startVoiceInvocationListening()
+                // Independent Voice Invocation startup follows the upstream
+                // Meta channel PR (#543) and needs a separate iOS host flow.
+                // Media + OpenClaw + Apple output are wired here already.
                 status = "connected"
             } catch {
                 await composed.stop()
@@ -150,9 +152,6 @@ final class AWLReferenceRuntimeHost: ObservableObject {
 
     func disconnect() async {
         status = "disconnecting"
-        if let device {
-            await device.stopVoiceInvocationListening()
-        }
         if let runtime {
             await runtime.stop()
         }
