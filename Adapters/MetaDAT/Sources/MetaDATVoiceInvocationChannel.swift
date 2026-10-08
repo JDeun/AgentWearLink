@@ -12,6 +12,12 @@ public final class MetaDATVoiceInvocationChannel {
     private let wearables: any WearablesInterface
     private let listener: MetaDATVoiceInvocationListener
     private let reopenPolicy: MetaDATVoiceReopenPolicy
+    // A bounded re-snapshot covers pairing/compatibility/link changes that
+    // do not always emit a fresh devicesStream event in the pinned SDK.
+    private let eligibilityPolicy = MetaDATVoiceReopenPolicy(delays: [
+        .milliseconds(250), .milliseconds(500), .seconds(1),
+        .seconds(2), .seconds(4), .seconds(8)
+    ])
     private let diagnostics: AWLDiagnosticRecorder?
     private let onEvent: @Sendable (InteractionEvent) -> Void
     private let onReadiness: @Sendable (Bool) -> Void
@@ -25,6 +31,8 @@ public final class MetaDATVoiceInvocationChannel {
     private var registrationTask: Task<Void, Never>?
     private var devicesTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
+    private var eligibilityRetryTask: Task<Void, Never>?
+    private var eligibilityRetries = 0
 
     public init(
         wearables: any WearablesInterface = Wearables.shared,
@@ -45,6 +53,7 @@ public final class MetaDATVoiceInvocationChannel {
         guard !running else { return }
         running = true
         failures = 0
+        eligibilityRetries = 0
 
         // Subscribe before first reconciliation; changes during an initial
         // registration or device snapshot cannot be lost.
@@ -73,7 +82,34 @@ public final class MetaDATVoiceInvocationChannel {
         devicesTask?.cancel()
         registrationTask = nil
         devicesTask = nil
+        cancelEligibilityRetry(resetBudget: true)
         retireSelection()
+    }
+
+    private func cancelEligibilityRetry(resetBudget: Bool) {
+        eligibilityRetryTask?.cancel()
+        eligibilityRetryTask = nil
+        if resetBudget { eligibilityRetries = 0 }
+    }
+
+    private func scheduleEligibilityRetry() {
+        guard running, eligibilityRetryTask == nil else { return }
+        let attempt = eligibilityRetries
+        guard let delay = eligibilityPolicy.delay(afterFailure: attempt) else {
+            diagnostics?.record(.init(kind: .metaVoiceEligibilityRetryExhausted))
+            return
+        }
+        eligibilityRetries += 1
+        eligibilityRetryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.eligibilityRetryTask = nil
+            self?.reconcile()
+        }
     }
 
     private func retireSelection() {
@@ -98,6 +134,7 @@ public final class MetaDATVoiceInvocationChannel {
     private func reconcile() {
         guard running else { return }
         guard case .registered = wearables.registrationState else {
+            cancelEligibilityRetry(resetBudget: true)
             retireSelection()
             return
         }
@@ -126,6 +163,7 @@ public final class MetaDATVoiceInvocationChannel {
         }?.identifier
 
         if chosen != selectedIdentifier {
+            cancelEligibilityRetry(resetBudget: true)
             retireSelection()
             selectedIdentifier = chosen
             if let chosen,
@@ -142,8 +180,15 @@ public final class MetaDATVoiceInvocationChannel {
               let device = wearables.deviceForIdentifier(chosen),
               device.linkState == .connected else {
             if listeningLease != nil { retireListener() }
+            diagnostics?.record(.init(
+                kind: chosen == nil ? .metaVoiceNoEligibleDevice : .metaVoiceAwaitingLink
+            ))
+            scheduleEligibilityRetry()
             return
         }
+        // The candidate became eligible. Retire any in-flight snapshot timer;
+        // the independent listener retry budget is unchanged.
+        cancelEligibilityRetry(resetBudget: true)
 
         guard listeningLease == nil, retryTask == nil else { return }
         // Once bounded reopen attempts have been exhausted, incidental
