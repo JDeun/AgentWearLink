@@ -155,7 +155,7 @@ struct MetaDATTestHostApp: App {
 
                         state = "host-error"
                     } catch {
-                        NSLog("[AgentWearLinkMetaDATTestHost] bootstrap failed: \(error)")
+                        NSLog("[AgentWearLinkMetaDATTestHost] bootstrap failed (details redacted)")
                         state = "host-error"
                     }
                 }
