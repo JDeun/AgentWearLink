@@ -20,30 +20,29 @@ final class AWLMockPhotoSnapshotHarness: ObservableObject {
             snapshotTimeout: .seconds(5)
         )
         status = "photo-connecting"
+        let result: String
         do {
             try await adapter.connect()
             status = "photo-capturing"
             let image = try await adapter.captureSnapshot(
                 interactionID: InteractionID()
             )
-            guard image.format == .jpeg, image.data.count >= 4,
-                  image.data.prefix(2) == Data([0xFF, 0xD8]),
-                  image.data.suffix(2) == Data([0xFF, 0xD9]) else {
-                status = "photo-invalid-jpeg"
-                await adapter.disconnect()
-                return
+            if image.format == .jpeg, image.data.count >= 4,
+               image.data.prefix(2) == Data([0xFF, 0xD8]),
+               image.data.suffix(2) == Data([0xFF, 0xD9]) {
+                result = "photo-snapshot-verified"
+            } else {
+                result = "photo-invalid-jpeg"
             }
-            // Do not expose a terminal success marker until the vendor
-            // session has actually been retired. The UI test uses that marker
-            // as the barrier before starting a second permission-denied run.
-            status = "photo-disconnecting"
         } catch {
             // Never surface SDK error strings or private image bytes to UI.
-            status = status == "photo-connecting" ? "photo-connect-failed" : "photo-capture-failed"
+            result = status == "photo-connecting"
+                ? "photo-connect-failed" : "photo-capture-failed"
         }
+        // Both success and failure become terminal only after all camera
+        // resources/session ownership have been retired. UI tests can safely
+        // start a second run or unpair after observing this marker.
         await adapter.disconnect()
-        if status == "photo-disconnecting" {
-            status = "photo-snapshot-verified"
-        }
+        status = result
     }
 }
