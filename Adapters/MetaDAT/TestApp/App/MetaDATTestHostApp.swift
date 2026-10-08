@@ -91,6 +91,20 @@ struct MetaDATTestHostApp: App {
                         }
                     }
                     .accessibilityIdentifier("awl-reference-connect")
+                    Button("Connect voice-only (no media session)") {
+                        let suppliedToken = bootstrapToken
+                        bootstrapToken = ""
+                        Task {
+                            await referenceHost.connect(
+                                hostname: gatewayHostname,
+                                token: suppliedToken,
+                                sessionKey: targetSessionKey,
+                                enableVision: false,
+                                voiceOnly: true
+                            )
+                        }
+                    }
+                    .accessibilityIdentifier("awl-reference-voice-only-connect")
                     TextField("Photo question", text: $photoPrompt)
                         .accessibilityIdentifier("awl-photo-prompt")
                     Button("Capture one photo and ask OpenClaw") {

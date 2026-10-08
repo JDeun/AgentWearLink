@@ -182,7 +182,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         hostname: String,
         token: String,
         sessionKey: String,
-        enableVision: Bool
+        enableVision: Bool,
+        voiceOnly: Bool = false
     ) async {
         guard !connectionFence.isStarting, !disconnectInProgress else {
             status = "connection-in-progress"
@@ -257,8 +258,16 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             let sink = AppleSpeechOutput(
                 synthesizer: AVSpeechSynthesizerBridge(language: "ko-KR")
             )
+            // No camera/media DeviceSession is created in voice-only mode.
+            // Core still owns a production agent, output and event subscription.
+            let runtimeDevice: any DeviceAdapter
+            if voiceOnly {
+                runtimeDevice = MetaDATVoiceOnlyDeviceAdapter(vendor: concreteDevice)
+            } else {
+                runtimeDevice = concreteDevice
+            }
             let composed = AgentWearLinkRuntime(
-                device: concreteDevice,
+                device: runtimeDevice,
                 agent: agent,
                 outputSink: sink,
                 diagnostics: diagnostics
@@ -268,7 +277,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             // either transport, so no device event is lost during connect.
             runtime = composed
             device = concreteDevice
-            visionAgent = agent
+            visionAgent = voiceOnly ? nil : agent
             outputSink = sink
             do {
                 try await composed.start()
@@ -283,16 +292,21 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                     return
                 }
 
-                // Core subscribed to device.events() before connecting.
-                // Independent Meta Voice Invocation may now enter that stream.
-                await concreteDevice.startVoiceInvocationListening()
+                // In media mode, start the independent listener only after the
+                // media runtime is ready. Voice-only DeviceAdapter.connect()
+                // already started it without touching DeviceSession.
+                if !voiceOnly {
+                    await concreteDevice.startVoiceInvocationListening()
+                }
                 guard connectionFence.isCurrent(attempt) else {
                     await concreteDevice.stopVoiceInvocationListening()
                     await composed.stop()
                     clearRuntimeReferences()
                     return
                 }
-                status = "connected"
+                // Channel registration may still be pending. This is not a
+                // claim that physical Hey Meta or locked-phone launch works.
+                status = voiceOnly ? "voice-only-runtime-started" : "connected"
             } catch {
                 await concreteDevice.stopVoiceInvocationListening()
                 await composed.stop()
