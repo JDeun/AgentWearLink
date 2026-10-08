@@ -356,7 +356,7 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
             .terminalRunTimedOut(
                 timeoutPhase: "runtime",
                 providerStarted: true,
-                gatewayMessage: "agent run timed out"
+                gatewayMessage: nil
             )
         )
     }
@@ -548,6 +548,45 @@ final class OpenClawNativeAgentAdapterTests: XCTestCase {
         let callCount = await script.callCount()
         XCTAssertEqual(callCount, 1)
     }
+    func testUntrustedGatewayTerminalErrorsDoNotEscapeToUI() throws {
+        let sensitive = try JSONDecoder().decode(
+            OpenClawAgentWaitResult.self,
+            from: Data(#"""
+            {
+              "status":"error",
+              "error":"SECRET_API_KEY=private",
+              "stopReason":"PRIVATE_SESSION_KEY=123"
+            }
+            """#.utf8)
+        )
+        let message = OpenClawNativeAgentAdapter.safeTerminalFailureMessage(sensitive)
+        XCTAssertEqual(message, "OpenClaw agent run failed (details redacted)")
+        XCTAssertFalse(message.contains("SECRET_API_KEY"))
+        XCTAssertFalse(message.contains("PRIVATE_SESSION_KEY"))
+    }
+
+    func testTimeoutPhaseAllowlistRejectsRawSensitiveMetadata() throws {
+        let sensitive = try JSONDecoder().decode(
+            OpenClawAgentWaitResult.self,
+            from: Data(#"""
+            {
+              "status":"timeout",
+              "timeoutPhase":"SECRET_ACCOUNT_IDENTIFIER",
+              "providerStarted":true,
+              "error":"SECRET_PROVIDER_TRACE"
+            }
+            """#.utf8)
+        )
+        let sanitized = OpenClawNativeAgentAdapter.terminalRunTimeoutError(sensitive)
+        XCTAssertEqual(sanitized, .terminalRunTimedOut(
+            timeoutPhase: nil,
+            providerStarted: true,
+            gatewayMessage: nil
+        ))
+        XCTAssertFalse(String(reflecting: sanitized).contains("SECRET_ACCOUNT_IDENTIFIER"))
+        XCTAssertFalse(String(reflecting: sanitized).contains("SECRET_PROVIDER_TRACE"))
+    }
+
     func testTerminalReplyReconciliationEmitsOnlyMissingSuffix() throws {
         let suffix = try OpenClawNativeAgentAdapter.terminalReplySuffix(
             streamedText: "hello",

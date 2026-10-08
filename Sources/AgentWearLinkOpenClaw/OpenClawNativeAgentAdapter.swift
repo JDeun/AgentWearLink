@@ -273,11 +273,12 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
                         )
                         continuation.finish()
                     case "error":
-                        let message = terminal.error
-                            ?? terminal.stopReason
-                            ?? "OpenClaw agent run failed"
+                        // Gateway/provider details are untrusted text and may
+                        // contain private model, account or session context.
                         try Self.yieldResponse(
-                            .failed(interactionID, .agent(message)),
+                            .failed(interactionID, .agent(
+                                Self.safeTerminalFailureMessage(terminal)
+                            )),
                             to: continuation
                         )
                         continuation.finish()
@@ -285,7 +286,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
                         throw Self.terminalRunTimeoutError(terminal)
                     default:
                         throw OpenClawNativeAdapterError.unexpectedWaitStatus(
-                            terminal.status
+                            "unrecognized"
                         )
                     }
 
@@ -626,13 +627,26 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         return false
     }
 
+    nonisolated static func safeTerminalFailureMessage(
+        _: OpenClawAgentWaitResult
+    ) -> String {
+        "OpenClaw agent run failed (details redacted)"
+    }
+
     nonisolated static func terminalRunTimeoutError(
         _ result: OpenClawAgentWaitResult
     ) -> OpenClawNativeAdapterError {
-        .terminalRunTimedOut(
-            timeoutPhase: result.timeoutPhase,
+        let phase: String?
+        switch result.timeoutPhase {
+        case "queue", "runtime", "provider":
+            phase = result.timeoutPhase
+        default:
+            phase = nil
+        }
+        return .terminalRunTimedOut(
+            timeoutPhase: phase,
             providerStarted: result.providerStarted,
-            gatewayMessage: result.error
+            gatewayMessage: nil
         )
     }
 
