@@ -81,6 +81,10 @@ struct MetaDATTestHostApp: App {
                         Task { await referenceHost.disconnect() }
                     }
                     .accessibilityIdentifier("awl-reference-disconnect")
+                    Button("Copy sanitized diagnostics") {
+                        referenceHost.copySanitizedDiagnostics()
+                    }
+                    .accessibilityIdentifier("awl-copy-sanitized-diagnostics")
                     Button("Register with Meta AI") {
                         Task { await referenceHost.startRegistration() }
                     }
