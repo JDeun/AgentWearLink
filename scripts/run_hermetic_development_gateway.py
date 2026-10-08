@@ -282,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
             # classifier never emits Gateway responses or private identifiers.
             env["AWL_DEV_GATEWAY_EXPECT_PAIRING"] = "1"
             env["AWL_DEV_GATEWAY_USE_BUILT_PROBE"] = "1"
+            env["AWL_DEV_GATEWAY_PHASE_FILE"] = str(temp / "probe-phase")
         try:
             validate_config(env)
         except ValueError:
@@ -342,7 +343,21 @@ def main(argv: list[str] | None = None) -> int:
                         127: "probe-binary-unavailable",
                     }
                     category = categories.get(result.returncode, "unexpected-exit")
-                    print("Isolated real Gateway negative-contract failed: " + category,
+                    # Report only a fixed phase ID, never Gateway frames.
+                    safe_phases = {
+                        "handshake-started", "socket-opened",
+                        "challenge-received", "connect-sent",
+                        "response-received", "authenticated",
+                        "health-accepted", "pairing-required", "probe-error",
+                    }
+                    try:
+                        phase = (temp / "probe-phase").read_text().strip()
+                    except OSError:
+                        phase = "unobserved"
+                    if phase not in safe_phases:
+                        phase = "unobserved"
+                    print("Isolated real Gateway negative-contract failed: "
+                          + category + " (last-phase=" + phase + ")",
                           file=sys.stderr)
                     return 1
                 if result.returncode == 0:
