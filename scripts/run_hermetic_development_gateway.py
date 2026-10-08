@@ -66,14 +66,16 @@ def isolated_environment(
 
     # Strip inherited model/provider secrets. A full-chat development model
     # should use a separate, deliberately isolated configuration/provider.
-    env = {
-        k: v for k, v in original.items()
-        if not (
-            k.endswith(("_API_KEY", "_PASSWORD", "_SECRET", "_ACCESS_TOKEN"))
-            or k.startswith(("AWL_", "OPENCLAW_", "ANTHROPIC_", "OPENAI_",
-                             "GEMINI_", "TAVILY_"))
-        )
-    }
+    # Deliberately carry only the minimum host toolchain environment.
+    # A suffix-denylist could miss AWS_SECRET_ACCESS_KEY, credential files,
+    # third-party provider tokens, shell auto-import or arbitrary app secrets.
+    allowed = frozenset({
+        "PATH", "LANG", "LC_ALL", "TMPDIR", "DEVELOPER_DIR", "SDKROOT",
+        "SYSTEMROOT", "COMSPEC",
+    })
+    env = {k: v for k, v in original.items() if k in allowed}
+    env["HOME"] = str(home / "home")
+    (home / "home").mkdir(mode=0o700, exist_ok=True)
     env.update({
         "OPENCLAW_STATE_DIR": str(home / "state"),
         "OPENCLAW_CONFIG_PATH": str(home / "state" / "openclaw.json"),
@@ -82,6 +84,7 @@ def isolated_environment(
         "OPENCLAW_GATEWAY_TOKEN": token,
         "OPENCLAW_SKIP_CHANNELS": "1",
         "OPENCLAW_LOAD_SHELL_ENV": "0",
+        "AWL_DEV_KEYCHAIN_NONCE": secrets.token_hex(10),
         "AWL_ALLOW_DEV_GATEWAY_TEST": "1",
         "AWL_OPENCLAW_URL": f"ws://127.0.0.1:{port}",
         "AWL_OPENCLAW_EXPOSURE": "loopback",
