@@ -20,24 +20,27 @@ _TERMINATION_GRACE_SECONDS = 3
 
 
 def _stop_process_group(process: subprocess.Popen[bytes]) -> None:
-    """Terminate the entire swift-run process group, including child runners."""
-    if process.poll() is not None:
-        return
+    """Reap our *entire private session* even if the Swift parent exited.
+
+    A successful SwiftPM wrapper can outlive its own child test/probe process
+    group. Never leave an owned descendant attached to the next health probe.
+    """
+    parent_running = process.poll() is None
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=_TERMINATION_GRACE_SECONDS)
-    except subprocess.TimeoutExpired:
         pass
-    # swift-run may spawn an independently running xcodebuild or probe child.
-    # Signal the original process group even if the direct parent already exited.
+    if parent_running:
+        try:
+            process.wait(timeout=_TERMINATION_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            pass
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    process.wait()
+    if process.poll() is None:
+        process.wait()
 
 
 def run_command(command: Sequence[str], *, timeout_seconds: int) -> int:
@@ -66,8 +69,7 @@ def run_command(command: Sequence[str], *, timeout_seconds: int) -> int:
         print("Development Gateway probe interrupted.", file=sys.stderr)
         return 130
     finally:
-        if process.poll() is None:
-            _stop_process_group(process)
+        _stop_process_group(process)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
