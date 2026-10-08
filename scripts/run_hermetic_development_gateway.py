@@ -148,7 +148,6 @@ def approve_one_isolated_pairing(
     *,
     input_stream=None,
     timeout_seconds: int = 120,
-    ci_single_request: bool = False,
 ) -> bool:
     """Human-entered exact request ID; never bulk/auto approve devices.
 
@@ -156,15 +155,6 @@ def approve_one_isolated_pairing(
     No personal Mac mini/Tailnet credentials or session data are consulted.
     """
     entry = input_stream if input_stream is not None else sys.stdin
-    # CI can approve exactly ONE pending synthetic request only if this
-    # runner itself launched the isolated loopback Gateway. Never enable
-    # headless approval through the ordinary operator command/profile.
-    if ci_single_request and not (
-        env.get("AWL_CI_SINGLE_REQUEST_APPROVAL") == "1"
-        and env.get("GITHUB_ACTIONS") == "true"
-        and env.get("CI") == "true"
-    ):
-        return False
     state = Path(env.get("OPENCLAW_STATE_DIR", ""))
     gateway_url = env.get("AWL_OPENCLAW_URL", "")
     token = env.get("AWL_OPENCLAW_TOKEN", "")
@@ -176,7 +166,7 @@ def approve_one_isolated_pairing(
             or not state.parent.name.startswith("awl-real-dev-gateway-")
             or not token
             or env.get("OPENCLAW_GATEWAY_TOKEN") != token
-            or (not ci_single_request and not entry.isatty())):
+            or not entry.isatty()):
         return False
     try:
         listed = subprocess.run(
@@ -201,25 +191,17 @@ def approve_one_isolated_pairing(
                 allowed.append(request_id)
         if not allowed:
             return False
-        if ci_single_request:
-            # CI's loopback Gateway has synthetic credentials and starts from
-            # empty state. More than one pending request is ambiguous: never
-            # guess 'latest', approve a bulk set, or leak device identifiers.
-            if len(allowed) != 1:
-                return False
-            selected = allowed[0]
-        else:
-            print("Only the disposable local Gateway's pending request IDs:")
-            for request_id in allowed:
-                print("  " + request_id)
-            print("Inspect each request locally before approval. Enter the exact "
-                  "request ID; any other input cancels. No token is displayed.")
-            ready, _, _ = select.select([entry], [], [], timeout_seconds)
-            if not ready:
-                return False
-            selected = entry.readline().strip()
-            if selected not in allowed:
-                return False
+        print("Only the disposable local Gateway's pending request IDs:")
+        for request_id in allowed:
+            print("  " + request_id)
+        print("Inspect each request locally before approval. Enter the exact "
+              "request ID; any other input cancels. No token is displayed.")
+        ready, _, _ = select.select([entry], [], [], timeout_seconds)
+        if not ready:
+            return False
+        selected = entry.readline().strip()
+        if selected not in allowed:
+            return False
         approved = subprocess.run(
             [node, str(checkout / "dist" / "entry.js"),
              "devices", "approve", selected, "--url", gateway_url],
@@ -247,16 +229,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--approve-isolated-pairing", action="store_true",
                         help="Allow a human to approve exact pending IDs on this "
                              "disposable Gateway only; TTY required")
-    parser.add_argument("--ci-approve-single-request", action="store_true",
-                        help="GitHub Actions only: approve exactly one pending "
-                             "synthetic request in the freshly created loopback Gateway")
+    parser.add_argument("--expect-pairing-required", action="store_true",
+                        help="Validate that the real ephemeral Gateway rejects an "
+                             "unapproved client, without granting permission")
     args = parser.parse_args(argv)
-    if args.ci_approve_single_request and (
-        args.approve_isolated_pairing
-        or os.environ.get("GITHUB_ACTIONS") != "true"
-        or os.environ.get("CI") != "true"
-    ):
-        print("Isolated Gateway runner: CI-only approval mode refused.",
+    if args.expect_pairing_required and (args.approve_isolated_pairing or args.full_chat or args.prove_abort):
+        print("Isolated Gateway runner: negative pairing test must be read-only.",
               file=sys.stderr)
         return 2
 
@@ -298,10 +276,6 @@ def main(argv: list[str] | None = None) -> int:
             revision=args.revision, token=secrets.token_urlsafe(32),
             full_chat=args.full_chat, prove_abort=args.prove_abort,
         )
-        if args.ci_approve_single_request:
-            env["AWL_CI_SINGLE_REQUEST_APPROVAL"] = "1"
-            env["GITHUB_ACTIONS"] = "true"
-            env["CI"] = "true"
         try:
             validate_config(env)
         except ValueError:
@@ -351,13 +325,18 @@ def main(argv: list[str] | None = None) -> int:
                     print("Isolated Gateway runner: bounded probes failed.",
                           file=sys.stderr)
                     return 1
+                if args.expect_pairing_required:
+                    if result.returncode == 3:
+                        print("Isolated real Gateway rejected unapproved read-only identity as expected.")
+                        return 0
+                    print("Isolated real Gateway pairing rejection was not observed.", file=sys.stderr)
+                    return 1
                 if result.returncode == 0:
                     print("Isolated Gateway runner: real loopback Gateway probes passed; "
                           "no physical/Tailnet claim.")
                     return 0
                 if (result.returncode != 3
-                        or not (args.approve_isolated_pairing
-                                or args.ci_approve_single_request)
+                        or not args.approve_isolated_pairing
                         or approval_attempt >= 2
                         or time.monotonic() >= deadline):
                     print("Isolated Gateway runner: real probe did not pass.",
@@ -366,7 +345,6 @@ def main(argv: list[str] | None = None) -> int:
                 if not approve_one_isolated_pairing(
                     node, checkout, env,
                     timeout_seconds=min(120, max(1, int(deadline - time.monotonic()))),
-                    ci_single_request=args.ci_approve_single_request,
                 ):
                     print("Isolated Gateway runner: pairing not approved.",
                           file=sys.stderr)
