@@ -156,6 +156,13 @@ revoked, read-only, mismatched-role or different-endpoint grant fails closed
 and may require renewed approval. The status
 `gateway-token-or-approved-grant-required` is intentionally generic.
 
+To verify revocation without exposing secrets, first establish a successful
+approved connection, disconnect, and reconnect with the token field empty.
+Next revoke that exact device grant on the isolated development Gateway
+and repeat the tokenless Connect action: it must fail with a redacted status,
+not silently fall back to another credential or a different Gateway. Record
+only success/failure categories and the Gateway revision, never device tokens.
+
 This is **not** background auto-start, unsolicited reconnection after iOS
 process death, or physical Tailnet pairing proof. The flow remains opt-in via
 a foreground app user gesture. Real Gateway validation of initial pairing,
