@@ -183,18 +183,18 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
                 AsyncThrowingStream<Data, Error>(
                     bufferingPolicy: .bufferingNewest(1)
                 ) { continuation in
-                    readiness.observe(stream) {
+                    let frameLease = readiness.observe(stream) {
                         _ = continuation.yield(Data())
                         continuation.finish()
                     }
 
                     let waitToken = gate.install {
-                        readiness.reset()
+                        readiness.reset(ifCurrent: frameLease)
                         continuation.finish(throwing: CancellationError())
                     }
                     continuation.onTermination = { _ in
                         gate.clear(waitToken)
-                        readiness.reset()
+                        readiness.reset(ifCurrent: frameLease)
                     }
                 }
             },
@@ -231,7 +231,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         let events = AsyncThrowingStream<Data, Error>(
             bufferingPolicy: .bufferingNewest(1)
         ) { continuation in
-            listener.arm(
+            let photoLease = listener.arm(
                 stream,
                 onData: { data in
                     _ = continuation.yield(data)
@@ -245,12 +245,12 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
             )
 
             let waitToken = gate.install {
-                listener.cancel()
+                listener.cancel(ifCurrent: photoLease)
                 continuation.finish(throwing: CancellationError())
             }
             continuation.onTermination = { _ in
                 gate.clear(waitToken)
-                listener.cancel()
+                listener.cancel(ifCurrent: photoLease)
             }
         }
 

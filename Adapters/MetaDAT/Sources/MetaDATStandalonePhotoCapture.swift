@@ -20,16 +20,30 @@ final class MetaDATStandalonePhotoCapture: @unchecked Sendable {
 
     /// Stop/suspend/registration loss synchronously retires all callbacks.
     func cancel() {
-        generation.invalidate()
+        retire(ifCurrent: nil)
+    }
+
+    /// A deferred stream termination belongs to one capture generation only.
+    /// Check and retire under the same lock as begin(), so the previous
+    /// stream cannot tear down the next capture's listeners.
+    private func retire(ifCurrent lease: UInt64?) {
         let retired = lock.withLock { () -> (
             [any AnyListenerToken],
             AsyncThrowingStream<Event, Error>.Continuation?
-        ) in
+        )? in
+            if let lease {
+                guard generation.invalidate(ifCurrent: lease) else {
+                    return nil
+                }
+            } else {
+                generation.invalidate()
+            }
             let result = (tokens, continuation)
             tokens = []
             continuation = nil
             return result
         }
+        guard let retired else { return }
         retired.1?.finish(throwing: CancellationError())
         for token in retired.0 {
             Task { await token.cancel() }
@@ -44,7 +58,7 @@ final class MetaDATStandalonePhotoCapture: @unchecked Sendable {
         // previous Photo generation. The parent snapshot controller enforces
         // single-flight admission and owns Camera teardown.
         cancel()
-        let lease = generation.begin()
+        let lease = lock.withLock { generation.begin() }
 
         // Register all three publishers BEFORE photo.start(). An immediate
         // .started or image callback is buffered rather than lost.
@@ -94,7 +108,7 @@ final class MetaDATStandalonePhotoCapture: @unchecked Sendable {
                 }
             }
             continuation.onTermination = { [weak self] _ in
-                self?.cancel()
+                self?.retire(ifCurrent: lease)
             }
         }
 
