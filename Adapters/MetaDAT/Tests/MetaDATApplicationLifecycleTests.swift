@@ -25,8 +25,15 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         await lifecycle.transition(to: .background)
 
         var iterator = phases.makeAsyncIterator()
-        let firstVisible = await iterator.next()
-        XCTAssertEqual(firstVisible, .background)
+        // The bounded edge-preserving stream now retains the initial
+        // foreground snapshot as well as the first background transition.
+        // Consumers must observe both; they must not skip background.
+        let initial = await iterator.next()
+        let background = await iterator.next()
+        let latest = await lifecycle.currentPhase
+        XCTAssertEqual(initial, .foreground)
+        XCTAssertEqual(background, .background)
+        XCTAssertEqual(latest, .background)
     }
 
     func testReplacementSubscriptionOwnsFutureLifecycleTransitions() async {
@@ -49,21 +56,38 @@ final class MetaDATApplicationLifecycleTests: XCTestCase {
         XCTAssertEqual(replacementBackground, .background)
     }
 
-    func testPhaseStreamCoalescesBurstToNewestState() async {
+    func testBackgroundIsNotOverwrittenByRapidForeground() async {
         let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
         let phases = lifecycle.phases()
         var iterator = phases.makeAsyncIterator()
 
-        // Consume the installation value so subsequent transitions exercise
-        // only the single-slot coalescing buffer.
         let initial = await iterator.next()
         XCTAssertEqual(initial, .foreground)
-
         await lifecycle.transition(to: .background)
         await lifecycle.transition(to: .foreground)
 
-        let latest = await iterator.next()
-        XCTAssertEqual(latest, .foreground)
+        // Event consumers must see the retirement edge even when the current
+        // phase is already foreground again. Fresh state comes from currentPhase.
+        let retirement = await iterator.next()
+        let latestPhase = await lifecycle.currentPhase
+        XCTAssertEqual(retirement, .background)
+        XCTAssertEqual(latestPhase, .foreground)
+    }
+
+    func testUnconsumedInitialPhaseCannotHideBackground() async {
+        let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
+        let phases = lifecycle.phases()
+        // Deliberately leave the initial phase queued until both edges occur.
+        await lifecycle.transition(to: .background)
+        await lifecycle.transition(to: .foreground)
+
+        var iterator = phases.makeAsyncIterator()
+        let initial = await iterator.next()
+        let retirement = await iterator.next()
+        let latestPhase = await lifecycle.currentPhase
+        XCTAssertEqual(initial, .foreground)
+        XCTAssertEqual(retirement, .background)
+        XCTAssertEqual(latestPhase, .foreground)
     }
 
     func testForegroundReadinessRequiresFreshReacquisitionAfterBackground() async {
