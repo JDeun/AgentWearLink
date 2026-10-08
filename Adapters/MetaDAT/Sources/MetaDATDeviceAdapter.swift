@@ -442,8 +442,20 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         do {
             cameraGranted = try await wearables.checkPermissionStatus(.camera) == .granted
         } catch {
-            liveCapabilities.update(cameraReady: false)
+            // A stale permission query must not overwrite the readiness of
+            // a newer session created while this snapshot was suspended.
+            if generationFence.owns(generation),
+               !stopping,
+               deviceSession === session {
+                liveCapabilities.update(cameraReady: false)
+            }
             throw error
+        }
+
+        guard generationFence.owns(generation),
+              !stopping,
+              deviceSession === session else {
+            throw CancellationError()
         }
         guard cameraGranted else {
             liveCapabilities.update(cameraReady: false)
@@ -452,12 +464,6 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             )
         }
         liveCapabilities.update(cameraReady: true)
-
-        guard generationFence.owns(generation),
-              !stopping,
-              deviceSession === session else {
-            throw CancellationError()
-        }
 
         diagnostics?.record(.init(
             kind: .metaSnapshotRequested,
@@ -500,6 +506,13 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         }
 
         let microphoneStatus = try await wearables.checkPermissionStatus(.microphone)
+        // Permission checks suspend the actor; disconnect/reconnect may have
+        // retired the owning session before this continuation resumes.
+        guard generationFence.owns(generation),
+              !stopping,
+              deviceSession === session else {
+            throw CancellationError()
+        }
         guard microphoneStatus == .granted else {
             throw AWLError.capabilityUnavailable(
                 "Meta DAT microphone permission is not granted"
@@ -513,6 +526,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         }
 
         await transcriptDeduplicator.reset()
+
+        // Do not create/start a Speech listener for an already retired
+        // DeviceSession, or let a stale setup task overwrite the new session.
+        guard generationFence.owns(generation),
+              !stopping,
+              deviceSession === session else {
+            throw CancellationError()
+        }
 
         let transcripts = speechTranscriptStream.stream(from: speech)
         speechTask = Task { [weak self] in
