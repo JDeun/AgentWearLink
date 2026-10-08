@@ -28,7 +28,9 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
 
     private let firstFrameReadiness = MetaDATFirstFrameReadiness()
     private let photoResultListener = MetaDATPhotoResultListener()
+    #if DEBUG
     private let standalonePhotoCapture = MetaDATStandalonePhotoCapture()
+    #endif
     private let waitGate = MetaDATCaptureWaitGate()
 
     public init(
@@ -81,6 +83,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         try ensureCurrent(token)
 
         if snapshotMode == .experimentalStandalonePhoto {
+            #if DEBUG
             // Experimental and non-publishable per pinned DAT 1.0.0:
             // never enable without an explicit owner-selected mode.
             // No Stream.start(), video frames or audio transport in this path.
@@ -100,6 +103,11 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
                 format: .jpeg,
                 maximumBytes: maximumBytes
             )
+            #else
+            throw AWLError.capabilityUnavailable(
+                "Meta DAT standalone Photo is unavailable outside DEBUG builds"
+            )
+            #endif
         }
 
         let stream = camera.stream
@@ -153,10 +161,12 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         waitGate.cancel()
         firstFrameReadiness.reset()
         photoResultListener.cancel()
+        #if DEBUG
         standalonePhotoCapture.cancel()
         if snapshotMode == .experimentalStandalonePhoto {
             retiredCamera?.photo.stop()
         }
+        #endif
         retiredCamera?.stream.stop()
         retiredCamera?.stop()
     }
@@ -289,9 +299,11 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         // Idempotent with invalidate(): whichever boundary retires Camera
         // first owns the stop, so late capture completion cannot stop a new
         // generation's camera or keep a previous one alive between captures.
+        #if DEBUG
         if snapshotMode == .experimentalStandalonePhoto {
             retiredCamera?.photo.stop()
         }
+        #endif
         retiredCamera?.stream.stop()
         retiredCamera?.stop()
     }
