@@ -55,10 +55,10 @@ class RemainingOpenClawXCTestShardsTests(unittest.TestCase):
             root = Path(directory)
             self.make_source(
                 root, "OpenClawRecoveryMatrixTests",
-                "final class OpenClawRecoveryMatrixTests: XCTestCase {\\n"
-                "    func testReconnect() async throws {}\\n"
-                "    func testStop() async throws {}\\n"
-                "}\\n",
+                "final class OpenClawRecoveryMatrixTests: XCTestCase {\n"
+                "    func testReconnect() async throws {}\n"
+                "    func testStop() async throws {}\n"
+                "}\n",
             )
             self.assertEqual(
                 discover_method_shards(root, "OpenClawRecoveryMatrixTests"),
@@ -70,10 +70,10 @@ class RemainingOpenClawXCTestShardsTests(unittest.TestCase):
             root = Path(directory)
             self.make_source(
                 root, "OpenClawRecoveryMatrixTests",
-                "final class OpenClawRecoveryMatrixTests: XCTestCase {\\n"
-                "    func testReconnect() {}\\n"
-                "    func testReconnect() {}\\n"
-                "}\\n",
+                "final class OpenClawRecoveryMatrixTests: XCTestCase {\n"
+                "    func testReconnect() {}\n"
+                "    func testReconnect() {}\n"
+                "}\n",
             )
             with self.assertRaises(ValueError):
                 discover_method_shards(root, "OpenClawRecoveryMatrixTests")
