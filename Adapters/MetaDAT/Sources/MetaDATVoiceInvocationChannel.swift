@@ -146,17 +146,23 @@ public final class MetaDATVoiceInvocationChannel {
 
         let candidates = wearables.devices.compactMap { identifier
             -> (identifier: DeviceIdentifier, rank: Int)? in
-            guard let device = wearables.deviceForIdentifier(identifier),
-                  device.compatibility() == .compatible else {
+            guard let device = wearables.deviceForIdentifier(identifier) else {
+                return nil
+            }
+            let compatibility = device.compatibility()
+            // An undefined compatibility is not permission to listen. It is
+            // only eligible for observation until DAT completes negotiation.
+            // Explicit update-required devices remain excluded.
+            guard compatibility == .compatible || compatibility == .undefined else {
                 return nil
             }
             let rank: Int
-            if device.linkState == .connected && device.donState == .donned {
-                rank = 0
+            if device.linkState == .connected && compatibility == .compatible {
+                rank = device.donState == .donned ? 0 : 1
             } else if device.linkState == .connected {
-                rank = 1
-            } else {
                 rank = 2
+            } else {
+                rank = compatibility == .compatible ? 3 : 4
             }
             return (identifier: identifier, rank: rank)
         }
@@ -187,13 +193,21 @@ public final class MetaDATVoiceInvocationChannel {
             }
         }
 
+        let candidateDevice = chosen.flatMap { wearables.deviceForIdentifier($0) }
         guard let chosen,
-              let device = wearables.deviceForIdentifier(chosen),
-              device.linkState == .connected else {
+              let device = candidateDevice,
+              device.linkState == .connected,
+              device.compatibility() == .compatible else {
             if listeningLease != nil { retireListener() }
-            diagnostics?.record(.init(
-                kind: chosen == nil ? .metaVoiceNoEligibleDevice : .metaVoiceAwaitingLink
-            ))
+            let diagnostic: AWLDiagnosticKind
+            if candidateDevice == nil {
+                diagnostic = .metaVoiceNoEligibleDevice
+            } else if candidateDevice?.compatibility() == .undefined {
+                diagnostic = .metaVoiceAwaitingCompatibility
+            } else {
+                diagnostic = .metaVoiceAwaitingLink
+            }
+            diagnostics?.record(.init(kind: diagnostic))
             scheduleEligibilityRetry()
             return
         }
