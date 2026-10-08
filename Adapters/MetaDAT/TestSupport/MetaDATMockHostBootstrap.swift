@@ -75,6 +75,22 @@ public enum MetaDATMockHostBootstrap {
         #endif
     }
 
+    /// Inject the pinned SDK's native Camera.photo failure for the next
+    /// experimental standalone capture. Never changes release camera behavior.
+    public static func failNextMockStandalonePhotoCapture() throws {
+        #if DEBUG
+        guard !MockDeviceKit.shared.pairedDevices.isEmpty else {
+            throw MetaDATMockHostError.noPairedDevices
+        }
+        for device in MockDeviceKit.shared.pairedDevices {
+            guard let glasses = device as? MockGlasses else { continue }
+            glasses.services.cameraCapture.simulateCaptureFailure()
+        }
+        #else
+        throw MetaDATMockHostError.unavailableInReleaseBuild
+        #endif
+    }
+
     /// Configure the same deterministic captured photo on both current mock
     /// still-capture routes. Called by the UI-test host *after* pairing so no
     /// test fixture is installed in the release adapter or stored persistently.
