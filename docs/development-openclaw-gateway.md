@@ -89,34 +89,28 @@ a fresh synthetic service namespace; their presence alone does not imply
 approval of a deployment identity. Do not confuse loopback probe success
 with iPhone/Tailnet/Ray-Ban physical evidence.
 
-## Credential-free real Gateway CI on a disposable macOS runner
+## Credential-free upstream Gateway negative contract on CI
 
-The dedicated [real Gateway smoke workflow](../.github/workflows/real-openclaw-gateway.yml)
-runs on GitHub-hosted **macOS 26**. It checks out the **exact protocol-v4
-source revision** recorded in `docs/openclaw-protocol-contract.md`, uses
-upstream-required Node.js 26 / pnpm, builds that real OpenClaw binary and
-starts an entirely new loopback-only Gateway in a temporary home with a
-random generated token. No personal OpenClaw login, model API key, Mac mini,
-Tailscale or wearable is supplied.
+The dedicated [real Gateway CI workflow](../.github/workflows/real-openclaw-gateway.yml)
+uses GitHub-hosted macOS 26 to build the exact audited upstream
+OpenClaw revision under an ephemeral home, random loopback port,
+and synthetic token. It never accesses the owner's Mac mini, Tailnet,
+model credentials or personal sessions.
 
-For unattended CI **only**, `--ci-approve-single-request` permits a single
-synthetic pending device request to be approved **only in the Gateway just
-created by the runner**. Guardrails require GitHub Actions + CI markers,
-the exact localhost WebSocket endpoint, same randomly generated Gateway
-token, and a temporary HOME/state directory. A second concurrent pending
-request, unexpected endpoint/profile, missing markers or any ambiguity
-fails closed. This CI permission is not accepted in the normal local/TTY
-operator path and never approves an arbitrary or 'latest' pending request.
-The test does not print tokens, requests or Gateway messages.
+The automated gate only checks that the **real** OpenClaw Gateway
+rejects an unapproved, freshly generated AWL read-only device identity
+with a pairing-required response. That is a **negative protocol-contract
+test**, not successful authenticated health, persistent device-grant
+reuse, chat or abort. A rejection is counted as successful evidence
+only in explicit `--expect-pairing-required` mode; successful admission
+or any unrelated error fails that mode. CI does not automatically
+approve, register or trust any device.
 
-A successful workflow proves **real upstream Gateway connect/auth/health**
-and a second new Swift process health handshake on an independently
-validated adapter stack. It **does not** prove zero-bearer grant reuse
-because both processes still use the synthetic Gateway token. Nor does
-it prove incremental text, final terminal reconciliation or abort; those
-require the full isolated agent mode and separate acceptance evidence
-under #331. A failed build/handshake/probe is a test failure, not a reason
-to replace it with fixture-only success.
+Actual positive Layer-2 Gateway acceptance still uses the interactive
+`--approve-isolated-pairing` path above, with an operator selecting
+an exact pending request ID on the fresh local test Gateway.
+Afterward the full chat, cancellation and tokenless reuse proofs
+must be collected separately before closing #331.
 
 ## Isolation and prerequisites
 
