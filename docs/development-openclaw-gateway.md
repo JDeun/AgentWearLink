@@ -101,7 +101,17 @@ The automated gate only checks that the **real** OpenClaw Gateway
 rejects an unapproved, freshly generated AWL read-only device identity
 with a pairing-required response. That is a **negative protocol-contract
 test**, not successful authenticated health, persistent device-grant
-reuse, chat or abort. A rejection is counted as successful evidence
+reuse, chat or abort.
+
+The negative-only CI probe intentionally constructs the production
+`OpenClawGatewayConnection` and `OpenClawConnectAssembler` with a **fresh
+in-memory identity and empty credential store**, avoiding a potential unattended
+macOS Keychain permission prompt. This does **not** exercise Keychain writes,
+approved credentials, or persistent tokenless reconnect. A fail-closed policy
+enables those stores only for the disposable loopback/read-only negative mode.
+The real operator-approved development probe retains the ordinary production
+Keychain stores. The CI redacted phase breadcrumb separates challenge receipt,
+request assembly and actual WebSocket send; timeouts are failures, not evidence. A rejection is counted as successful evidence
 only in explicit `--expect-pairing-required` mode; successful admission
 or any unrelated error fails that mode. CI does not automatically
 approve, register or trust any device.
