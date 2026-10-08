@@ -276,6 +276,12 @@ def main(argv: list[str] | None = None) -> int:
             revision=args.revision, token=secrets.token_urlsafe(32),
             full_chat=args.full_chat, prove_abort=args.prove_abort,
         )
+        if args.expect_pairing_required:
+            # Narrow negative test to a single independently built Swift
+            # executable and one unapproved device challenge. The status
+            # classifier never emits Gateway responses or private identifiers.
+            env["AWL_DEV_GATEWAY_EXPECT_PAIRING"] = "1"
+            env["AWL_DEV_GATEWAY_USE_BUILT_PROBE"] = "1"
         try:
             validate_config(env)
         except ValueError:
@@ -329,7 +335,15 @@ def main(argv: list[str] | None = None) -> int:
                     if result.returncode == 3:
                         print("Isolated real Gateway rejected unapproved read-only identity as expected.")
                         return 0
-                    print("Isolated real Gateway pairing rejection was not observed.", file=sys.stderr)
+                    categories = {
+                        0: "unexpected-auth-success",
+                        1: "handshake-or-protocol-failure",
+                        124: "probe-timeout",
+                        127: "probe-binary-unavailable",
+                    }
+                    category = categories.get(result.returncode, "unexpected-exit")
+                    print("Isolated real Gateway negative-contract failed: " + category,
+                          file=sys.stderr)
                     return 1
                 if result.returncode == 0:
                     print("Isolated Gateway runner: real loopback Gateway probes passed; "
