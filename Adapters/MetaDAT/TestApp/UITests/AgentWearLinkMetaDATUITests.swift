@@ -128,6 +128,40 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         let unpaired = await client.unpairDevice(deviceId: deviceID)
         XCTAssertTrue(unpaired)
     }
+    func testReferenceForegroundWakeOptInSurvivesRelaunchAndIsRevocable() throws {
+        // No Meta registration, personal Tailnet or Gateway credentials are
+        // provisioned in CI. This proves only the explicit UI preference path.
+        let app = XCUIApplication()
+        app.launch()
+        defer { if app.state != .notRunning { app.terminate() } }
+
+        let hostname = app.textFields["awl-gateway-hostname"]
+        XCTAssertTrue(hostname.waitForExistence(timeout: 15))
+        let disabled = app.buttons["awl-disable-auto-wake"]
+        if disabled.exists { disabled.tap() }
+
+        hostname.tap()
+        hostname.typeText("synthetic-test.ts.net\n")
+        let enabled = app.buttons["awl-enable-auto-wake"]
+        XCTAssertTrue(enabled.waitForExistence(timeout: 10))
+        enabled.tap()
+
+        let status = app.staticTexts["awl-auto-wake-state"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "auto-wake-armed-for-next-launch")
+        XCTAssertTrue(app.buttons["awl-disable-auto-wake"].exists)
+
+        app.terminate()
+        app.launch()
+
+        let revoke = app.buttons["awl-disable-auto-wake"]
+        XCTAssertTrue(revoke.waitForExistence(timeout: 15))
+        revoke.tap()
+        let cleared = app.staticTexts["awl-auto-wake-state"]
+        XCTAssertEqual(cleared.label, "auto-wake-disabled")
+        XCTAssertTrue(app.buttons["awl-enable-auto-wake"].exists)
+    }
+
     func testMockVoiceLaunchAcknowledgedWithoutMediaSession() async throws {
         let portFile = NSTemporaryDirectory() + "awl-mwdat-voice-\(UUID().uuidString).port"
         defer { try? FileManager.default.removeItem(atPath: portFile) }

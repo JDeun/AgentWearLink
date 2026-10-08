@@ -169,6 +169,35 @@ a foreground app user gesture. Real Gateway validation of initial pairing,
 tokenless reconnect and revocation is tracked under #331/#117/#97; never
 equate Keychain unit tests or simulator compilation with that evidence.
 
+## Opt-in foreground cold-launch voice-wake composition (code-only)
+
+After the **real Gateway** has separately approved the iOS reference host's
+write-capable device identity, connect successfully at least once. In the
+reference iPhone app, enter the private `<mac-mini>.ts.net` hostname and an
+optional existing session key, then explicitly select **Enable next foreground
+launch (approved grant only)**. The app persists only that opt-in choice,
+hostname and optional session metadata locally in its app preferences.
+It does **not** persist, recover or re-enter the original bearer token.
+
+On the next **foreground app process launch**, the reference host attempts
+`MetaDATVoiceWakeDeviceAdapter` startup once with an empty bearer. The
+endpoint-scoped Keychain grant admission added in #590 must already contain
+an approved `operator` identity with `operator.read` and `operator.write`
+scopes. Missing/revoked/cross-Gateway or read-only grants fail closed,
+without constructing an authenticated session from a missing token.
+The auto-wake setting can be disabled in the reference app and its locally
+stored endpoint/session metadata cleared.
+
+This feature **does not launch iOS from the background**, force Meta
+registration, bypass locked-device restrictions, invoke a camera/media
+session without a foreground handoff, or automatically retry after failed
+pairing. It does not prove Meta AI actually launches a terminated app,
+nor that the first invocation survives cold OS launch and channel
+registration latency. Those real-world acceptance gates remain #6/#98,
+while real Gateway pairing/revocation evidence remains #97/#117/#331.
+No personal hostname, bearer, model output or agent session is embedded
+in the public project or XCTest fixtures.
+
 ## Opt-in iPhone → OpenClaw post-ack Voice + foreground Speech
 
 After local Meta provisioning, connect a private Tailnet Serve OpenClaw
