@@ -28,7 +28,7 @@
             <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>agentwearlink-meta-test</string>
+                <string>$(AWL_META_CALLBACK_SCHEME)</string>
             </array>
         </dict>
     </array>
@@ -36,13 +36,13 @@
     <key>MWDAT</key>
     <dict>
         <key>AppLinkURLScheme</key>
-        <string>agentwearlink-meta-test://</string>
+        <string>$(AWL_META_CALLBACK_SCHEME)://</string>
         <key>MetaAppID</key>
-        <string>0</string>
+        <string>$(AWL_META_APP_ID)</string>
         <key>ClientToken</key>
-        <string></string>
+        <string>$(AWL_META_CLIENT_TOKEN)</string>
         <key>TeamID</key>
-        <string></string>
+        <string>$(AWL_META_TEAM_ID)</string>
     </dict>
 
     <key>UIBackgroundModes</key>

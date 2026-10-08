@@ -33,6 +33,12 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.MetaDATTestHost
+        # Local -xcconfig overrides these at physical-device build time.
+        # Public CI stays unprovisioned and only runs simulator fixtures.
+        AWL_META_APP_ID: "0"
+        AWL_META_CLIENT_TOKEN: ""
+        AWL_META_TEAM_ID: ""
+        AWL_META_CALLBACK_SCHEME: agentwearlink-meta-test
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: App/Info.plist
     scheme:
