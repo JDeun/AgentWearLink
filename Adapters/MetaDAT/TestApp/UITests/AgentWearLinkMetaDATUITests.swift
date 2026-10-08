@@ -42,6 +42,20 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         let deviceState = await client.getDeviceState()
         XCTAssertNotNil(deviceState, "Mock server must expose the paired device state")
 
+        let configurePhoto = app.buttons["awl-meta-configure-photo-fixture"]
+        XCTAssertTrue(configurePhoto.waitForExistence(timeout: 5))
+        configurePhoto.tap()
+        let photoReady = NSPredicate(format: "label == %@", "photo-fixture-ready")
+        let photoExpectation = XCTNSPredicateExpectation(
+            predicate: photoReady,
+            object: hostState
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [photoExpectation], timeout: 10),
+            .completed,
+            "Both mock still-photo routes must accept the host-owned fixture"
+        )
+
         let unpaired = await client.unpairDevice(deviceId: deviceID)
         XCTAssertTrue(unpaired)
     }

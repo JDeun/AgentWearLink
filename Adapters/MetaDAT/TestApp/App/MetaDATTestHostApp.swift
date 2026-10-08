@@ -11,9 +11,30 @@ struct MetaDATTestHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Text(state)
-                .accessibilityIdentifier("awl-meta-host-state")
-                .task {
+            VStack {
+                Text(state)
+                    .accessibilityIdentifier("awl-meta-host-state")
+                Button("Configure mock still fixture") {
+                    Task {
+                        do {
+                            let imageURL = try MetaDATMockStillFixture.write(
+                                to: FileManager.default.temporaryDirectory
+                            )
+                            _ = try MetaDATMockHostBootstrap.configureCapturedPhotoFixture(
+                                fileURL: imageURL
+                            )
+                            state = "photo-fixture-ready"
+                        } catch {
+                            state = "photo-fixture-error"
+                        }
+                    }
+                }
+                .accessibilityIdentifier("awl-meta-configure-photo-fixture")
+                .disabled(!ProcessInfo.processInfo.arguments.contains(
+                    MetaDATMockHostBootstrap.launchArgument
+                ))
+            }
+            .task {
                     guard ProcessInfo.processInfo.arguments.contains(
                         MetaDATMockHostBootstrap.launchArgument
                     ) else {
