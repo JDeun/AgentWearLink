@@ -12,7 +12,7 @@ final class AWLMockVoiceInvocationHarness: ObservableObject {
     @Published private(set) var status = "voice-waiting"
     private let diagnostics = AWLDiagnosticRecorder(capacity: 32)
     private var device: MetaDATDeviceAdapter?
-    private var eventTask: Task<Void, Never>?
+    private var runtime: AgentWearLinkRuntime?
     private var readinessTask: Task<Void, Never>?
 
     func start() async {
@@ -20,19 +20,30 @@ final class AWLMockVoiceInvocationHarness: ObservableObject {
         let adapter = MetaDATDeviceAdapter(diagnostics: diagnostics)
         device = adapter
 
-        // Subscribe before activating the listener, as production Core does.
-        let events = adapter.events()
-        eventTask = Task { [weak self] in
-            for await event in events {
-                guard !Task.isCancelled else { return }
+        // Exercise the *production Core Runtime* and vendor-backed
+        // VoiceOnlyDeviceAdapter, not a separate direct device.events()
+        // consumer. This still uses a synthetic local agent for the app-hosted
+        // mock test: no personal Gateway, credentials or media are touched.
+        let composed = AgentWearLinkRuntime(
+            device: MetaDATVoiceOnlyDeviceAdapter(vendor: adapter),
+            agent: MockAgentAdapter(),
+            diagnostics: diagnostics,
+            output: { [weak self] event in
                 if case .invocation = event {
-                    self?.status = "voice-acknowledged"
+                    await MainActor.run { self?.status = "voice-acknowledged" }
                 }
             }
+        )
+        runtime = composed
+        do {
+            try await composed.start()
+        } catch {
+            await composed.stop()
+            runtime = nil
+            device = nil
+            status = "voice-runtime-start-failed"
+            return
         }
-
-        // No DeviceSession, microphone, camera, Gateway or agent is started.
-        await adapter.startVoiceInvocationListening()
 
         readinessTask = Task { [weak self] in
             for _ in 0..<200 {
@@ -68,12 +79,9 @@ final class AWLMockVoiceInvocationHarness: ObservableObject {
 
     func stop() async {
         readinessTask?.cancel()
-        eventTask?.cancel()
         readinessTask = nil
-        eventTask = nil
-        if let device {
-            await device.stopVoiceInvocationListening()
-        }
+        await runtime?.stop()
+        runtime = nil
         device = nil
         status = "voice-stopped"
     }
