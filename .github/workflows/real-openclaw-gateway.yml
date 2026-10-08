@@ -1,0 +1,79 @@
+name: Real isolated OpenClaw Gateway smoke
+
+# This is an actual upstream Gateway process, NOT an AWL WebSocket fixture.
+# No private tokens, models, Tailnet, Mac mini, or physical glasses are used.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/real-openclaw-gateway.yml'
+      - 'scripts/run_hermetic_development_gateway.py'
+      - 'scripts/test_run_hermetic_development_gateway.py'
+      - 'scripts/dev_gateway_probe_runner.py'
+      - 'scripts/run-openclaw-development-gateway.sh'
+      - 'Sources/AgentWearLinkOpenClawProbe/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-loopback-health:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      # Match the explicitly audited upstream protocol-v4 contract pin.
+      OPENCLAW_REVISION: 172a5d6202214eea253234c3b04c8184df9fea70
+      CI: 'true'
+    steps:
+      - name: Check out AWL without persisted GitHub credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check out exact upstream real Gateway source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: openclaw/openclaw
+          ref: 172a5d6202214eea253234c3b04c8184df9fea70
+          path: .awl-hermetic-upstream
+          persist-credentials: false
+      - name: Install supported upstream Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26'
+      - name: Verify exact upstream checkout and package toolchain
+        shell: bash
+        run: |
+          test "$(git -C .awl-hermetic-upstream rev-parse HEAD)" = "$OPENCLAW_REVISION"
+          node --version
+          npm install --global pnpm@12.5.1
+          pnpm --version
+      - name: Build pinned real Gateway without ambient model credentials
+        shell: bash
+        timeout-minutes: 28
+        run: |
+          pnpm --dir .awl-hermetic-upstream install --frozen-lockfile
+          pnpm --dir .awl-hermetic-upstream build
+          test -f .awl-hermetic-upstream/dist/entry.js
+          test -z "$(git -C .awl-hermetic-upstream status --porcelain --untracked-files=no)"
+      - name: Compile real AWL production Gateway probe on macOS
+        shell: bash
+        run: swift build --product awl-openclaw-probe
+      - name: Real Gateway auth + health + independent reconnect
+        shell: bash
+        timeout-minutes: 10
+        env:
+          # Only when this workflow started a NEW, secret-free Gateway under
+          # a verified temp HOME, on a random loopback port, may it approve
+          # the ONE synthetic pending device ID. Multiple requests fail shut.
+          AWL_DEV_CI_REAL_GATEWAY: '1'
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_run_hermetic_development_gateway.py'
+          python3 scripts/run_hermetic_development_gateway.py \
+            --checkout .awl-hermetic-upstream \
+            --revision "$OPENCLAW_REVISION" \
+            --ci-approve-single-request
+      - name: Evidence boundary
+        if: always()
+        run: |
+          echo "Actual Gateway auth/health only when the prior probe returned success."
+          echo "Layer-2 full chat/abort and hardware/Tailnet proofs are separate."
