@@ -149,11 +149,14 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             outputSink = sink
             do {
                 try await composed.start()
-                // Independent Voice Invocation startup follows the upstream
-                // Meta channel PR (#543) and needs a separate iOS host flow.
-                // Media + OpenClaw + Apple output are wired here already.
+                // The Core event consumer is now active. Start Voice
+                // Invocation only after this boundary to avoid discarding a
+                // promptly acknowledged Meta launch before subscription.
+                // The channel itself is still independent of DeviceSession.
+                await concreteDevice.startVoiceInvocationListening()
                 status = "connected"
             } catch {
+                await concreteDevice.stopVoiceInvocationListening()
                 await composed.stop()
                 runtime = nil
                 device = nil
@@ -226,6 +229,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         oldVisionTask?.cancel()
         await oldVisionTask?.value
         visionTask = nil
+        if let device {
+            await device.stopVoiceInvocationListening()
+        }
         if let runtime {
             await runtime.stop()
         }
