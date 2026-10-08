@@ -4,6 +4,16 @@ import Foundation
 ///
 /// The runtime owns forwarding tasks and provides deterministic shutdown.
 public actor AgentWearLinkRuntime {
+    /// Agent-first remains the default. A Voice Invocation host may open the
+    /// independent device listener first so a slow Gateway handshake cannot
+    /// delay a Meta AI launch acknowledgement. Device events are subscribed
+    /// before either connection and drained only after both are ready.
+    public enum ConnectionOrder: Sendable {
+        case agentFirst
+        case deviceFirst
+    }
+
+    private let connectionOrder: ConnectionOrder
     private let device: any DeviceAdapter
     private let agent: any AgentAdapter
     private let coordinator: InteractionCoordinator
@@ -28,9 +38,11 @@ public actor AgentWearLinkRuntime {
     public init(
         device: any DeviceAdapter,
         agent: any AgentAdapter,
+        connectionOrder: ConnectionOrder = .agentFirst,
         diagnostics: AWLDiagnosticRecorder? = nil,
         output: @escaping @Sendable (InteractionEvent) async -> Void
     ) {
+        self.connectionOrder = connectionOrder
         self.device = device
         self.agent = agent
         self.output = output
@@ -45,8 +57,10 @@ public actor AgentWearLinkRuntime {
         device: any DeviceAdapter,
         agent: any AgentAdapter,
         outputSink: any InteractionOutputSink,
+        connectionOrder: ConnectionOrder = .agentFirst,
         diagnostics: AWLDiagnosticRecorder? = nil
     ) {
+        self.connectionOrder = connectionOrder
         self.device = device
         self.agent = agent
 
@@ -93,12 +107,21 @@ public actor AgentWearLinkRuntime {
         let events = device.events()
 
         do {
-            try Task.checkCancellation()
-            try await agent.connect()
-            try Task.checkCancellation()
-            try requireActiveStartup(generation: generation)
-
-            try await device.connect()
+            // Keep Meta AI launch acknowledgements independent of Gateway
+            // handshakes when the host explicitly opts into device-first.
+            // Failed partial connections are rolled back below in both orders.
+            switch connectionOrder {
+            case .agentFirst:
+                try await agent.connect()
+                try Task.checkCancellation()
+                try requireActiveStartup(generation: generation)
+                try await device.connect()
+            case .deviceFirst:
+                try await device.connect()
+                try Task.checkCancellation()
+                try requireActiveStartup(generation: generation)
+                try await agent.connect()
+            }
             try Task.checkCancellation()
             try requireActiveStartup(generation: generation)
 
