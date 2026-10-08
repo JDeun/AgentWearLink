@@ -232,6 +232,29 @@ public struct OpenClawDeviceCredential: Codable, Sendable, Equatable, CustomStri
     }
 }
 
+/// Explicit user-gesture reconnect admission for a write-capable reference host.
+///
+/// The original shared bearer is never recovered from Keychain: only a
+/// server-issued, endpoint-scoped device grant may be reused. A mismatched
+/// role or a read-only grant must not silently elevate an iPhone runtime.
+public enum OpenClawStoredGrantAdmission {
+    public static func permitsWriteRuntime(
+        _ credential: OpenClawDeviceCredential?
+    ) -> Bool {
+        guard let credential,
+              credential.role == "operator",
+              credential.storageRole == "operator",
+              !credential.token.trimmingCharacters(
+                  in: .whitespacesAndNewlines
+              ).isEmpty else {
+            return false
+        }
+        let scopes = Set(credential.scopes)
+        return scopes.contains("operator.read")
+            && scopes.contains("operator.write")
+    }
+}
+
 public protocol OpenClawDeviceCredentialStore: Sendable {
     func load(deviceID: String, role: String) async throws -> OpenClawDeviceCredential?
     func save(_ credential: OpenClawDeviceCredential) async throws
