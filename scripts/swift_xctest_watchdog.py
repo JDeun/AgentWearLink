@@ -143,6 +143,25 @@ def stop_owned_group(process: subprocess.Popen[bytes]) -> None:
 
 _MAX_VERIFICATION_LOG_BYTES = 2_000_000
 
+# A dedicated, non-successful signal for a validated pre-XCTest-start timeout.
+# The caller may explicitly retry only this narrow class once.
+PRESTART_XCTEST_TIMEOUT = 125
+
+
+def unstarted_xctest_timeout_output(output: bytes, *, truncated: bool) -> bool:
+    """Only classify a fully captured build-only attempt as pre-test stall.
+
+    If XCTest has emitted any suite or case start banner, or evidence was
+    truncated, never retry: real test execution may already have begun.
+    """
+    return (
+        not truncated
+        and b"Build complete!" in output
+        and b"Test Suite '" not in output
+        and b"Test Case '-[" not in output
+    )
+
+
 
 def verify_xctest_case_output(output: bytes, expected_cases: list[str]) -> bool:
     """Require an actual XCTest pass banner once for every selected method.
@@ -214,6 +233,15 @@ def run_bounded(
                 print("AWL XCTest: selected test case execution proof missing or ambiguous.",
                       file=sys.stderr)
                 return 1
+            if status == 124 and unstarted_xctest_timeout_output(
+                output, truncated=truncated
+            ):
+                print(
+                    "AWL XCTest: bounded timeout before XCTest suite startup; "
+                    "eligible for one explicitly logged complete retry.",
+                    file=sys.stderr,
+                )
+                return PRESTART_XCTEST_TIMEOUT
         return status
     finally:
         if capture is not None:
