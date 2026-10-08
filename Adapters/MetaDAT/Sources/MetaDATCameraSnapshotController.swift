@@ -82,7 +82,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
             let bytes = try await capturePhoto(stream, token: token)
             try ensureCurrent(token)
 
-            try MetaDATPhotoNormalizer.validatePayload(
+            try MetaDATPhotoNormalizer.validateStreamJPEG(
                 bytes,
                 maximumBytes: maximumBytes
             )
