@@ -12,6 +12,7 @@ public final class MetaDATVoiceInvocationChannel {
     private let wearables: any WearablesInterface
     private let listener: MetaDATVoiceInvocationListener
     private let reopenPolicy: MetaDATVoiceReopenPolicy
+    private let diagnostics: AWLDiagnosticRecorder?
     private let onEvent: @Sendable (InteractionEvent) -> Void
     private let onReadiness: @Sendable (Bool) -> Void
 
@@ -28,12 +29,14 @@ public final class MetaDATVoiceInvocationChannel {
     public init(
         wearables: any WearablesInterface = Wearables.shared,
         reopenPolicy: MetaDATVoiceReopenPolicy = .init(),
+        diagnostics: AWLDiagnosticRecorder? = nil,
         onEvent: @escaping @Sendable (InteractionEvent) -> Void,
         onReadiness: @escaping @Sendable (Bool) -> Void
     ) {
         self.wearables = wearables
         self.listener = MetaDATVoiceInvocationListener(wearables: wearables)
         self.reopenPolicy = reopenPolicy
+        self.diagnostics = diagnostics
         self.onEvent = onEvent
         self.onReadiness = onReadiness
     }
@@ -162,12 +165,27 @@ public final class MetaDATVoiceInvocationChannel {
                 },
                 onError: { [weak self] _ in
                     Task { @MainActor [weak self] in
+                        self?.diagnostics?.record(.init(kind: .metaVoiceChannelError))
                         self?.handleFailure(lease: lease)
                     }
                 }
             )
+            diagnostics?.record(.init(kind: .metaVoiceListenerStarted))
             onReadiness(true)
+        } catch let error as VoiceInvocationError {
+            switch error {
+            case .deviceNotFound:
+                diagnostics?.record(.init(kind: .metaVoiceDeviceNotFound))
+            case .channelNotConnected:
+                diagnostics?.record(.init(kind: .metaVoiceChannelNotConnected))
+            case .invalidWearablesInterface:
+                diagnostics?.record(.init(kind: .metaVoiceInterfaceInvalid))
+            default:
+                diagnostics?.record(.init(kind: .metaVoiceListenerFailed))
+            }
+            handleFailure(lease: lease)
         } catch {
+            diagnostics?.record(.init(kind: .metaVoiceListenerFailed))
             handleFailure(lease: lease)
         }
     }
@@ -192,6 +210,7 @@ public final class MetaDATVoiceInvocationChannel {
         let attempt = failures
         failures += 1
         guard let delay = reopenPolicy.delay(afterFailure: attempt) else {
+            diagnostics?.record(.init(kind: .metaVoiceRetryExhausted))
             // Exhausted for this selection. A new registration/device
             // selection, or an explicit stop/start, is the recovery boundary.
             return

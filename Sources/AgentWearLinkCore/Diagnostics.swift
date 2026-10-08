@@ -27,6 +27,13 @@ public enum AWLDiagnosticKind: String, Sendable, Equatable, Codable {
     case metaSnapshotCompleted
     case metaSnapshotFailed
     case metaTranscriptAccepted
+    case metaVoiceListenerStarted
+    case metaVoiceListenerFailed
+    case metaVoiceDeviceNotFound
+    case metaVoiceChannelNotConnected
+    case metaVoiceInterfaceInvalid
+    case metaVoiceChannelError
+    case metaVoiceRetryExhausted
 }
 
 public struct AWLDiagnosticEvent: Sendable, Equatable {

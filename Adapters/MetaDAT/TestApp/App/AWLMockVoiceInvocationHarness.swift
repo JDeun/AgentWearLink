@@ -10,13 +10,14 @@ import MWDATCore
 @MainActor
 final class AWLMockVoiceInvocationHarness: ObservableObject {
     @Published private(set) var status = "voice-waiting"
+    private let diagnostics = AWLDiagnosticRecorder(capacity: 32)
     private var device: MetaDATDeviceAdapter?
     private var eventTask: Task<Void, Never>?
     private var readinessTask: Task<Void, Never>?
 
     func start() async {
         guard device == nil else { return }
-        let adapter = MetaDATDeviceAdapter()
+        let adapter = MetaDATDeviceAdapter(diagnostics: diagnostics)
         device = adapter
 
         // Subscribe before activating the listener, as production Core does.
@@ -58,7 +59,9 @@ final class AWLMockVoiceInvocationHarness: ObservableObject {
                 let connected = paired.filter { identifier in
                     wearables.deviceForIdentifier(identifier)?.linkState == .connected
                 }.count
-                self?.status = "voice-not-listening-r\(isRegistered)-d\(paired.count)-c\(connected)"
+                let lastKind = self?.diagnostics.snapshot().last?.kind.rawValue
+                    ?? "no-diagnostic"
+                self?.status = "voice-not-listening-r\(isRegistered)-d\(paired.count)-c\(connected)-e\(lastKind)"
             }
         }
     }
