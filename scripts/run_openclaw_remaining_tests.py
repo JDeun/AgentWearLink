@@ -26,7 +26,7 @@ ISOLATED_CLASSES = frozenset({
 PER_CLASS_DEADLINE_SECONDS = 65
 SUITE_ROOT = Path("Tests/AgentWearLinkOpenClawTests")
 DECLARATION = re.compile(
-    r"\\bclass\\s+(\\w+)\\s*:\\s*XCTestCase\\b"
+    r"\bclass\s+(\w+)\s*:\s*XCTestCase\b"
 )
 
 
