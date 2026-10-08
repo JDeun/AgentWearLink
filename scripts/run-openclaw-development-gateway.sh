@@ -16,6 +16,12 @@ python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
 echo "Reconnecting production read-only OpenClaw health RPC"
 python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
 
+if [[ "${AWL_DEV_GATEWAY_HEALTH_ONLY:-0}" == "1" ]]; then
+  echo "Authenticated real Gateway health and fresh-process reconnect passed."
+  echo "Mutating agent, cancellation, pairing/revocation and physical evidence remain separate."
+  exit 0
+fi
+
 echo "Running production native adapter with explicit harmless agent turn"
 export AWL_ALLOW_MUTATING_PROBE=1
 export AWL_DEV_GATEWAY_ASSERT=1
