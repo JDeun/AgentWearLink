@@ -8,7 +8,7 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: portFile) }
 
         let app = XCUIApplication()
-        app.launchArguments = ["--awl-meta-ui-testing"]
+        app.launchArguments = ["--awl-meta-ui-testing", "--awl-meta-photo-ui-testing"]
         app.launchEnvironment["MWDAT_TEST_SERVER_PORT_FILE"] = portFile
         app.launch()
         // The first UI test used to leave its test host running on success.
@@ -56,6 +56,21 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             XCTWaiter.wait(for: [photoExpectation], timeout: 10),
             .completed,
             "Both mock still-photo routes must accept the host-owned fixture"
+        )
+
+        let photoAction = app.buttons["awl-meta-capture-mock-photo"]
+        XCTAssertTrue(photoAction.waitForExistence(timeout: 5))
+        photoAction.tap()
+        let photoState = app.staticTexts["awl-meta-photo-state"]
+        XCTAssertTrue(photoState.waitForExistence(timeout: 5))
+        let captured = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "photo-snapshot-verified"),
+            object: photoState
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [captured], timeout: 30),
+            .completed,
+            "Vendor one-shot photo capture was not validated; state=\(photoState.label)"
         )
 
         let unpaired = await client.unpairDevice(deviceId: deviceID)
