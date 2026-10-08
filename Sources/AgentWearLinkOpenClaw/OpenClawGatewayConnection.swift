@@ -4,6 +4,9 @@ import Foundation
 public enum OpenClawHandshakeProgress: String, Sendable {
     case socketOpened = "socket-opened"
     case challengeReceived = "challenge-received"
+    case assembleStarted = "assemble-started"
+    case assembleComplete = "assemble-complete"
+    case connectSending = "connect-sending"
     case connectSent = "connect-sent"
     case responseReceived = "response-received"
 }
@@ -82,6 +85,7 @@ public actor OpenClawGatewayConnection {
             await state.beginAuthentication()
             try ensureActiveConnect(generation)
 
+            progress?(.assembleStarted)
             var assembled = try await assembler.assemble(
                 version: appVersion,
                 scopes: scopes,
@@ -91,6 +95,7 @@ public actor OpenClawGatewayConnection {
                 locale: locale
             )
             try ensureActiveConnect(generation)
+            progress?(.assembleComplete)
 
             var response = try await sendConnectRequest(
                 assembled,
@@ -266,6 +271,7 @@ public actor OpenClawGatewayConnection {
         }
 
         try ensureActiveConnect(generation)
+        progress?(.connectSending)
         try await socket.send(text: requestText)
         progress?(.connectSent)
         try ensureActiveConnect(generation)
