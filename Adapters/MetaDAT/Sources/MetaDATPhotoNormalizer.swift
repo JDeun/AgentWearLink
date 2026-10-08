@@ -9,6 +9,7 @@ public struct MetaDATCapturedImage: Sendable, Equatable {
 
 public enum MetaDATPhotoNormalizationError: Error, Sendable, Equatable {
     case payloadTooLarge(actual: Int, maximum: Int)
+    case unexpectedJPEGEncoding
 }
 
 /// Removes SDK photo container types at the adapter boundary.
@@ -34,6 +35,23 @@ public enum MetaDATPhotoNormalizer {
         let encoding: MetaDATCapturedImage.Encoding =
             photo.format == .heic ? .heic : .jpeg
         return .init(bytes: data, encoding: encoding)
+    }
+
+    /// Stream.capturePhoto(format: .jpeg) is the only supported default
+    /// bridge output. Reject obviously mislabeled PNG/HEIC/corrupt payloads
+    /// before forwarding bytes as image/jpeg to OpenClaw. This checks the
+    /// signature, not full image decodability (which is the consumer's job).
+    static func validateStreamJPEG(
+        _ data: Data,
+        maximumBytes: Int
+    ) throws {
+        try validatePayload(data, maximumBytes: maximumBytes)
+        guard data.count >= 3,
+              data[data.startIndex] == 0xFF,
+              data[data.startIndex + 1] == 0xD8,
+              data[data.startIndex + 2] == 0xFF else {
+            throw MetaDATPhotoNormalizationError.unexpectedJPEGEncoding
+        }
     }
 
     static func validatePayload(
