@@ -222,8 +222,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         foregroundMediaActivationOnVoiceLaunch = enabled
     }
 
-    private func activateMediaAfterAcknowledgedVoiceLaunch() async {
-        guard voiceInvocationChannel != nil else { return }
+    private func activateMediaAfterAcknowledgedVoiceLaunch(voiceLease: UInt64) async {
+        // A delayed task from a retired listener must not activate media for
+        // a different listener that restarted after a disconnect/reconnect.
+        guard voiceStartFence.owns(voiceLease),
+              voiceInvocationChannel != nil else { return }
         let phase = await applicationLifecycle?.currentPhase ?? .foreground
         guard MetaDATVoiceMediaActivationPolicy.mayActivate(
             optedIn: foregroundMediaActivationOnVoiceLaunch,
@@ -231,7 +234,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             connecting: connecting,
             sessionActive: deviceSession != nil,
             stopping: stopping
-        ) else { return }
+        ),
+        voiceStartFence.owns(voiceLease) else { return }
 
         do {
             // The acknowledgement event has already entered Core's event
@@ -239,6 +243,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             try await connect()
         } catch {
             guard foregroundMediaActivationOnVoiceLaunch,
+                  voiceStartFence.owns(voiceLease),
                   voiceInvocationChannel != nil else { return }
             // Media is optional for the wake channel. Failure must not retire
             // an otherwise healthy voice-only Core/Gateway runtime.
@@ -266,7 +271,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 onEvent: { [weak self] event in
                     source.yield(event)
                     if case .invocation = event {
-                        Task { await self?.activateMediaAfterAcknowledgedVoiceLaunch() }
+                        Task { await self?.activateMediaAfterAcknowledgedVoiceLaunch(voiceLease: token) }
                     }
                 },
                 onReadiness: { ready in
