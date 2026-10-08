@@ -28,7 +28,7 @@ PER_CLASS_DEADLINE_SECONDS = 65
 # a stalled XCTest process identifies its exact scenario, not just its class.
 PER_METHOD_DEADLINE_SECONDS = 30
 METHOD_ISOLATED_CLASSES = frozenset({"OpenClawRecoveryMatrixTests"})
-METHOD_DECLARATION = re.compile(r"(?m)^\\s*func\\s+(test[A-Za-z0-9_]+)\\s*\\(")
+METHOD_DECLARATION = re.compile(r"(?m)^\s*func\s+(test[A-Za-z0-9_]+)\s*\(")
 SUITE_ROOT = Path("Tests/AgentWearLinkOpenClawTests")
 DECLARATION = re.compile(
     r"\bclass\s+(\w+)\s*:\s*XCTestCase\b"
