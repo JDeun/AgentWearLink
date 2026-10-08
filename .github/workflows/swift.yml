@@ -96,10 +96,21 @@ jobs:
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 4
         run: swift test --filter AgentWearLinkCoreTests
-      - name: Test OpenClaw target
+      # Several Xcode/macOS runners stalled immediately before the OpenClaw
+      # protocol JSON decoding fixture while other CI runs passed. Put those
+      # synchronous codec cases in a fresh XCTest process, separate from the
+      # long-lived actor/transport tests. --skip preserves full class coverage.
+      - name: Test OpenClaw protocol codecs in isolation
+        if: needs.changes.outputs.swift == 'true'
+        timeout-minutes: 2
+        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawProtocolTests
+      - name: Test remaining OpenClaw cases in isolation
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 4
-        run: swift test --filter AgentWearLinkOpenClawTests
+        run: |
+          swift test \
+            --filter AgentWearLinkOpenClawTests \
+            --skip AgentWearLinkOpenClawTests.OpenClawProtocolTests
       - name: Test Meta SDK-neutral target
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 3
