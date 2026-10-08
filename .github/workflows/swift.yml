@@ -50,7 +50,15 @@ jobs:
               - 'Package.resolved'
               - '.github/workflows/swift.yml'
             meta_behavior:
-              - 'Adapters/MetaDAT/**'
+              # Package-level behavioral tests need only production sources,
+              # test fixtures/targets, core contract changes, or workflow edits.
+              # App-only changes are validated by the full host/UI gates below.
+              - 'Adapters/MetaDAT/Sources/**'
+              - 'Adapters/MetaDAT/Tests/**'
+              - 'Adapters/MetaDAT/TestSupport/**'
+              - 'Adapters/MetaDAT/UITests/**'
+              - 'Adapters/MetaDAT/Package.swift'
+              - 'Sources/AgentWearLinkCore/**'
               - '.github/workflows/swift.yml'
             meta_host:
               - 'Adapters/MetaDAT/Sources/**'
