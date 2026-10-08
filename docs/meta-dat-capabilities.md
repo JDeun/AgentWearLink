@@ -81,3 +81,16 @@ Two distinct layers currently coexist:
 During permission revocation, disconnect, background transition, or SDK readiness loss, the vendor adapter must clear affected capabilities at the applicable lifecycle boundary and reject stale in-flight operations. A new foreground/session generation may re-establish availability but never silently replay an uncertain request.
 
 Known follow-ups: independent Voice Invocation listener/availability (#95/#115/#230), physical permission/link races (#1/#98), and production media lifecycle testing (#96/#116). The live availability model should not be mistaken for completion of those features.
+
+## Optional Speech setup does not gate the camera
+
+The concrete vendor-linked adapter may establish a DeviceSession with camera
+permission even when on-device DAT Speech is unavailable or the microphone
+grant is missing. A scoped `AWLError.capabilityUnavailable` during initial
+Speech setup clears the live `speechInput` bit and leaves the session available
+for explicit `cameraSnapshot` if camera permission is granted. Registration,
+session startup, generation supersession, cancellation and other unexpected
+errors remain fatal. This is **not** an implicit iPhone microphone fallback or
+permission bypass. The host should surface the missing microphone grant if
+speech input is requested. Physical permission combinations remain to be
+validated under #1/#98/#230.
