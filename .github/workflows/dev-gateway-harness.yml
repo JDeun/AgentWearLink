@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'scripts/dev_gateway_preflight.py'
+      - 'scripts/dev_gateway_probe_runner.py'
+      - 'scripts/test_dev_gateway_probe_runner.py'
+      - 'scripts/dev_gateway_probe_runner.py'
+      - 'scripts/test_dev_gateway_probe_runner.py'
       - 'scripts/test_dev_gateway_preflight.py'
       - 'scripts/run-openclaw-development-gateway.sh'
       - 'scripts/run_hermetic_development_gateway.py'
@@ -20,6 +24,10 @@ on:
       - 'scripts/test_run_hermetic_development_gateway.py'
       - 'Sources/AgentWearLinkOpenClawChatProbe/**'
       - '.github/workflows/dev-gateway-harness.yml'
+
+concurrency:
+  group: dev-gateway-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.run_attempt == 1 }}
 
 permissions:
   contents: read
@@ -40,7 +48,7 @@ jobs:
   abort-probe-build:
     # The abort path is a Darwin/Keychain-backed executable and must be
     # compiled on macOS. Python-only lint cannot catch Swift probe drift.
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
