@@ -8,6 +8,7 @@ leave the operator's isolated Gateway harness running indefinitely.
 from __future__ import annotations
 
 import os
+import pathlib
 import signal
 import subprocess
 import sys
@@ -91,7 +92,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Avoid launching SwiftPM (which can hang independently of Gateway)
         # after a separately verified swift build. Only these two targets
         # are accepted; no external binary path is read from environment.
-        import pathlib
         executable = pathlib.Path(".build/debug") / target
         if not executable.is_file():
             print("Verified built development probe is missing.", file=sys.stderr)
