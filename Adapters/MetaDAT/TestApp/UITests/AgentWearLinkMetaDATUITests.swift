@@ -73,6 +73,22 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             "Vendor one-shot photo capture was not validated; state=\(photoState.label)"
         )
 
+        // The same real production snapshot entrypoint must fail closed
+        // without a shutter request when the mock denies camera permission.
+        let denyCamera = app.buttons["awl-meta-deny-camera-permission"]
+        XCTAssertTrue(denyCamera.waitForExistence(timeout: 5))
+        denyCamera.tap()
+        photoAction.tap()
+        let denied = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "photo-capture-failed"),
+            object: photoState
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [denied], timeout: 15),
+            .completed,
+            "Denied camera permission did not fail predictably: state=\(photoState.label)"
+        )
+
         let unpaired = await client.unpairDevice(deviceId: deviceID)
         XCTAssertTrue(unpaired)
     }
