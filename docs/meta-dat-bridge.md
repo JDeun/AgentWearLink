@@ -183,6 +183,19 @@ an independently verified response-handle contract for all action types.
 Vendor MockDeviceKit launch simulation and physical locked/pocketed behavior
 remain open on #95/#115/#6.
 
+## Explicit sanitized diagnostic export
+
+The reference iOS host contains a user-triggered `Copy sanitized diagnostics`
+action. It exports the in-memory `AWLDiagnosticRecorder` to schema-versioned
+JSON, at most 128 events, with recorder eviction count and truncation status.
+The allowlist is limited to diagnostic enum kinds, bounded numeric generation
+and retry attempt, and local interaction ordinals. Raw correlation UUIDs,
+hostnames, credentials, tokens, prompts, transcripts, message payloads,
+error descriptions and private images **never enter the serialized model**.
+The host does not log or transmit diagnostic reports automatically; tapping
+the button places sanitized text on the system clipboard, which the operator
+should treat as temporary and clear after capturing validation evidence.
+
 ### MockDeviceKit Voice Invocation UI acceptance
 
 The test host recognizes `--awl-meta-voice-ui-testing` only after the
