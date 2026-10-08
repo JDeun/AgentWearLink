@@ -138,6 +138,30 @@ not a background daemon or permission bypass: iOS background/lifecycle and
 locked-phone invocation acceptance remain hardware-only gates under #6. No
 persistent Gateway token or unattended reconnection is introduced.
 
+## Explicit reconnect using a previously approved Gateway device grant
+
+The first write-capable reference-host connection still needs an explicitly
+entered Gateway bearer token and server-side device pairing/approval where
+required. If the real Gateway returns an approved `operator` device grant in
+`hello-ok`, AWL persists that grant and its Ed25519 device identity in iOS
+Keychain under the validated **private Gateway endpoint namespace**.
+
+For a later **user-initiated** Connect action to the same Tailnet Serve
+hostname, leave the Gateway token field empty. AWL will permit the handshake
+only if Keychain already has the same-device, same-endpoint grant with both
+`operator.read` and `operator.write` authorization. The reconnect sends
+the stored **device token** with a fresh challenge-bound proof; it never
+recovers or persists the original shared bearer token. A missing, expired,
+revoked, read-only, mismatched-role or different-endpoint grant fails closed
+and may require renewed approval. The status
+`gateway-token-or-approved-grant-required` is intentionally generic.
+
+This is **not** background auto-start, unsolicited reconnection after iOS
+process death, or physical Tailnet pairing proof. The flow remains opt-in via
+a foreground app user gesture. Real Gateway validation of initial pairing,
+tokenless reconnect and revocation is tracked under #331/#117/#97; never
+equate Keychain unit tests or simulator compilation with that evidence.
+
 ## Opt-in iPhone → OpenClaw post-ack Voice + foreground Speech
 
 After local Meta provisioning, connect a private Tailnet Serve OpenClaw
