@@ -14,6 +14,7 @@ public enum MetaDATMockHostBootstrap {
     public static let launchArgument = "--awl-meta-ui-testing"
     public static let voiceLaunchArgument = "--awl-meta-voice-ui-testing"
     public static let wakeLaunchArgument = "--awl-meta-wake-ui-testing"
+    public static let photoLaunchArgument = "--awl-meta-photo-ui-testing"
     public static let portFileEnvironment = "MWDAT_TEST_SERVER_PORT_FILE"
 
     public static func configureIfRequested(
@@ -28,6 +29,8 @@ public enum MetaDATMockHostBootstrap {
             config: MockDeviceKitConfig(
                 initiallyRegistered: arguments.contains(voiceLaunchArgument)
                     || arguments.contains(wakeLaunchArgument)
+                    || arguments.contains(photoLaunchArgument),
+                initialPermissionsGranted: true
             )
         )
         _ = try await MockDeviceKit.shared.startTestServer(
@@ -68,6 +71,10 @@ public enum MetaDATMockHostBootstrap {
         var configured = 0
         for device in paired {
             guard let glasses = device as? MockGlasses else { continue }
+            guard let video = Bundle.module.url(
+                forResource: "mock-blue-32px-hevc", withExtension: "mp4"
+            ) else { throw MetaDATMockHostError.missingCameraStreamFixture }
+            glasses.services.camera.setCameraFeed(fileURL: video)
             glasses.services.camera.setCapturedImage(fileURL: fileURL)
             glasses.services.cameraCapture.setCapturedPhoto(fileURL: fileURL)
             configured += 1
@@ -83,4 +90,5 @@ public enum MetaDATMockHostBootstrap {
 public enum MetaDATMockHostError: Error, Equatable {
     case unavailableInReleaseBuild
     case noPairedDevices
+    case missingCameraStreamFixture
 }

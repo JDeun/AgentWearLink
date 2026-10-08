@@ -12,6 +12,7 @@ struct MetaDATTestHostApp: App {
     @StateObject private var referenceHost = AWLReferenceRuntimeHost()
     @StateObject private var mockVoice = AWLMockVoiceInvocationHarness()
     @StateObject private var mockWake = AWLMockVoiceWakeHarness()
+    @StateObject private var mockPhoto = AWLMockPhotoSnapshotHarness()
     @State private var gatewayHostname = ""
     @State private var bootstrapToken = ""
     @State private var targetSessionKey = ""
@@ -42,6 +43,12 @@ struct MetaDATTestHostApp: App {
                     .accessibilityIdentifier("awl-meta-send-mock-transcript")
                     .disabled(mockWake.mediaStatus != "wake-speech-ready")
                 }
+                if ProcessInfo.processInfo.arguments.contains(
+                    MetaDATMockHostBootstrap.photoLaunchArgument
+                ) {
+                    Text(mockPhoto.status)
+                        .accessibilityIdentifier("awl-meta-photo-state")
+                }
                 Button("Configure mock still fixture") {
                     Task {
                         do {
@@ -61,6 +68,15 @@ struct MetaDATTestHostApp: App {
                 .disabled(!ProcessInfo.processInfo.arguments.contains(
                     MetaDATMockHostBootstrap.launchArgument
                 ))
+                if ProcessInfo.processInfo.arguments.contains(
+                    MetaDATMockHostBootstrap.photoLaunchArgument
+                ) {
+                    Button("Capture mock photo through production adapter") {
+                        Task { await mockPhoto.captureOnce() }
+                    }
+                    .accessibilityIdentifier("awl-meta-capture-mock-photo")
+                    .disabled(state != "photo-fixture-ready")
+                }
 
                 if !ProcessInfo.processInfo.arguments.contains(
                     MetaDATMockHostBootstrap.launchArgument

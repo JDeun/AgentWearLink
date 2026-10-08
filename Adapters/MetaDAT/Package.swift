@@ -42,7 +42,8 @@ let package = Package(
                 .product(name: "MWDATCore", package: "meta-wearables-dat-ios"),
                 .product(name: "MWDATMockDevice", package: "meta-wearables-dat-ios")
             ],
-            path: "TestSupport"
+            path: "TestSupport",
+            resources: [.process("Fixtures")]
         ),
         .testTarget(
             name: "AgentWearLinkMetaDATIntegrationTests",
