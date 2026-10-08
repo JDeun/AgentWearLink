@@ -224,10 +224,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     private func activateMediaAfterAcknowledgedVoiceLaunch() async {
         guard voiceInvocationChannel != nil else { return }
-        let isForeground = await applicationLifecycle?.currentPhase != .background
+        let phase = await applicationLifecycle?.currentPhase ?? .foreground
         guard MetaDATVoiceMediaActivationPolicy.mayActivate(
             optedIn: foregroundMediaActivationOnVoiceLaunch,
-            foreground: isForeground,
+            foreground: phase == .foreground,
             connecting: connecting,
             sessionActive: deviceSession != nil,
             stopping: stopping
