@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      swift: ${{ steps.filter.outputs.swift }}
+      core_swift: ${{ steps.filter.outputs.core_swift }}
       meta: ${{ steps.filter.outputs.meta }}
       meta_behavior: ${{ steps.filter.outputs.meta_behavior }}
       meta_host: ${{ steps.filter.outputs.meta_host }}
@@ -33,10 +33,11 @@ jobs:
         id: filter
         with:
           filters: |
-            swift:
+            # Vendor-only changes compile and test in meta-dat-integration;
+            # do not re-run all unrelated root Swift suites on macOS-15.
+            core_swift:
               - 'Sources/**'
               - 'Tests/**'
-              - 'Adapters/**'
               - 'Package.swift'
               - 'Package.resolved'
               - '.github/workflows/swift.yml'
@@ -86,14 +87,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Show Swift version
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         run: swift --version
       # Each test target runs in its own XCTest process. This isolates Swift
       # concurrency/task lifetime across modules and identifies the responsible
       # suite if a macOS runner ever blocks after a passing test. Keep per-step
       # deadlines smaller than the total job so logs distinguish test stalls.
       - name: Test Core target
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 4
         run: swift test --filter AgentWearLinkCoreTests
       # OpenClawProtocolTests has twice stalled after logging the start of
@@ -102,29 +103,29 @@ jobs:
       # Isolate it from unrelated XCTest async-task lifetimes so a protocol
       # failure is attributable and cannot deadlock the entire module suite.
       - name: Test OpenClaw protocol contracts
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 2
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawProtocolTests
       # An independently reproduced stall occurs at a dispatcher XCTest
       # boundary once protocol tests are isolated. Keep all tests, but give
       # the RPC suite a separate subprocess to localize actor/task leakage.
       - name: Test OpenClaw RPC dispatcher
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests
       # This suite owns independent long-lived Tasks and cancellation paths.
       # Give it a fresh XCTest process so those tasks cannot starve a
       # later actor-based registry test on macOS CI.
       - name: Test OpenClaw native agent lifetime
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests
       - name: Test OpenClaw RPC registry
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 2
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests
       - name: Test remaining OpenClaw target
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 4
         run: |
           swift test \
@@ -134,19 +135,19 @@ jobs:
             --skip AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests \
             --skip AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests
       - name: Test Meta SDK-neutral target
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
         run: swift test --filter AgentWearLinkMetaDATTests
       - name: Test Apple output target
-        if: needs.changes.outputs.swift == 'true'
+        if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
         run: swift test --filter AgentWearLinkAppleOutputTests
       - name: Verify pinned OpenClaw protocol contract
         if: needs.changes.outputs.openclaw_contract == 'true'
         run: python3 scripts/verify-openclaw-protocol-contract.py
       - name: Fast-pass non-code changes
-        if: needs.changes.outputs.swift != 'true'
-        run: echo "No Swift/package/workflow changes; required gate passes without compiling."
+        if: needs.changes.outputs.core_swift != 'true'
+        run: echo "No root Swift/package/workflow changes; Core gate passes without compiling."
 
   meta-dat-integration:
     needs: changes
