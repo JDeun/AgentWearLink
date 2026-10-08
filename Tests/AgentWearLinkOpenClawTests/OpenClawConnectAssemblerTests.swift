@@ -204,6 +204,49 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         }
     }
 
+    func testReadOnlyDevelopmentReconnectSendsNoSharedOrBootstrapBearer() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let store = InMemoryOpenClawDeviceCredentialStore()
+        let namespace = try OpenClawGatewayCredentialNamespace(
+            stableIdentifier: "read-only-isolated-loopback"
+        )
+        let scoped = GatewayScopedOpenClawDeviceCredentialStore(
+            base: store, namespace: namespace
+        )
+        let grant = OpenClawDeviceCredential(
+            deviceID: try identity.deviceID,
+            role: "operator",
+            scopes: ["operator.read"],
+            token: "server-approved-read-grant"
+        )
+        XCTAssertTrue(OpenClawReadOnlyGrantAdmission.permits(grant))
+        try await scoped.save(grant)
+
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(
+                store: InMemoryOpenClawDeviceIdentityStore(identity: identity)
+            ),
+            credentialStore: store,
+            gatewayNamespace: namespace
+        )
+        let reconnect = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read"],
+            credentials: .init(),
+            challenge: challenge,
+            clientIdentity: .probe
+        )
+        XCTAssertTrue(reconnect.usedStoredCredential)
+        XCTAssertEqual(reconnect.params.scopes, ["operator.read"])
+        XCTAssertNil(reconnect.params.auth?.token)
+        XCTAssertNil(reconnect.params.auth?.bootstrapToken)
+        XCTAssertEqual(
+            reconnect.params.auth?.deviceToken,
+            "server-approved-read-grant"
+        )
+        try assertProof(reconnect, signs: "server-approved-read-grant")
+    }
+
     func testStoredTokenReusesApprovedScopes() async throws {
         let identity = OpenClawDeviceIdentity.generate()
         let identityStore = InMemoryOpenClawDeviceIdentityStore(identity: identity)
