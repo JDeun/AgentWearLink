@@ -15,6 +15,7 @@ private struct SupervisorPairingResponse: Sendable {
 
 private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var connectCalls = 0
+    private let pairingResponseSignal = OpenClawTestCountSignal()
     private var transportGenerationValue: UInt64 = 0
     private var handshakeStep = 0
     private var sentFrames: [String] = []
@@ -94,6 +95,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
             }
 
             if let pairing = pairingResponses[connectCalls] {
+                await pairingResponseSignal.increment()
                 let retryAfter = pairing.retryAfterMilliseconds.map {
                     ",\"retryAfterMs\":\($0)"
                 } ?? ""
@@ -141,6 +143,16 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
 
         receiveWaiter?.resume(throwing: AWLOpenClawError.disconnected)
         receiveWaiter = nil
+    }
+
+    /// The test waits until the *actual* mock Gateway pairing response is
+    /// emitted; merely observing an attempted connection is not sufficient.
+    func waitForPairingResponse() async throws {
+        try await pairingResponseSignal.wait(
+            until: 1,
+            timeout: .seconds(5),
+            label: "pairing response emitted"
+        )
     }
 
     func connectionCount() -> Int { connectCalls }
@@ -606,11 +618,7 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
             )
         }
 
-        try await waitUntilOpenClawTestCondition(
-            "pairing wait entered"
-        ) {
-            await fixture.socket.connectionCount() >= 2
-        }
+        try await fixture.socket.waitForPairingResponse()
 
         await fixture.supervisor.stop()
         await reconnect.value
