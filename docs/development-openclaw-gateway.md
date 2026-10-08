@@ -36,6 +36,32 @@ If the isolated Gateway requires manual device-pairing approval, the test
 fails closed until the operator explicitly approves only that disposable
 Gateway's new identity. The runner cannot automatically approve pairings.
 
+If the isolated Gateway returns `pairingRequired`, the default execution
+fails closed and removes its temporary Gateway. To make the actual handshake
+and device-grant approval test **repeatable within the same isolated Gateway**,
+use the explicit terminal-only flag:
+
+```bash
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout /path/to/isolated/openclaw-checkout \
+  --revision YOUR_EXACT_40_CHARACTER_COMMIT \
+  --approve-isolated-pairing
+```
+
+The runner lists only pending request IDs read from **its own** disposable
+loopback Gateway and asks the operator to enter one exact ID after reviewing
+the request. Only a matching ID is sent to the official OpenClaw
+`devices approve <requestId>` command, with its transient local state and
+synthetic auth. No automatic "latest" approval, arbitrary request, personal
+service credential or Tailnet access is permitted. Approval input times out
+after a bounded interval. A full-chat test may require **separate** read-only
+and write-profile approvals; at most two interactive approvals are supported
+in one run, and any refused/unknown request fails closed.
+
+This proves a **human-approved disposable** device pairing only when the real
+probes pass. It does not prove automatic pairing, a physical iPhone pairing,
+or that the remote Mac mini grants credentials.
+
 For the **full real agent** test, supply an intentionally harmless, development-
 only model/configuration with tools disabled (or otherwise restricted).
 This must not be a personal OpenClaw profile or private conversation.
