@@ -273,11 +273,24 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             } else {
                 runtimeDevice = concreteDevice
             }
+            // Core may autonomously retire a runtime after a terminal
+            // device/session failure. Route its normalized failure to the
+            // host without performing recursive stop() inside the forwarding
+            // task that is reporting the failure.
+            let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
+                await sink.consume(event)
+                if case let .failed(id, error) = event,
+                   id == nil, case .device = error {
+                    Task { @MainActor [weak self] in
+                        await self?.retireUnexpectedRuntimeFailure(attempt: attempt)
+                    }
+                }
+            }
             let composed = AgentWearLinkRuntime(
                 device: runtimeDevice,
                 agent: agent,
-                outputSink: sink,
-                diagnostics: diagnostics
+                diagnostics: diagnostics,
+                output: output
             )
 
             // Core itself first subscribes to device.events() before connecting
@@ -333,6 +346,20 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 status = "invalid-private-gateway-config"
             }
         }
+    }
+
+    /// A terminal global device error is the one case where Core stops
+    /// itself without the user pressing Disconnect. It must not strand stale
+    /// host references or a misleading "connected" state.
+    private func retireUnexpectedRuntimeFailure(attempt: UInt64) async {
+        guard connectionFence.isCurrent(attempt),
+              runtime != nil,
+              !disconnectInProgress else { return }
+        // This starts in a separate MainActor task: runtime.forwardingDid-
+        // ReceiveGlobalFailure can finish its own teardown independently.
+        await disconnect()
+        // A new connect cannot start while disconnectInProgress owns cleanup.
+        status = "device-session-lost"
     }
 
     private func clearRuntimeReferences() {
