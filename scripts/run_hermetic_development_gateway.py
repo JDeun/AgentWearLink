@@ -8,8 +8,10 @@ No provider credentials, Gateway responses, tokens or process output are logged.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import select
 import secrets
 import shutil
 import signal
@@ -136,6 +138,76 @@ def retire_owned_process(process: subprocess.Popen[bytes]) -> None:
         process.wait()
 
 
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9_:-]{8,128}$")
+
+
+def approve_one_isolated_pairing(
+    node: str,
+    checkout: Path,
+    env: dict[str, str],
+    *,
+    input_stream=None,
+    timeout_seconds: int = 120,
+) -> bool:
+    """Human-entered exact request ID; never bulk/auto approve devices.
+
+    This can only run inside the disposable loopback Gateway created here.
+    No personal Mac mini/Tailnet credentials or session data are consulted.
+    """
+    entry = input_stream if input_stream is not None else sys.stdin
+    state = Path(env.get("OPENCLAW_STATE_DIR", ""))
+    if (env.get("AWL_OPENCLAW_EXPOSURE") != "loopback"
+            or not state.name == "state"
+            or not state.parent.name.startswith("awl-real-dev-gateway-")
+            or env.get("OPENCLAW_GATEWAY_TOKEN") != env.get("AWL_OPENCLAW_TOKEN")
+            or not entry.isatty()):
+        return False
+    try:
+        listed = subprocess.run(
+            [node, str(checkout / "dist" / "entry.js"),
+             "devices", "list", "--json"],
+            cwd=checkout, env=env,
+            stdin=subprocess.DEVNULL, capture_output=True,
+            timeout=20, check=False,
+        )
+        if listed.returncode != 0 or len(listed.stdout) > 128_000:
+            return False
+        document = json.loads(listed.stdout.decode("utf-8"))
+        pending = document.get("pending")
+        if not isinstance(pending, list) or len(pending) > 16:
+            return False
+        allowed: list[str] = []
+        for item in pending:
+            if not isinstance(item, dict):
+                continue
+            request_id = item.get("requestId") or item.get("id")
+            if isinstance(request_id, str) and _REQUEST_ID.fullmatch(request_id):
+                allowed.append(request_id)
+        if not allowed:
+            return False
+        print("Only the disposable local Gateway's pending request IDs:")
+        for request_id in allowed:
+            print("  " + request_id)
+        print("Inspect each request locally before approval. Enter the exact "
+              "request ID; any other input cancels. No token is displayed.")
+        ready, _, _ = select.select([entry], [], [], timeout_seconds)
+        if not ready:
+            return False
+        selected = entry.readline().strip()
+        if selected not in allowed:
+            return False
+        approved = subprocess.run(
+            [node, str(checkout / "dist" / "entry.js"),
+             "devices", "approve", selected],
+            cwd=checkout, env=env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=20, check=False,
+        )
+        return approved.returncode == 0
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkout", required=True,
@@ -148,6 +220,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="Opt in to accepted-run cancellation proof")
     parser.add_argument("--config-template",
                         help="Optional isolated dev Gateway config JSON file")
+    parser.add_argument("--approve-isolated-pairing", action="store_true",
+                        help="Allow a human to approve exact pending IDs on this "
+                             "disposable Gateway only; TTY required")
     args = parser.parse_args(argv)
 
     checkout = Path(args.checkout).expanduser().resolve()
@@ -219,25 +294,43 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             # TCP readiness is NOT counted as authenticated Gateway proof.
             # Existing production Swift probes verify connect/auth/health.
-            try:
-                result = subprocess.run(
-                    ["bash", str(ROOT / "scripts" /
-                                 "run-openclaw-development-gateway.sh")],
-                    cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    timeout=PROBE_DEADLINE, check=False,
-                )
-            except (OSError, subprocess.TimeoutExpired):
-                print("Isolated Gateway runner: bounded probes failed.",
-                      file=sys.stderr)
-                return 1
-            if result.returncode != 0:
-                print("Isolated Gateway runner: real probe did not pass.",
-                      file=sys.stderr)
-                return 1
-            print("Isolated Gateway runner: real loopback Gateway probes passed; "
-                  "no physical/Tailnet claim.")
-            return 0
+            deadline = time.monotonic() + PROBE_DEADLINE
+            # Only the exact request ID explicitly entered by a human can
+            # enable local pairing. Read-only and write-probe identities
+            # require independent approvals, never implicit privilege reuse.
+            for approval_attempt in range(3):
+                try:
+                    remaining = max(1, int(deadline - time.monotonic()))
+                    result = subprocess.run(
+                        ["bash", str(ROOT / "scripts" /
+                                     "run-openclaw-development-gateway.sh")],
+                        cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        timeout=remaining, check=False,
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    print("Isolated Gateway runner: bounded probes failed.",
+                          file=sys.stderr)
+                    return 1
+                if result.returncode == 0:
+                    print("Isolated Gateway runner: real loopback Gateway probes passed; "
+                          "no physical/Tailnet claim.")
+                    return 0
+                if (result.returncode != 3
+                        or not args.approve_isolated_pairing
+                        or approval_attempt >= 2
+                        or time.monotonic() >= deadline):
+                    print("Isolated Gateway runner: real probe did not pass.",
+                          file=sys.stderr)
+                    return 1
+                if not approve_one_isolated_pairing(
+                    node, checkout, env,
+                    timeout_seconds=min(120, max(1, int(deadline - time.monotonic()))),
+                ):
+                    print("Isolated Gateway runner: pairing not approved.",
+                          file=sys.stderr)
+                    return 1
+            return 1
         finally:
             retire_owned_process(gateway)
 
