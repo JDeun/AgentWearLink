@@ -147,6 +147,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     }
 
     private let wearables: any WearablesInterface
+    // Independent of DeviceSession: host may start Voice Invocation before
+    // connecting a camera/Speech media session.
+    private var voiceInvocationChannel: MetaDATVoiceInvocationChannel?
     private var deviceSession: DeviceSession?
     private let applicationLifecycle: MetaDATApplicationLifecycle?
     private let diagnostics: AWLDiagnosticRecorder?
@@ -194,6 +197,34 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
         eventSource.stream()
+    }
+
+    /// Starts the independent, registration-gated Voice Invocation channel.
+    /// This never starts DeviceSession, Speech, or the camera stream.
+    /// The host must subscribe to events() before enabling the channel.
+    public func startVoiceInvocationListening() async {
+        guard voiceInvocationChannel == nil else { return }
+        let source = eventSource
+        let capabilities = liveCapabilities
+        let channel = await MainActor.run {
+            MetaDATVoiceInvocationChannel(
+                wearables: wearables,
+                onEvent: { event in source.yield(event) },
+                onReadiness: { ready in
+                    capabilities.update(voiceInvocationReady: ready)
+                }
+            )
+        }
+        voiceInvocationChannel = channel
+        await channel.start()
+    }
+
+    /// Explicitly retires Voice Invocation without affecting DeviceSession.
+    public func stopVoiceInvocationListening() async {
+        guard let channel = voiceInvocationChannel else { return }
+        voiceInvocationChannel = nil
+        await channel.stop()
+        liveCapabilities.update(voiceInvocationReady: false)
     }
 
     public func connect() async throws {

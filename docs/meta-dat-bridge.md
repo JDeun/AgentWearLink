@@ -109,3 +109,24 @@ compatibility, but a production UI must supply it to claim lifecycle coverage.
 
 Mock and CI tests cannot prove physical lock-screen or iOS suspension timing;
 those remain on #96/#116 and #1/#59.
+
+## Independent host-owned Voice Invocation
+
+The production `MetaDATDeviceAdapter` now exposes
+`startVoiceInvocationListening()` and `stopVoiceInvocationListening()` as
+**independent** entrypoints. An iOS host should first subscribe to
+`device.events()`, then start voice listening after Meta registration can
+complete. The listener does not call `device.connect()` and remains eligible
+while camera/Speech DeviceSession is stopped. A separate registration monitor,
+selected-device changes, link callbacks and bounded reopen policy own the
+VoiceInvocationsStream. A supported LaunchApp invocation is acknowledged before
+being emitted as a Core interaction, and callbacks from retired leases are
+fenced. The host explicitly stops this channel on app shutdown; ordinary
+DeviceSession disconnect does not stop it.
+
+This is code-side composition only. No independent microphone PCM or Meta
+speaker output is claimed. Unsupported invocation action subclasses currently
+produce no Core event because the pinned public abstraction does not expose
+an independently verified response-handle contract for all action types.
+Vendor MockDeviceKit launch simulation and physical locked/pocketed behavior
+remain open on #95/#115/#6.
