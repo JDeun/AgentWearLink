@@ -119,3 +119,21 @@ Only advertise capabilities that the concrete session can actually support and a
 
 After these criteria pass, attach sanitized evidence to #1/#98 and execute the AWL-specific Meta adapter acceptance in #3/#58. Hardware-only results must not be inferred from MockDeviceKit CI.
 
+## Pre-device voice-only Core/Gateway wiring (#95)
+
+After installing the locally provisioned reference app, enter the same private
+Gateway hostname, development token and optional session key. Tap **Connect
+voice-only (no media session)** to start the production OpenClaw adapter, Core
+runtime and Meta Voice Invocation channel *without* calling
+`DeviceSession.start()` or accessing camera/Speech. The host status
+`voice-only-runtime-started` means runtime setup succeeded; it **does not**
+prove Meta AI registration completed, the channel is ready, or that a physical
+Hey Meta launch works. The device capability source advertises only
+`voiceInvocation` once vendor readiness actually becomes true.
+
+Use **Connect reference runtime** for the original media/camera path. The two
+modes are mutually exclusive until Disconnect. A photo request in voice-only
+mode is unavailable by design. The voice-only path is deliberately opt-in,
+not a background daemon or permission bypass: iOS background/lifecycle and
+locked-phone invocation acceptance remain hardware-only gates under #6. No
+persistent Gateway token or unattended reconnection is introduced.
