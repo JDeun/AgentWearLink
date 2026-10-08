@@ -97,15 +97,12 @@ struct AgentWearLinkOpenClawChatProbe {
             ]
             if let requestID = pairing.requestID {
                 lines.append("requestId: \(requestID)")
-                lines.append("Approve on the Mac mini: openclaw devices approve \(requestID)")
-            }
-            if let reason = pairing.reason {
-                lines.append("reason: \(reason)")
+                lines.append("Review the pending request using the local OpenClaw device administration CLI.")
             }
             fail(lines.joined(separator: "\n"), code: 3)
         } catch {
             await adapter.disconnect()
-            fail("OpenClaw chat probe failed: \(String(describing: error))", code: 1)
+            fail("OpenClaw chat probe failed (details redacted)", code: 1)
         }
     }
 

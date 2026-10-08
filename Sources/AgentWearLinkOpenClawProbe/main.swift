@@ -65,19 +65,13 @@ struct AgentWearLinkOpenClawProbe {
             )
 
             guard response.ok else {
-                fail(
-                    "Gateway health RPC failed: \(response.error?.code ?? "UNKNOWN")",
-                    code: 1
-                )
+                fail("Gateway health RPC failed (details redacted)", code: 1)
             }
 
-            if let payload = response.payload,
-               let data = try? JSONEncoder().encode(payload),
-               let json = String(data: data, encoding: .utf8) {
-                print(json)
-            } else {
-                print(#"{"ok":true}"#)
-            }
+            // The upstream health payload is not a public diagnostic contract:
+            // it may grow to contain addresses or sensitive local configuration.
+            // Report an allowlisted success flag only; no raw Gateway JSON.
+            print(#"{"ok":true}"#)
 
             await supervisor.stop()
         } catch let OpenClawHandshakeError.pairingRequired(pairing) {
@@ -87,15 +81,12 @@ struct AgentWearLinkOpenClawProbe {
             ]
             if let requestID = pairing.requestID {
                 lines.append("requestId: \(requestID)")
-                lines.append("Approve on the Mac mini: openclaw devices approve \(requestID)")
-            }
-            if let reason = pairing.reason {
-                lines.append("reason: \(reason)")
+                lines.append("Review the pending request using the local OpenClaw device administration CLI.")
             }
             fail(lines.joined(separator: "\n"), code: 3)
         } catch {
             await supervisor.stop()
-            fail("OpenClaw probe failed: \(String(describing: error))", code: 1)
+            fail("OpenClaw probe failed (details redacted)", code: 1)
         }
     }
 
