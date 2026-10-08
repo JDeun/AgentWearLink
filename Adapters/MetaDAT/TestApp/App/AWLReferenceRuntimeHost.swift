@@ -352,10 +352,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     /// itself without the user pressing Disconnect. It must not strand stale
     /// host references or a misleading "connected" state.
     private func retireUnexpectedRuntimeFailure(attempt: UInt64) async {
-        // isCurrent(attempt) only remains true during startup: finish()
-        // clears the in-flight marker on a successful connection. Compare
-        // the monotonic generation for a long-lived runtime callback instead.
-        guard connectionFence.generation == attempt,
+        // isCurrent(attempt) only remains true during startup. Long-lived
+        // runtime callbacks use the durable generation fence instead.
+        guard connectionFence.ownsRuntime(attempt),
               runtime != nil,
               !disconnectInProgress else { return }
         // This starts in a separate MainActor task: runtime.forwardingDid-
