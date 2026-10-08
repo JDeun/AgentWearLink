@@ -3,7 +3,7 @@ import XCTest
 
 final class OpenClawGatewayErrorCodePolicyTests: XCTestCase {
     func testKnownErrorCategoriesRemainActionable() {
-        for code in ["AUTH_FAILED", "BUSY", "DEVICE_TOKEN_REJECTED", "PAIRING_REQUIRED"] {
+        for code in ["AUTH_FAILED", "BUSY", "DEVICE_TOKEN_REJECTED", "PAIRING_REQUIRED", "RUN_NOT_FOUND"] {
             XCTAssertEqual(OpenClawGatewayErrorCodePolicy.safeCode(code), code)
         }
     }
