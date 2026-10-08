@@ -142,28 +142,83 @@ struct AgentWearLinkOpenClawProbe {
             }
             fail(lines.joined(separator: "\n"), code: 3)
         } catch {
-            recordPhase("probe-error", environment: environment)
+            // Preserve the last successful wire milestone. Replacing it with
+            // "probe-error" would hide whether assembly/send/reply succeeded.
+            recordFailure(error, environment: environment)
             await supervisor.stop()
             fail("OpenClaw probe failed (details redacted)", code: 1)
         }
     }
 
-    /// Only known phase labels are written to disposable development state.
-    /// Raw Gateway frames are never persisted.
+    /// Only allowlisted diagnostic labels are written to disposable state.
+    /// Raw frames, request IDs, signatures and tokens never enter these files.
     private static func recordPhase(
-        _ phase: String,
-        environment: [String: String]
+        _ phase: String, environment: [String: String]
+    ) {
+        recordDiagnostic(
+            phase, environment: environment,
+            key: "AWL_DEV_GATEWAY_PHASE_FILE", filename: "probe-phase"
+        )
+    }
+
+    private static func recordFailure(
+        _ error: Error, environment: [String: String]
+    ) {
+        let category: String
+        if let handshake = error as? OpenClawHandshakeError {
+            switch handshake {
+            case .challengeTimeout: category = "challenge-timeout"
+            case .helloTimeout: category = "hello-timeout"
+            case .unexpectedConnectResponse: category = "unexpected-connect-response"
+            case .challengeRequired: category = "challenge-required"
+            case .invalidChallenge: category = "invalid-challenge"
+            case .missingHello: category = "missing-hello"
+            case .invalidPolicy: category = "invalid-policy"
+            case .connectInvalidated: category = "connect-invalidated"
+            default: category = "handshake-other"
+            }
+        } else if let gateway = error as? AWLOpenClawError {
+            switch gateway {
+            case let .gateway(code, _, _):
+                switch code {
+                case "AUTH_FAILED", "UNAUTHORIZED", "FORBIDDEN":
+                    category = "gateway-auth-denied"
+                case "INVALID_REQUEST": category = "gateway-invalid-request"
+                case "PAIRING_REQUIRED": category = "gateway-pairing-code"
+                case "DEVICE_TOKEN_REJECTED": category = "gateway-device-token-rejected"
+                default: category = "gateway-other"
+                }
+            case .disconnected: category = "transport-disconnected"
+            case .protocolMismatch: category = "protocol-mismatch"
+            default: category = "gateway-state-error"
+            }
+        } else if error is OpenClawFrameError {
+            category = "frame-invalid"
+        } else if error is DecodingError {
+            category = "decoding-failed"
+        } else {
+            category = "other-error"
+        }
+        recordDiagnostic(
+            category, environment: environment,
+            key: "AWL_DEV_GATEWAY_RESULT_FILE", filename: "probe-result"
+        )
+    }
+
+    private static func recordDiagnostic(
+        _ value: String, environment: [String: String],
+        key: String, filename: String
     ) {
         guard environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1",
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
               let stateDir = environment["OPENCLAW_STATE_DIR"],
-              let path = environment["AWL_DEV_GATEWAY_PHASE_FILE"],
+              let path = environment[key],
               URL(fileURLWithPath: path).standardizedFileURL.path ==
                 URL(fileURLWithPath: stateDir).deletingLastPathComponent()
-                    .appendingPathComponent("probe-phase").standardizedFileURL.path
+                    .appendingPathComponent(filename).standardizedFileURL.path
         else { return }
-        try? phase.write(toFile: path, atomically: true, encoding: .utf8)
+        try? value.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
     private static func configuredEndpoint(
