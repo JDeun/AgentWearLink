@@ -14,6 +14,7 @@ from run_hermetic_development_gateway import (
     isolated_environment,
     main,
     retire_owned_process,
+    safe_probe_phase,
 )
 
 
@@ -151,6 +152,17 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                     input_stream=Terminal("unrelated-request-999\n"),
                 ))
                 self.assertEqual(command.call_count, 1)
+
+    def test_negative_probe_phase_is_fixed_vocabulary_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "probe-phase"
+            self.assertEqual(safe_probe_phase(path), "unobserved")
+            path.write_text("connect-sent")
+            self.assertEqual(safe_probe_phase(path), "connect-sent")
+            path.write_text("token=secret\nconnect-sent")
+            self.assertEqual(safe_probe_phase(path), "unobserved")
+            path.write_bytes(b"\xff\xfe")
+            self.assertEqual(safe_probe_phase(path), "unobserved")
 
     def test_negative_pairing_mode_cannot_be_combined_with_approval_or_chat(self):
         for extra in (
