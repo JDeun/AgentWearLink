@@ -187,6 +187,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     // Opt-in only: acknowledging LaunchApp may start media *after* the response
     // handle returns, and only while this app is foreground.
     private var foregroundMediaActivationOnVoiceLaunch = false
+    private var pendingVoiceMediaLease: UInt64?
+    private var voicePhaseTask: Task<Void, Never>?
     private let connectTimeout: Duration
 
     public init(
@@ -220,6 +222,37 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     /// background camera/Speech access via this method.
     public func setForegroundMediaActivationOnVoiceLaunch(_ enabled: Bool) {
         foregroundMediaActivationOnVoiceLaunch = enabled
+        if enabled {
+            observeForegroundForPendingVoiceLaunch()
+        } else {
+            pendingVoiceMediaLease = nil
+            voicePhaseTask?.cancel()
+            voicePhaseTask = nil
+        }
+    }
+
+    private func observeForegroundForPendingVoiceLaunch() {
+        guard foregroundMediaActivationOnVoiceLaunch,
+              voiceInvocationChannel != nil,
+              voicePhaseTask == nil,
+              let applicationLifecycle else { return }
+
+        let phases = applicationLifecycle.phases()
+        voicePhaseTask = Task { [weak self] in
+            for await phase in phases {
+                guard !Task.isCancelled else { break }
+                if phase == .foreground {
+                    await self?.resumePendingVoiceLaunchOnForeground()
+                }
+            }
+        }
+    }
+
+    private func resumePendingVoiceLaunchOnForeground() async {
+        guard let lease = pendingVoiceMediaLease,
+              voiceStartFence.owns(lease) else { return }
+        pendingVoiceMediaLease = nil
+        await activateMediaAfterAcknowledgedVoiceLaunch(voiceLease: lease)
     }
 
     private func activateMediaAfterAcknowledgedVoiceLaunch(voiceLease: UInt64) async {
@@ -228,6 +261,17 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         guard voiceStartFence.owns(voiceLease),
               voiceInvocationChannel != nil else { return }
         let phase = await applicationLifecycle?.currentPhase ?? .foreground
+        if phase == .background {
+            // Cold launches may deliver the acknowledgement before SwiftUI
+            // reports .active. Keep one fenced handoff pending for foreground;
+            // never open a media session while iOS is backgrounded.
+            if foregroundMediaActivationOnVoiceLaunch,
+               voiceStartFence.owns(voiceLease) {
+                pendingVoiceMediaLease = voiceLease
+                observeForegroundForPendingVoiceLaunch()
+            }
+            return
+        }
         guard MetaDATVoiceMediaActivationPolicy.mayActivate(
             optedIn: foregroundMediaActivationOnVoiceLaunch,
             foreground: phase == .foreground,
@@ -286,6 +330,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             return
         }
         voiceInvocationChannel = channel
+        observeForegroundForPendingVoiceLaunch()
         await channel.start()
         // An async stop during channel.start() must not leave a ghost listener.
         if !voiceStartFence.owns(token) {
@@ -295,7 +340,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     /// Explicitly retires Voice Invocation without affecting DeviceSession.
     public func stopVoiceInvocationListening() async {
-        foregroundMediaActivationOnVoiceLaunch = false
+        setForegroundMediaActivationOnVoiceLaunch(false)
         voiceStartFence.invalidate()
         let channel = voiceInvocationChannel
         voiceInvocationChannel = nil
@@ -331,6 +376,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             speechReady: false,
             cameraReady: false
         )
+        // Media's own phase observer now owns the one-slot lifecycle stream.
+        // Restore the independent voice observer when that media retires.
+        voicePhaseTask?.cancel()
+        voicePhaseTask = nil
+        pendingVoiceMediaLease = nil
         stopping = false
         connecting = true
         let generation = generationFence.begin()
@@ -913,5 +963,6 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
         connecting = false
         stopping = false
+        observeForegroundForPendingVoiceLaunch()
     }
 }
