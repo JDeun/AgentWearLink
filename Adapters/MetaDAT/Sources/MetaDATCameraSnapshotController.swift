@@ -3,6 +3,13 @@ import Foundation
 import MWDATCamera
 import MWDATCore
 
+/// Standalone Photo is experimental in pinned Meta DAT 1.0.0 and must be an
+/// explicit opt-in. The compatible streaming still path remains the default.
+public enum MetaDATSnapshotMode: Sendable, Equatable {
+    case compatibleStreamStill
+    case experimentalStandalonePhoto
+}
+
 /// Production one-shot camera owner used by MetaDATDeviceAdapter.
 ///
 /// The controller is deliberately not an actor: the owning device adapter
@@ -13,6 +20,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
     private let lock = NSLock()
     private let timeout: Duration
     private let maximumBytes: Int
+    private let snapshotMode: MetaDATSnapshotMode
 
     private var generation: UInt64 = 0
     private var activeCapture: UInt64?
@@ -20,17 +28,20 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
 
     private let firstFrameReadiness = MetaDATFirstFrameReadiness()
     private let photoResultListener = MetaDATPhotoResultListener()
+    private let standalonePhotoCapture = MetaDATStandalonePhotoCapture()
     private let waitGate = MetaDATCaptureWaitGate()
 
     public init(
         timeout: Duration = .seconds(5),
-        maximumBytes: Int = ImageAttachment.defaultMaximumBytes
+        maximumBytes: Int = ImageAttachment.defaultMaximumBytes,
+        snapshotMode: MetaDATSnapshotMode = .compatibleStreamStill
     ) {
         precondition(timeout > .zero)
         precondition(maximumBytes > 0)
         precondition(maximumBytes <= ImageAttachment.defaultMaximumBytes)
         self.timeout = timeout
         self.maximumBytes = maximumBytes
+        self.snapshotMode = snapshotMode
     }
 
     public func capture(from session: DeviceSession) async throws -> ImageAttachment {
@@ -68,6 +79,28 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         }
 
         try ensureCurrent(token)
+
+        if snapshotMode == .experimentalStandalonePhoto {
+            // Experimental and non-publishable per pinned DAT 1.0.0:
+            // never enable without an explicit owner-selected mode.
+            // No Stream.start(), video frames or audio transport in this path.
+            let bytes = try await standalonePhotoCapture.capture(
+                camera.photo,
+                timeout: timeout
+            )
+            try ensureCurrent(token)
+            // AWL's SDK-neutral photo contract accepts JPEG only. Fail closed
+            // on HEIC/unknown payloads; do not mislabel media as image/jpeg.
+            try MetaDATPhotoNormalizer.validateStreamJPEG(
+                bytes,
+                maximumBytes: maximumBytes
+            )
+            return try ImageAttachment(
+                data: bytes,
+                format: .jpeg,
+                maximumBytes: maximumBytes
+            )
+        }
 
         let stream = camera.stream
         firstFrameReadiness.reset()
@@ -120,6 +153,10 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         waitGate.cancel()
         firstFrameReadiness.reset()
         photoResultListener.cancel()
+        standalonePhotoCapture.cancel()
+        if snapshotMode == .experimentalStandalonePhoto {
+            retiredCamera?.photo.stop()
+        }
         retiredCamera?.stream.stop()
         retiredCamera?.stop()
     }
@@ -252,6 +289,9 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
         // Idempotent with invalidate(): whichever boundary retires Camera
         // first owns the stop, so late capture completion cannot stop a new
         // generation's camera or keep a previous one alive between captures.
+        if snapshotMode == .experimentalStandalonePhoto {
+            retiredCamera?.photo.stop()
+        }
         retiredCamera?.stream.stop()
         retiredCamera?.stop()
     }
