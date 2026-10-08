@@ -37,6 +37,45 @@ public struct OpenClawValidationProfile: Sendable, Equatable {
 }
 
 
+/// This policy is only for a one-shot, unapproved identity rejection test.
+/// It must never be used for approved pairing or persistent reconnect evidence.
+public enum OpenClawDevelopmentNegativePairingPolicy {
+    public static func permitsEphemeralIdentity(
+        environment: [String: String],
+        isLoopback: Bool,
+        profile: OpenClawValidationProfile
+    ) -> Bool {
+        guard isLoopback,
+              profile == .readOnly,
+              environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1",
+              environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
+              environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
+              environment["AWL_DEV_GATEWAY_HEALTH_ONLY"] == "1",
+              environment["AWL_DEV_GATEWAY_PROVE_ABORT"] == "0",
+              environment["AWL_DEV_GATEWAY_USE_BUILT_PROBE"] == "1",
+              environment["AWL_OPENCLAW_BOOTSTRAP_TOKEN"] == nil,
+              let nonce = environment["AWL_DEV_KEYCHAIN_NONCE"],
+              nonce.range(of: #"^[0-9a-f]{20}$"#, options: .regularExpression) != nil,
+              let state = environment["OPENCLAW_STATE_DIR"],
+              let url = environment["AWL_OPENCLAW_URL"],
+              let components = URLComponents(string: url),
+              components.scheme == "ws",
+              components.host == "127.0.0.1",
+              components.port != nil,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              components.path.isEmpty || components.path == "/" else {
+            return false
+        }
+        let path = URL(fileURLWithPath: state).standardizedFileURL
+        return path.lastPathComponent == "state"
+            && path.deletingLastPathComponent().lastPathComponent
+                .hasPrefix("awl-real-dev-gateway-")
+    }
+}
+
 public enum OpenClawDevelopmentKeychainIsolationError: Error, Sendable {
     case invalidConfiguration
 }
