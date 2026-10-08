@@ -90,6 +90,25 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             "Experimental Camera.photo did not deliver bounded JPEG: state=\\(photoState.label)"
         )
 
+        // Drive the SDK's own cameraCapture failure injector through
+        // the *production* standalone Photo bridge. The previous success
+        // establishes the same fixture can produce valid image bytes.
+        let injectStandaloneFailure = app.buttons["awl-meta-fail-standalone-photo"]
+        XCTAssertTrue(injectStandaloneFailure.waitForExistence(timeout: 5))
+        injectStandaloneFailure.tap()
+        standalone.tap()
+        let failedStandalone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(
+                format: "label == %@", "experimental-photo-capture-failed"
+            ),
+            object: photoState
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [failedStandalone], timeout: 15),
+            .completed,
+            "Injected standalone capture failure did not fail closed"
+        )
+
         // The same real production snapshot entrypoint must fail closed
         // without a shutter request when the mock denies camera permission.
         let denyCamera = app.buttons["awl-meta-deny-camera-permission"]
