@@ -183,9 +183,17 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         token: String,
         sessionKey: String,
         enableVision: Bool,
+        experimentalStandalonePhoto: Bool = false,
         voiceOnly: Bool = false,
         voiceWake: Bool = false
     ) async {
+        #if !DEBUG
+        // Pinned DAT 1.0.0 experimental Camera.photo is not publishable.
+        guard !experimentalStandalonePhoto else {
+            status = "experimental-photo-unavailable-in-release"
+            return
+        }
+        #endif
         guard !(voiceOnly && voiceWake) else {
             status = "invalid-voice-mode"
             return
@@ -257,6 +265,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 supportsVisionInput: enableVision
             )
             let concreteDevice = MetaDATDeviceAdapter(
+                snapshotMode: experimentalStandalonePhoto
+                    ? .experimentalStandalonePhoto : .compatibleStreamStill,
                 applicationLifecycle: lifecycle,
                 diagnostics: diagnostics
             )
