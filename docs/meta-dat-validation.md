@@ -137,3 +137,26 @@ mode is unavailable by design. The voice-only path is deliberately opt-in,
 not a background daemon or permission bypass: iOS background/lifecycle and
 locked-phone invocation acceptance remain hardware-only gates under #6. No
 persistent Gateway token or unattended reconnection is introduced.
+
+## Opt-in iPhone → OpenClaw post-ack Voice + foreground Speech
+
+After local Meta provisioning, connect a private Tailnet Serve OpenClaw
+Gateway with a valid device pairing/explicit Gateway token, then select
+**Connect hands-free wake + Speech (foreground)**. This reuses the real Core
+runtime, native OpenClaw adapter and iPhone speech output, while initially
+starting only the independent vendor Voice Invocation channel.
+
+After a supported Meta AI `LaunchApp` is acknowledged, the device adapter
+starts a media session only when the app is foreground. DAT Speech final
+transcripts are then forwarded as agent requests to the existing OpenClaw
+session and spoken through the **phone-owned** output sink. Neither an initial
+voice launch nor a `voice-wake-runtime-started` status proves microphone
+availability, an authenticated/paired Gateway, locked-phone startup or any
+audio transfer to the glasses. DAT Speech does not expose raw PCM to this app.
+
+Media startup is opt-in, never uses an arbitrary public Gateway URL, does not
+silently persist a supplied Gateway token, cannot force iOS foreground state,
+and is torn down at Disconnect. Voice-only mode and full media/vision mode
+remain independent alternatives. The MockDeviceKit launch → Speech → Core
+smoke test under PR #577 provides isolated SDK evidence; the real Tailnet and
+physical device steps remain #56/#97/#6.
