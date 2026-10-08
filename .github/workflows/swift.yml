@@ -96,7 +96,10 @@ jobs:
 
   core-test:
     needs: changes
-    runs-on: macos-15
+    # The macOS-15 XCTest worker intermittently hangs before launching a
+    # test case, independently of the test chosen (#542). The complete suite
+    # remains required; compare on supported macOS-26 rather than skipping.
+    runs-on: macos-26
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

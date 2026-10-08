@@ -5,6 +5,90 @@ dispatcher, supervisor, run client and native agent adapter against a real
 OpenClaw Gateway. It is not a synthetic WebSocket fixture and is not the
 physical iPhone/Tailscale deployment gate (#56/#97).
 
+## Start a disposable real Gateway from a pinned source checkout
+
+The existing harness below can attach to an operator-started isolated Gateway.
+For a safer, repeatable path, use the opt-in runner. It does **not** install,
+restart or modify a production Gateway service:
+
+```bash
+# Build the exact trusted development checkout in its own directory first.
+# Use the checkout's actual 40-character HEAD commit, not a guessed version.
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout /path/to/isolated/openclaw-checkout \
+  --revision YOUR_EXACT_40_CHARACTER_COMMIT
+```
+
+The runner rejects mismatched/dirty checked-out sources or a missing built
+`dist/entry.js`. It launches **that checkout's Node entrypoint**, not a
+globally installed CLI. It creates a fresh temporary Gateway state directory,
+config file, workspace, local random port, synthetic auth token and independent
+per-run read/write Keychain services. It carries only allowlisted toolchain
+environment variables: inherited provider API keys, custom secrets, existing
+OpenClaw state/profile paths, production Gateway tokens and Tailnet settings
+are deliberately excluded. Gateway stdout/stderr, model output, credentials
+and probe errors are suppressed.
+
+The default is the **read-only** acceptance gate: two separate Swift production
+health probes, each performing a fresh authenticated Gateway handshake. It
+proves neither remote persistent device token grant nor a model response.
+If the isolated Gateway requires manual device-pairing approval, the test
+fails closed until the operator explicitly approves only that disposable
+Gateway's new identity. The runner cannot automatically approve pairings.
+
+If the isolated Gateway returns `pairingRequired`, the default execution
+fails closed and removes its temporary Gateway. To make the actual handshake
+and device-grant approval test **repeatable within the same isolated Gateway**,
+use the explicit terminal-only flag:
+
+```bash
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout /path/to/isolated/openclaw-checkout \
+  --revision YOUR_EXACT_40_CHARACTER_COMMIT \
+  --approve-isolated-pairing
+```
+
+The runner lists only pending request IDs read from **its own** disposable
+loopback Gateway and asks the operator to enter one exact ID after reviewing
+the request. Only a matching ID is sent to the official OpenClaw
+`devices approve <requestId>` command, with its transient local state and
+synthetic auth. No automatic "latest" approval, arbitrary request, personal
+service credential or Tailnet access is permitted. Approval input times out
+after a bounded interval. A full-chat test may require **separate** read-only
+and write-profile approvals; at most two interactive approvals are supported
+in one run, and any refused/unknown request fails closed.
+
+This proves a **human-approved disposable** device pairing only when the real
+probes pass. It does not prove automatic pairing, a physical iPhone pairing,
+or that the remote Mac mini grants credentials.
+
+For the **full real agent** test, supply an intentionally harmless, development-
+only model/configuration with tools disabled (or otherwise restricted).
+This must not be a personal OpenClaw profile or private conversation.
+
+```bash
+AWL_DEV_ISOLATED_MODEL_ACK=1 \
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout /path/to/isolated/openclaw-checkout \
+  --revision YOUR_EXACT_40_CHARACTER_COMMIT \
+  --full-chat --config-template /path/to/synthetic-development-openclaw.json
+```
+
+Add `--prove-abort` only when the isolated model is deliberately slow enough
+for an accepted run to be cancelled remotely. A too-fast completed run
+cannot count as abort success. The configuration file is copied to the
+temporary state, not modified in place; ensure it contains **no secrets or
+destructive tool permissions**. The runner does not supply model credentials
+implicitly, and source revision checks are not a binary reproducible-build
+attestation. Always verify the local development build is actually from the
+chosen checkout.
+
+The runner retires only its own process group and removes its temporary
+Gateway config/workspace on exit. macOS Keychain items are segregated under
+a fresh synthetic service namespace; their presence alone does not imply
+approval of a deployment identity. Do not confuse loopback probe success
+with iPhone/Tailnet/Ray-Ban physical evidence.
+
 ## Isolation and prerequisites
 
 - Launch a **separate development OpenClaw Gateway** on local loopback

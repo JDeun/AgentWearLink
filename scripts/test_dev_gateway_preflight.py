@@ -47,6 +47,25 @@ class DevelopmentGatewayPreflightTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_config({**self.valid, **change})
 
+    def test_health_only_and_disposable_keychain_are_explicit(self):
+        approved = {
+            **self.valid,
+            "AWL_DEV_GATEWAY_HEALTH_ONLY": "1",
+            "AWL_DEV_KEYCHAIN_NONCE": "0123456789abcdefabcd",
+        }
+        self.assertEqual(
+            validate_config(approved)["session_key_kind"],
+            "explicit-isolated",
+        )
+        for change in [
+            {"AWL_DEV_GATEWAY_HEALTH_ONLY": "true"},
+            {"AWL_DEV_GATEWAY_PROVE_ABORT": "1"},
+            {"AWL_DEV_KEYCHAIN_NONCE": "too-short"},
+            {"AWL_DEV_KEYCHAIN_NONCE": "A" * 20},
+        ]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_config({**approved, **change})
+
     def test_rejects_default_session_and_missing_revision(self):
         for change in [
             {"AWL_OPENCLAW_SESSION_KEY": "agent:main:main"},

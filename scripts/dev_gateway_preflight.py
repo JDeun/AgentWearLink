@@ -66,8 +66,16 @@ def validate_config(config: dict[str, str]) -> dict[str, str]:
         raise ValueError("leave AWL_OPENCLAW_CHAT_MESSAGE unset; harness creates a harmless marker")
     if config.get("AWL_DEV_GATEWAY_PROVE_ABORT", "0") not in ("0", "1"):
         raise ValueError("AWL_DEV_GATEWAY_PROVE_ABORT must be 0 or 1")
+    if config.get("AWL_DEV_GATEWAY_HEALTH_ONLY", "0") not in ("0", "1"):
+        raise ValueError("AWL_DEV_GATEWAY_HEALTH_ONLY must be 0 or 1")
+    if (config.get("AWL_DEV_GATEWAY_PROVE_ABORT") == "1"
+            and config.get("AWL_DEV_GATEWAY_HEALTH_ONLY") == "1"):
+        raise ValueError("abort proof requires mutating Gateway probe")
     if config.get("AWL_DEV_GATEWAY_ABORT_ASSERT"):
         raise ValueError("leave AWL_DEV_GATEWAY_ABORT_ASSERT unset; only the runner may set it")
+    nonce = config.get("AWL_DEV_KEYCHAIN_NONCE")
+    if nonce is not None and re.fullmatch(r"[0-9a-f]{20}", nonce) is None:
+        raise ValueError("ephemeral Keychain nonce must be 20 lowercase hex characters")
 
     return {
         "gateway_url": endpoint,
