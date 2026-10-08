@@ -138,7 +138,8 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
         let sentCount = await adaptive.sentCount()
         XCTAssertEqual(sentCount, 1)
         XCTAssertEqual(recorder.snapshot(), [
-            "socket-opened", "challenge-received", "connect-sent",
+            "socket-opened", "challenge-received", "assemble-started",
+            "assemble-complete", "connect-sending", "connect-sent",
             "response-received",
         ])
     }
