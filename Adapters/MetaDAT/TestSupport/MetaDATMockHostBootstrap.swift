@@ -47,6 +47,9 @@ public enum MetaDATMockHostBootstrap {
                 .compactMap({ $0 as? MockGlasses }).first else {
             throw MetaDATMockHostError.noPairedDevices
         }
+        // Exercise the pinned SDK's deterministic injected transcript path,
+        // never the phone microphone or a cloud ASR service.
+        glasses.services.speech.setTranscriptionSource(.injected)
         glasses.services.speech.simulateTranscription(
             text: text, isFinal: true, confidence: 1
         )
