@@ -39,7 +39,7 @@ def boot_with_deadline(
     runner=subprocess.run,
     clock=time.monotonic,
     sleep=time.sleep,
-    budget_seconds: float = 175,
+    budget_seconds: float = 240,
 ) -> bool:
     deadline = clock() + budget_seconds
     if query_state(udid, runner=runner) == "Booted":
