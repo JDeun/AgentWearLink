@@ -11,6 +11,10 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         app.launchArguments = ["--awl-meta-ui-testing"]
         app.launchEnvironment["MWDAT_TEST_SERVER_PORT_FILE"] = portFile
         app.launch()
+        // The first UI test used to leave its test host running on success.
+        // Unconditionally retire this exact host after pair/unpair checks;
+        // the next UI test must own a fresh MockDeviceKit server instance.
+        defer { app.terminate() }
 
         let hostState = app.staticTexts["awl-meta-host-state"]
         XCTAssertTrue(hostState.waitForExistence(timeout: 10))
@@ -18,14 +22,12 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         let readyExpectation = XCTNSPredicateExpectation(predicate: ready, object: hostState)
         guard XCTWaiter.wait(for: [readyExpectation], timeout: 15) == .completed else {
             XCTFail("Meta DAT test host did not become ready; state=\(hostState.label)")
-            app.terminate()
             return
         }
 
         let client = MockDeviceTestClient(portFilePath: portFile)
         guard await client.waitForServer(timeout: 15) else {
             XCTFail("MockDeviceKit server did not publish its rendezvous port")
-            app.terminate()
             return
         }
 
@@ -67,6 +69,8 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         app.launchArguments = ["--awl-meta-ui-testing", "--awl-meta-voice-ui-testing"]
         app.launchEnvironment["MWDAT_TEST_SERVER_PORT_FILE"] = portFile
         app.launch()
+        // Include thrown XCTUnwrap/assertion paths in teardown, too.
+        defer { app.terminate() }
 
         let hostState = app.staticTexts["awl-meta-host-state"]
         XCTAssertTrue(hostState.waitForExistence(timeout: 15))
@@ -76,14 +80,12 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         )
         guard XCTWaiter.wait(for: [ready], timeout: 15) == .completed else {
             XCTFail("Voice MockDeviceKit host bootstrap failed")
-            app.terminate()
             return
         }
 
         let client = MockDeviceTestClient(portFilePath: portFile)
         guard await client.waitForServer(timeout: 15) else {
             XCTFail("Voice MockDeviceKit test server unavailable")
-            app.terminate()
             return
         }
         let paired = await client.pairDevice()
@@ -103,7 +105,6 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         )
         guard XCTWaiter.wait(for: [listening], timeout: 20) == .completed else {
             XCTFail("Voice channel was not ready: \(voiceState.label)")
-            app.terminate()
             return
         }
 
@@ -123,7 +124,6 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
 
         let unpaired = await client.unpairDevice(deviceId: deviceID)
         XCTAssertTrue(unpaired)
-        app.terminate()
     }
 
 }
