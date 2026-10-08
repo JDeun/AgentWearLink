@@ -5,7 +5,9 @@ from unittest.mock import patch
 
 from run_openclaw_remaining_tests import (
     ISOLATED_CLASSES,
-    PER_METHOD_DEADLINE_SECONDS,
+    PER_METHOD_GROUP_DEADLINE_SECONDS,
+    METHOD_GROUP_SIZE,
+    method_batches,
     discover_method_shards,
     discover_remaining,
     main,
@@ -89,12 +91,31 @@ class RemainingOpenClawXCTestShardsTests(unittest.TestCase):
             self.assertEqual(main(), 124)
             self.assertEqual(run.call_count, 2)
 
-    def test_method_shard_failure_names_the_specific_method(self):
+    def test_method_batches_cover_every_method_exactly_once(self):
+        methods = [f"testCase{x}" for x in range(13)]
+        batches = method_batches("OpenClawRecoveryMatrixTests", methods)
+        self.assertEqual(len(batches), 5)
+        self.assertEqual([name for names, _ in batches for name in names], methods)
+        for names, pattern in batches:
+            self.assertLessEqual(len(names), METHOD_GROUP_SIZE)
+            import re
+            for method in methods:
+                full_name = (
+                    "AgentWearLinkOpenClawTests.OpenClawRecoveryMatrixTests." + method
+                )
+                self.assertEqual(bool(re.search(pattern, full_name)), method in names)
+                slash_name = (
+                    "AgentWearLinkOpenClawTests/OpenClawRecoveryMatrixTests/" + method
+                )
+                self.assertEqual(bool(re.search(pattern, slash_name)), method in names)
+
+    def test_method_batch_failure_fails_fast_without_retrying(self):
+        methods = [f"testCase{x}" for x in range(4)]
         with (
             patch("run_openclaw_remaining_tests.discover_remaining",
                   return_value=["OpenClawRecoveryMatrixTests"]),
             patch("run_openclaw_remaining_tests.discover_method_shards",
-                  return_value=["testReconnect", "testStop"]),
+                  return_value=methods),
             patch("run_openclaw_remaining_tests.run_bounded",
                   side_effect=[0, 124]) as run,
         ):
@@ -103,9 +124,15 @@ class RemainingOpenClawXCTestShardsTests(unittest.TestCase):
             self.assertEqual(
                 run.call_args.args,
                 (["swift", "test", "--filter",
-                  "AgentWearLinkOpenClawTests.OpenClawRecoveryMatrixTests.testStop"],
-                 PER_METHOD_DEADLINE_SECONDS),
+                  "AgentWearLinkOpenClawTests[./]OpenClawRecoveryMatrixTests"
+                  "[./](?:testCase3)$"],
+                 PER_METHOD_GROUP_DEADLINE_SECONDS),
             )
+
+    def test_method_batches_refuse_duplicate_or_untrusted_names(self):
+        for names in ([], ["testGood", "testGood"], ["testBad|Other"]):
+            with self.assertRaises(ValueError):
+                method_batches("OpenClawRecoveryMatrixTests", names)
 
 
 if __name__ == "__main__":

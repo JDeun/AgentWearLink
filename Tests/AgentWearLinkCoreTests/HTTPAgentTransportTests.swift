@@ -259,7 +259,14 @@ final class HTTPAgentTransportTests: XCTestCase {
     }
 
     func testDuplicateInteractionIDIsRejectedWhileReserved() async throws {
+        // The first stream must remain retained while its HTTP response is
+        // pending. Discarding it immediately triggers onTermination/cancel,
+        // so a subsequent send may legitimately reuse the freed ID.
+        let releaseResponse = DispatchSemaphore(value: 0)
         URLProtocolStub.handler = { request in
+            guard releaseResponse.wait(timeout: .now() + 5) == .success else {
+                throw URLError(.timedOut)
+            }
             let response = HTTPURLResponse(
                 url: request.url!, statusCode: 200,
                 httpVersion: nil, headerFields: nil
@@ -276,7 +283,10 @@ final class HTTPAgentTransportTests: XCTestCase {
         let id = InteractionID()
         let request = AgentRequest(interactionID: id, text: "hello")
 
-        _ = await transport.send(request)
+        let firstStream = await transport.send(request)
+        defer { releaseResponse.signal() }
+        let reserved = await transport.operationCount()
+        XCTAssertEqual(reserved, 1)
 
         do {
             for try await _ in await transport.send(request) {}
@@ -289,5 +299,6 @@ final class HTTPAgentTransportTests: XCTestCase {
         }
 
         await transport.cancel(interactionID: id)
+        withExtendedLifetime(firstStream) {}
     }
 }

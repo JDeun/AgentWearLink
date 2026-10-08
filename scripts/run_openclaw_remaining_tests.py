@@ -24,9 +24,12 @@ ISOLATED_CLASSES = frozenset({
 # Keep this short enough that a single hanging suite cannot exhaust the
 # GitHub job. The first timeout exits nonzero; retries are never automatic.
 PER_CLASS_DEADLINE_SECONDS = 65
-# A previously hanging test class is further sharded by *method* so that
-# a stalled XCTest process identifies its exact scenario, not just its class.
-PER_METHOD_DEADLINE_SECONDS = 30
+# Multiple XCTest launches occasionally stall before even starting a test.
+# Group a few *complete* method names per process to reduce process churn,
+# retaining deterministic coverage and bounded failure attribution.
+# Do NOT auto-retry hung or failed tests: #542 remains independently tracked.
+PER_METHOD_GROUP_DEADLINE_SECONDS = 55
+METHOD_GROUP_SIZE = 3
 METHOD_ISOLATED_CLASSES = frozenset({"OpenClawRecoveryMatrixTests"})
 METHOD_DECLARATION = re.compile(r"(?m)^\s*func\s+(test[A-Za-z0-9_]+)\s*\(")
 SUITE_ROOT = Path("Tests/AgentWearLinkOpenClawTests")
@@ -73,6 +76,29 @@ def discover_method_shards(root: Path, name: str) -> list[str]:
     return sorted(methods)
 
 
+def method_batches(name: str, methods: list[str]) -> list[tuple[list[str], str]]:
+    """Partition each discovered XCTest method exactly once into regex filters.
+
+    SwiftPM supports regex --filter; [./] accepts its module/class separator
+    variants. Never match a prefix of another test method.
+    """
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        raise ValueError("Invalid XCTest class identifier")
+    if not methods or len(set(methods)) != len(methods):
+        raise ValueError("Missing or duplicate XCTest methods")
+    if any(re.fullmatch(r"test[A-Za-z0-9_]+", method) is None for method in methods):
+        raise ValueError("Invalid XCTest method name")
+    batches: list[tuple[list[str], str]] = []
+    for offset in range(0, len(methods), METHOD_GROUP_SIZE):
+        names = methods[offset:offset + METHOD_GROUP_SIZE]
+        pattern = (
+            r"AgentWearLinkOpenClawTests[./]" + name +
+            r"[./](?:" + "|".join(names) + r")$"
+        )
+        batches.append((names, pattern))
+    return batches
+
+
 def main() -> int:
     try:
         classes = discover_remaining(SUITE_ROOT)
@@ -91,19 +117,31 @@ def main() -> int:
         # as identifiers, never interpreted by a shell.
         methods = method_shards.get(name)
         if methods is not None:
+            try:
+                batches = method_batches(name, methods)
+            except ValueError as error:
+                print("OpenClaw XCTest method batch error: " + str(error),
+                      file=sys.stderr)
+                return 2
             print(f"OpenClaw XCTest class {index}/{len(classes)}: {name} "
-                  f"({len(methods)} method-isolated tests)", flush=True)
-            for method_index, method in enumerate(methods, start=1):
-                test = f"AgentWearLinkOpenClawTests.{name}.{method}"
-                print(f"OpenClaw XCTest method {method_index}/{len(methods)}: "
-                      f"{name}.{method}", flush=True)
+                  f"({len(methods)} tests in {len(batches)} bounded batches)",
+                  flush=True)
+            for batch_index, (names, test_filter) in enumerate(batches, start=1):
+                # Print only checked-in test method identifiers, never content.
+                print(f"OpenClaw XCTest batch {batch_index}/{len(batches)}: "
+                      f"{name}: {', '.join(names)}", flush=True)
                 code = run_bounded(
-                    ["swift", "test", "--filter", test],
-                    PER_METHOD_DEADLINE_SECONDS,
+                    ["swift", "test", "--filter", test_filter],
+                    PER_METHOD_GROUP_DEADLINE_SECONDS,
+                    expected_xctest_cases=[
+                        f"AgentWearLinkOpenClawTests.{name} {method}"
+                        for method in names
+                    ],
                 )
                 if code != 0:
-                    print(f"OpenClaw XCTest method failed or timed out: "
-                          f"{name}.{method}; exit={code}", file=sys.stderr)
+                    print(f"OpenClaw XCTest batch failed or timed out: "
+                          f"{name}: {', '.join(names)}; exit={code}",
+                          file=sys.stderr)
                     return code
             continue
         print(f"OpenClaw XCTest class {index}/{len(classes)}: {name}", flush=True)
