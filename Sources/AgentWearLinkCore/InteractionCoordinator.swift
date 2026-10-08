@@ -221,8 +221,11 @@ public actor InteractionCoordinator {
                     generation: generation
                 )
             } catch {
+                // Unknown adapter/provider errors cross an untrusted boundary.
+                // Their descriptions may contain credential or conversation
+                // fragments: never forward the raw description to host output.
                 _ = await self.emitIfCurrent(
-                    .failed(id, .agent(String(describing: error))),
+                    .failed(id, .agent("agent response failed (details redacted)")),
                     id: id,
                     generation: generation
                 )
