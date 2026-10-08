@@ -26,6 +26,12 @@ public struct AWLConnectionAttemptFence: Sendable {
         startingAttempt == attempt && generation == attempt
     }
 
+    /// For callbacks from a running connection *after* finish() has cleared
+    /// the startup marker. Invalidated by explicit disconnect or a new begin.
+    public func ownsRuntime(_ attempt: UInt64) -> Bool {
+        generation == attempt
+    }
+
     public mutating func finish(_ attempt: UInt64) {
         guard startingAttempt == attempt else { return }
         startingAttempt = nil
