@@ -13,6 +13,7 @@ Meta Wearables DAT, physical glasses, or a live OpenClaw deployment.
 | Cross-session response | Mismatched response ID cancels run and fails original interaction | N/A |
 | Cancellation race | Generation-scoped coordinator/HTTP state | Rapid invoke/cancel/reinvoke |
 | Media bounds | Image attachment enforces configured byte limit | Oversized DAT snapshot handling |
+| Streaming transcript budget | Native OpenClaw response accumulation is bounded by UTF-8 byte budget; overflow is typed and rejects further chunks, preventing unbounded terminal-reconciliation retention | Exercise long response/poor-network scenario without dumping private text |
 | Camera privacy | Vision requires explicit snapshot call and capability | Verify no capture before explicit interaction |
 | Camera stream heap growth (pinned DAT) | One-shot photo capture now stops and releases the owning Camera on every completion/error/cancellation, not merely its Stream (#303); generation fencing prevents late cross-capture reuse | Profile actual retained heap on target iPhone; vendor internal allocation may persist even after Camera.stop() |
 | Media retention | Core values are in-memory only; no persistence API | Inspect iOS host caches/logs |
