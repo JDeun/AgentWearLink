@@ -19,14 +19,13 @@ public final class MetaDATPhotoResultListener: @unchecked Sendable {
         _ stream: MWDATCamera.Stream,
         onData: @escaping @Sendable (Data) -> Void,
         onError: @escaping @Sendable () -> Void
-    ) {
-        let listenerGeneration = generation.begin()
-        let retired = lock.withLock { () -> [any AnyListenerToken] in
-            defer {
-                token = nil
-                errorToken = nil
-            }
-            return [token, errorToken].compactMap { $0 }
+    ) -> UInt64 {
+        let (listenerGeneration, retired) = lock.withLock { () -> (UInt64, [any AnyListenerToken]) in
+            let lease = generation.begin()
+            let old = [token, errorToken].compactMap { $0 }
+            token = nil
+            errorToken = nil
+            return (lease, old)
         }
         for retiredToken in retired {
             Task { await retiredToken.cancel() }
@@ -57,16 +56,27 @@ public final class MetaDATPhotoResultListener: @unchecked Sendable {
                 await newErrorToken.cancel()
             }
         }
+        return listenerGeneration
     }
 
     public func cancel() {
-        generation.invalidate()
+        cancel(ifCurrent: nil)
+    }
+
+    /// A previous photo stream may finish asynchronously after re-arming.
+    /// Compare and retire under the same lock as arm() to preserve the new
+    /// listener's callback and error tokens.
+    public func cancel(ifCurrent lease: UInt64?) {
         let retired = lock.withLock { () -> [any AnyListenerToken] in
-            defer {
-                token = nil
-                errorToken = nil
+            if let lease {
+                guard generation.invalidate(ifCurrent: lease) else { return [] }
+            } else {
+                generation.invalidate()
             }
-            return [token, errorToken].compactMap { $0 }
+            let old = [token, errorToken].compactMap { $0 }
+            token = nil
+            errorToken = nil
+            return old
         }
         for retiredToken in retired {
             Task { await retiredToken.cancel() }
