@@ -43,6 +43,18 @@ struct MetaDATSessionGenerationFence: Sendable {
     }
 }
 
+/// A concurrent second caller must never treat a still-pending vendor session
+/// handshake as a successful connect. Re-entry on a ready session remains
+/// idempotent; the in-progress check intentionally takes precedence.
+enum MetaDATConnectAdmission {
+    static func shouldStart(connecting: Bool, sessionActive: Bool) throws -> Bool {
+        guard !connecting else {
+            throw AWLError.device("Meta DAT session connection is already in progress")
+        }
+        return !sessionActive
+    }
+}
+
 final class MetaDATDeviceEventSource: @unchecked Sendable {
     private struct Subscription {
         let generation: UInt64
@@ -229,7 +241,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     }
 
     public func connect() async throws {
-        guard deviceSession == nil, !connecting else { return }
+        guard try MetaDATConnectAdmission.shouldStart(
+            connecting: connecting,
+            sessionActive: deviceSession != nil
+        ) else { return }
 
         // Reject a cold start in the background. The subscribed phase stream
         // below also replays its latest phase, closing the gap between this
