@@ -104,13 +104,18 @@ jobs:
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 2
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawProtocolTests
+      - name: Test OpenClaw RPC dispatcher in isolation
+        if: needs.changes.outputs.swift == 'true'
+        timeout-minutes: 3
+        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests
       - name: Test remaining OpenClaw cases in isolation
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 4
         run: |
           swift test \
             --filter AgentWearLinkOpenClawTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawProtocolTests
+            --skip AgentWearLinkOpenClawTests.OpenClawProtocolTests \
+            --skip AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests
       - name: Test Meta SDK-neutral target
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 3
