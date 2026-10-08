@@ -499,8 +499,10 @@ public actor OpenClawRPCDispatcher {
         case let .some(.unsignedInteger(value)):
             seq = Int(exactly: value)
         case let .some(.number(value)):
-            let integer = Int(value)
-            seq = Double(integer) == value ? integer : nil
+            // The Gateway supplies an untrusted JSON number. Int(value) can
+            // trap on huge finite doubles (for example, 1e300); an exact,
+            // failable conversion also rejects NaN, infinity, and fractions.
+            seq = Int(exactly: value)
         default:
             seq = nil
         }
