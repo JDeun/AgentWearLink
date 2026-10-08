@@ -118,7 +118,7 @@ public actor OpenClawGatewayConnection {
                     (0...300_000).contains($0) ? $0 : nil
                 }
                 throw AWLOpenClawError.gateway(
-                    code: response.error?.code ?? "UNKNOWN",
+                    code: OpenClawGatewayErrorCodePolicy.safeCode(response.error?.code),
                     retryable: response.error?.retryable ?? false,
                     retryAfterMilliseconds: retryAfter
                 )

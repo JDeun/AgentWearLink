@@ -130,7 +130,7 @@ public actor OpenClawAgentRunClient {
     ) throws -> T {
         guard response.ok else {
             throw AWLOpenClawError.gateway(
-                code: response.error?.code ?? "UNKNOWN",
+                code: OpenClawGatewayErrorCodePolicy.safeCode(response.error?.code),
                 retryable: response.error?.retryable ?? false
             )
         }
