@@ -28,6 +28,21 @@ final class MetaDATListenerGenerationTests: XCTestCase {
         XCTAssertEqual(deliveries, ["current"])
     }
 
+    func testLateStreamTerminationCannotRetireNewCapture() {
+        let gate = MetaDATListenerGeneration()
+        let prior = gate.begin()
+        XCTAssertTrue(gate.invalidate(ifCurrent: prior))
+
+        // A later capture starts before the previous AsyncStream's
+        // onTermination executes. That old callback must be inert.
+        let replacement = gate.begin()
+        XCTAssertFalse(gate.invalidate(ifCurrent: prior))
+        XCTAssertTrue(gate.isCurrent(replacement))
+        XCTAssertTrue(gate.invalidate(ifCurrent: replacement))
+        XCTAssertFalse(gate.isCurrent(replacement))
+        XCTAssertFalse(gate.invalidate(ifCurrent: replacement))
+    }
+
     func testNewListenerGenerationSupersedesOlderListenerImmediately() {
         let gate = MetaDATListenerGeneration()
 
