@@ -28,4 +28,4 @@ if [[ "${AWL_DEV_GATEWAY_PROVE_ABORT:-0}" == "1" ]]; then
 fi
 
 echo "Real development Gateway health + agent delta + terminal checks passed."
-echo "Next: prove abort, recover, pairing and persistent identity in a dedicated integration runner before closing #331."
+echo "Still required for #331: native-adapter cancellation, reconnect, pairing and persistent identity proof."
