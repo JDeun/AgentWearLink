@@ -16,9 +16,16 @@ final class MetaDATVoiceOnlyDeviceAdapterTests: XCTestCase {
         )
     }
 
-    func testUnregisteredDefaultAdapterDoesNotAdvertiseVoiceReady() async {
-        let adapter = MetaDATVoiceOnlyDeviceAdapter(vendor: MetaDATDeviceAdapter())
-        XCTAssertTrue(adapter.capabilities.isEmpty)
-        // Construction/inspection never starts DeviceSession or the microphone.
+    func testMissingVendorReadinessCannotAdvertiseVoice() {
+        // The pinned SDK traps when Wearables.shared is accessed before
+        // Wearables.configure(). A package-hosted XCTest is not a configured
+        // Meta app: validate the pure capability policy here and reserve
+        // vendor instance lifecycle for the app-hosted MockDeviceKit UI test.
+        XCTAssertTrue(
+            MetaDATVoiceOnlyDeviceAdapter.voiceOnlyCapabilities([]).isEmpty
+        )
+        XCTAssertTrue(
+            MetaDATVoiceOnlyDeviceAdapter.voiceOnlyCapabilities([.cameraSnapshot, .speechInput]).isEmpty
+        )
     }
 }
