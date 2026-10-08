@@ -15,6 +15,7 @@ from run_hermetic_development_gateway import (
     main,
     retire_owned_process,
     safe_probe_phase,
+    safe_probe_result,
 )
 
 
@@ -163,6 +164,13 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
             self.assertEqual(safe_probe_phase(path), "unobserved")
             path.write_bytes(b"\xff\xfe")
             self.assertEqual(safe_probe_phase(path), "unobserved")
+            self.assertEqual(safe_probe_result(path), "unobserved")
+            path.write_text("gateway-auth-denied")
+            self.assertEqual(safe_probe_result(path), "gateway-auth-denied")
+            path.write_text("connect-sent")
+            self.assertEqual(safe_probe_result(path), "unobserved")
+            path.write_text("secret-device-id=abcd\ngateway-auth-denied")
+            self.assertEqual(safe_probe_result(path), "unobserved")
 
     def test_negative_pairing_mode_cannot_be_combined_with_approval_or_chat(self):
         for extra in (
