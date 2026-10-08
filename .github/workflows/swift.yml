@@ -156,6 +156,13 @@ jobs:
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 2
         run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 95 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawGatewayStateTests
+      # CI evidence on #587 shows the next hang inside the pairing fixture
+      # after GatewayConnectionConcurrencyTests passed. Run all pairing tests
+      # in their own bounded process; do not omit them from overall coverage.
+      - name: Test OpenClaw pairing
+        if: needs.changes.outputs.core_swift == 'true'
+        timeout-minutes: 2
+        run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 95 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawPairingTests
       - name: Test remaining OpenClaw target
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 4
@@ -167,7 +174,8 @@ jobs:
             --skip AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests \
             --skip AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests \
             --skip AgentWearLinkOpenClawTests.OpenClawGatewayConnectionTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawGatewayStateTests
+            --skip AgentWearLinkOpenClawTests.OpenClawGatewayStateTests \
+            --skip AgentWearLinkOpenClawTests.OpenClawPairingTests
       - name: Test Meta SDK-neutral target
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
