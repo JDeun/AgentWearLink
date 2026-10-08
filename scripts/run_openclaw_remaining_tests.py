@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from swift_xctest_watchdog import run_bounded
+from swift_xctest_watchdog import PRESTART_XCTEST_TIMEOUT, run_bounded
 
 ISOLATED_CLASSES = frozenset({
     "OpenClawProtocolTests",
@@ -22,12 +22,13 @@ ISOLATED_CLASSES = frozenset({
     "OpenClawPairingTests",
 })
 # Keep this short enough that a single hanging suite cannot exhaust the
-# GitHub job. The first timeout exits nonzero; retries are never automatic.
+# GitHub job. Only verified pre-suite stalls get one visible bounded
+# re-execution; actual test failures and partially executed timeouts do not.
 PER_CLASS_DEADLINE_SECONDS = 65
 # Multiple XCTest launches occasionally stall before even starting a test.
 # Group a few *complete* method names per process to reduce process churn,
 # retaining deterministic coverage and bounded failure attribution.
-# Do NOT auto-retry hung or failed tests: #542 remains independently tracked.
+# Never replay tests that have started. Track macOS 26 pre-suite stalls in #601.
 PER_METHOD_GROUP_DEADLINE_SECONDS = 55
 METHOD_GROUP_SIZE = 3
 METHOD_ISOLATED_CLASSES = frozenset({"OpenClawRecoveryMatrixTests"})
@@ -130,14 +131,28 @@ def main() -> int:
                 # Print only checked-in test method identifiers, never content.
                 print(f"OpenClaw XCTest batch {batch_index}/{len(batches)}: "
                       f"{name}: {', '.join(names)}", flush=True)
+                command = ["swift", "test", "--filter", test_filter]
+                expected = [
+                    f"AgentWearLinkOpenClawTests.{name} {method}"
+                    for method in names
+                ]
                 code = run_bounded(
-                    ["swift", "test", "--filter", test_filter],
-                    PER_METHOD_GROUP_DEADLINE_SECONDS,
-                    expected_xctest_cases=[
-                        f"AgentWearLinkOpenClawTests.{name} {method}"
-                        for method in names
-                    ],
+                    command, PER_METHOD_GROUP_DEADLINE_SECONDS,
+                    expected_xctest_cases=expected,
                 )
+                if code == PRESTART_XCTEST_TIMEOUT:
+                    # The first process never emitted an XCTest suite/case
+                    # banner, and watchdog retired its entire owned group.
+                    # Never retry actual test failures or partial test runs.
+                    print(
+                        "OpenClaw XCTest pre-suite stall: retrying the full "
+                        f"{name} batch once with unchanged filters.",
+                        flush=True,
+                    )
+                    code = run_bounded(
+                        command, PER_METHOD_GROUP_DEADLINE_SECONDS,
+                        expected_xctest_cases=expected,
+                    )
                 if code != 0:
                     print(f"OpenClaw XCTest batch failed or timed out: "
                           f"{name}: {', '.join(names)}; exit={code}",
