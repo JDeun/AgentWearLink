@@ -32,6 +32,21 @@ class DevelopmentGatewayPreflightTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_config({**self.valid, "AWL_ALLOW_DEV_GATEWAY_TEST": "0"})
 
+    def test_abort_proof_requires_exact_opt_in_and_script_owned_flag(self):
+        self.assertEqual(
+            validate_config({
+                **self.valid, "AWL_DEV_GATEWAY_PROVE_ABORT": "1"
+            })["session_key_kind"],
+            "explicit-isolated",
+        )
+        for change in [
+            {"AWL_DEV_GATEWAY_PROVE_ABORT": "true"},
+            {"AWL_DEV_GATEWAY_PROVE_ABORT": "2"},
+            {"AWL_DEV_GATEWAY_ABORT_ASSERT": "1"},
+        ]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_config({**self.valid, **change})
+
     def test_rejects_default_session_and_missing_revision(self):
         for change in [
             {"AWL_OPENCLAW_SESSION_KEY": "agent:main:main"},

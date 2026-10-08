@@ -18,5 +18,14 @@ export AWL_DEV_GATEWAY_ASSERT=1
 export AWL_OPENCLAW_CHAT_MESSAGE="AWL isolated integration check: reply with one short sentence."
 swift run --quiet awl-openclaw-chat-probe >/dev/null
 
+# Explicit additional real-Gateway proof. A slow, isolated development model
+# must keep the run active until chat.abort; an already-completed run cannot
+# count as confirmed remote cancellation. Never re-use production sessions.
+if [[ "${AWL_DEV_GATEWAY_PROVE_ABORT:-0}" == "1" ]]; then
+  echo "Running isolated development Gateway accepted-run abort proof"
+  AWL_DEV_GATEWAY_ABORT_ASSERT=1 swift run --quiet awl-openclaw-chat-probe >/dev/null
+  echo "Real development Gateway chat.abort accepted-run confirmation passed."
+fi
+
 echo "Real development Gateway health + agent delta + terminal checks passed."
-echo "Next: prove abort, recover, pairing and persistent identity in a dedicated integration runner before closing #331."
+echo "Still required for #331: native-adapter cancellation, reconnect, pairing and persistent identity proof."

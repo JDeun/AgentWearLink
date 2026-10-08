@@ -64,6 +64,10 @@ def validate_config(config: dict[str, str]) -> dict[str, str]:
         raise ValueError("development harness only accepts AWL_OPENCLAW_EXPOSURE=loopback")
     if config.get("AWL_OPENCLAW_CHAT_MESSAGE"):
         raise ValueError("leave AWL_OPENCLAW_CHAT_MESSAGE unset; harness creates a harmless marker")
+    if config.get("AWL_DEV_GATEWAY_PROVE_ABORT", "0") not in ("0", "1"):
+        raise ValueError("AWL_DEV_GATEWAY_PROVE_ABORT must be 0 or 1")
+    if config.get("AWL_DEV_GATEWAY_ABORT_ASSERT"):
+        raise ValueError("leave AWL_DEV_GATEWAY_ABORT_ASSERT unset; only the runner may set it")
 
     return {
         "gateway_url": endpoint,
