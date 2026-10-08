@@ -169,6 +169,24 @@ a foreground app user gesture. Real Gateway validation of initial pairing,
 tokenless reconnect and revocation is tracked under #331/#117/#97; never
 equate Keychain unit tests or simulator compilation with that evidence.
 
+## Voice Invocation listener before slow Gateway handshakes
+
+In the iPhone reference host, opt-in **VoiceWake** and **VoiceOnly**
+projections now use `AgentWearLinkRuntime.ConnectionOrder.deviceFirst`.
+The runtime subscribes to device events before either adapter starts, then
+registers the independent Meta Voice Invocation listener before starting the
+OpenClaw Gateway connection. A slow Tailnet handshake or first-time pairing
+must not delay Meta's LaunchApp acknowledgement until after the Gateway
+is ready. Incoming Core events are buffered until both connections complete.
+Default **media/photo** mode remains `.agentFirst`, preserving the prior
+media-session behavior. A later failed Gateway connect still rolls back
+the listener through Core's partial-start cleanup.
+
+`RuntimeConnectionOrderTests` deterministically verifies both ordering
+modes with a gated agent connection. This is a source-level and XCTest
+guarantee, **not** evidence of Meta AI cold/background launch, live
+wearable timing or approved remote Gateway pairing.
+
 ## Opt-in foreground cold-launch voice-wake composition (code-only)
 
 After the **real Gateway** has separately approved the iOS reference host's
