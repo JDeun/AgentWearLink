@@ -33,11 +33,17 @@ final class AWLMockPhotoSnapshotHarness: ObservableObject {
                 await adapter.disconnect()
                 return
             }
-            status = "photo-snapshot-verified"
+            // Do not expose a terminal success marker until the vendor
+            // session has actually been retired. The UI test uses that marker
+            // as the barrier before starting a second permission-denied run.
+            status = "photo-disconnecting"
         } catch {
             // Never surface SDK error strings or private image bytes to UI.
             status = status == "photo-connecting" ? "photo-connect-failed" : "photo-capture-failed"
         }
         await adapter.disconnect()
+        if status == "photo-disconnecting" {
+            status = "photo-snapshot-verified"
+        }
     }
 }
