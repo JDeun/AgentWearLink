@@ -208,6 +208,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     ) -> AsyncThrowingStream<AgentResponse, Error> {
         let client = runClient
         let responseBufferLimit = responseBufferLimit
+        let maximumStreamedTextBytes = maximumStreamedTextBytes
 
         // A Core InteractionID is a correlation identity and may produce a
         // later, distinct logical agent turn after a prior turn completes.
@@ -258,7 +259,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
 
                         if let suffix = try Self.terminalReplySuffix(
                             streamedText: streamedText,
-                            terminalReply: terminal.terminalReply
+                            terminalReply: terminal.terminalReply,
+                            maximumBytes: maximumStreamedTextBytes
                         ) {
                             try Self.yieldResponse(
                                 .textDelta(interactionID, suffix),
@@ -642,10 +644,16 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     /// textDelta contract, so fail closed rather than duplicate/corrupt output.
     nonisolated static func terminalReplySuffix(
         streamedText: String,
-        terminalReply: JSONValue?
+        terminalReply: JSONValue?,
+        maximumBytes: Int = defaultMaximumStreamedTextBytes
     ) throws -> String? {
         guard let terminalText = terminalReplyText(terminalReply) else {
             return nil
+        }
+        guard terminalText.utf8.count <= maximumBytes else {
+            throw OpenClawNativeAdapterError.streamedTextBudgetExceeded(
+                maximumBytes: maximumBytes
+            )
         }
         guard terminalText.hasPrefix(streamedText) else {
             throw OpenClawNativeAdapterError.terminalReplyMismatch
