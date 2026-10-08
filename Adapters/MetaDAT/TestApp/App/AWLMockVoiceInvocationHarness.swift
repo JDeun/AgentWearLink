@@ -1,6 +1,7 @@
 import AgentWearLinkCore
 import AgentWearLinkMetaDATIntegration
 import Foundation
+import SwiftUI
 
 /// App-hosted MockDeviceKit voice test only. Exercises the public concrete
 /// MetaDATDeviceAdapter rather than a duplicate fake Voice Invocation source.
