@@ -51,6 +51,33 @@ separate local pairing. Their Keychain services remain distinct; the Gateway
 endpoint credential namespace also isolates local and Tailnet endpoints.
 No token, response text or private media is collected as an artifact.
 
+## Optional accepted-run abort proof (isolated dev Gateway only)
+
+The default smoke test above deliberately does not issue remote aborts. For a
+separate explicit cancellation check, configure the isolated development
+Gateway with a **harmless, deliberately slow** test model/agent that keeps an
+accepted run alive long enough to abort. Then run:
+
+```bash
+export AWL_DEV_GATEWAY_PROVE_ABORT=1
+bash scripts/run-openclaw-development-gateway.sh
+```
+
+The runner first repeats the existing health and assistant delta/terminal
+checks. It then uses the **production** OpenClaw agent run client and RPC
+dispatcher to submit a second harmless message under the dedicated
+`agent:<id>:awl-dev-<name>` session, verifies the Gateway-accepted session
+identity, sends `chat.abort` against that specific accepted run ID, and
+requires the Gateway's positive abort confirmation. A model that finishes too
+quickly for abort produces a **failed proof**, not an invented success. The
+command only emits static success/failure diagnostics, never model output,
+credentials, run IDs or session contents.
+
+This covers a real Gateway cancellation RPC, **not** a complete end-to-end
+`OpenClawNativeAgentAdapter.cancellationOutcome()`/reconnect/credential reuse
+matrix. The latter still requires isolated evidence under #331. The feature
+must not be run against the owner's personal Mac mini Gateway or Tailnet.
+
 ## Still required before #331 is complete
 
 A passing harness invocation with sanitized evidence and exact actual Gateway
