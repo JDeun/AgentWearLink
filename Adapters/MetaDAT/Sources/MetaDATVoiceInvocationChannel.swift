@@ -1,0 +1,210 @@
+import AgentWearLinkCore
+import Foundation
+import MWDATCore
+
+/// Host-started Voice Invocation ownership independent of DeviceSession.
+///
+/// Registration and available-device changes select a connected, compatible
+/// glasses device. Every listener lease is fenced: a delayed acknowledgement
+/// or vendor callback from an old device cannot enter a newer generation.
+@MainActor
+public final class MetaDATVoiceInvocationChannel {
+    private let wearables: any WearablesInterface
+    private let listener: MetaDATVoiceInvocationListener
+    private let reopenPolicy: MetaDATVoiceReopenPolicy
+    private let onEvent: @Sendable (InteractionEvent) -> Void
+    private let onReadiness: @Sendable (Bool) -> Void
+
+    private var running = false
+    private var selectedIdentifier: DeviceIdentifier?
+    private var selectedLinkToken: (any AnyListenerToken)?
+    private var listeningLease: UInt64?
+    private var leaseGeneration: UInt64 = 0
+    private var failures = 0
+    private var registrationTask: Task<Void, Never>?
+    private var devicesTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
+
+    public init(
+        wearables: any WearablesInterface = Wearables.shared,
+        reopenPolicy: MetaDATVoiceReopenPolicy = .init(),
+        onEvent: @escaping @Sendable (InteractionEvent) -> Void,
+        onReadiness: @escaping @Sendable (Bool) -> Void
+    ) {
+        self.wearables = wearables
+        self.listener = MetaDATVoiceInvocationListener(wearables: wearables)
+        self.reopenPolicy = reopenPolicy
+        self.onEvent = onEvent
+        self.onReadiness = onReadiness
+    }
+
+    public func start() {
+        guard !running else { return }
+        running = true
+        failures = 0
+
+        // Subscribe before first reconciliation; changes during an initial
+        // registration or device snapshot cannot be lost.
+        let registrationStates = wearables.registrationStateStream()
+        registrationTask = Task { [weak self] in
+            for await _ in registrationStates {
+                guard !Task.isCancelled else { return }
+                self?.reconcile()
+            }
+        }
+
+        let devices = wearables.devicesStream()
+        devicesTask = Task { [weak self] in
+            for await _ in devices {
+                guard !Task.isCancelled else { return }
+                self?.reconcile()
+            }
+        }
+
+        reconcile()
+    }
+
+    public func stop() {
+        running = false
+        registrationTask?.cancel()
+        devicesTask?.cancel()
+        registrationTask = nil
+        devicesTask = nil
+        retireSelection()
+    }
+
+    private func retireSelection() {
+        retireListener()
+        selectedIdentifier = nil
+        if let selectedLinkToken {
+            Task { await selectedLinkToken.cancel() }
+        }
+        selectedLinkToken = nil
+        failures = 0
+    }
+
+    private func retireListener() {
+        leaseGeneration &+= 1
+        listeningLease = nil
+        retryTask?.cancel()
+        retryTask = nil
+        listener.stop()
+        onReadiness(false)
+    }
+
+    private func reconcile() {
+        guard running else { return }
+        guard case .registered = wearables.registrationState else {
+            retireSelection()
+            return
+        }
+
+        let candidates = wearables.devices.compactMap { identifier
+            -> (identifier: DeviceIdentifier, rank: Int)? in
+            guard let device = wearables.deviceForIdentifier(identifier),
+                  device.compatibility() == .compatible else {
+                return nil
+            }
+            let rank: Int
+            if device.linkState == .connected && device.donState == .donned {
+                rank = 0
+            } else if device.linkState == .connected {
+                rank = 1
+            } else {
+                rank = 2
+            }
+            return (identifier: identifier, rank: rank)
+        }
+        let chosen = candidates.min {
+            if $0.rank == $1.rank {
+                return $0.identifier < $1.identifier
+            }
+            return $0.rank < $1.rank
+        }?.identifier
+
+        if chosen != selectedIdentifier {
+            retireSelection()
+            selectedIdentifier = chosen
+            if let chosen,
+               let device = wearables.deviceForIdentifier(chosen) {
+                // Device lists need not change when an already-paired pair
+                // disconnects/reconnects. Observe that link independently.
+                selectedLinkToken = device.addLinkStateListener { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.reconcile() }
+                }
+            }
+        }
+
+        guard let chosen,
+              let device = wearables.deviceForIdentifier(chosen),
+              device.linkState == .connected else {
+            if listeningLease != nil { retireListener() }
+            return
+        }
+
+        guard listeningLease == nil, retryTask == nil else { return }
+        // Once bounded reopen attempts have been exhausted, incidental
+        // device-list notifications must not bypass the retry budget.
+        // A new device selection or explicit stop/start resets this counter.
+        guard failures <= reopenPolicy.delays.count else { return }
+
+        leaseGeneration &+= 1
+        let lease = leaseGeneration
+        listeningLease = lease
+
+        do {
+            try listener.listen(
+                deviceIdentifier: chosen,
+                onInvocation: { [weak self] invocation in
+                    Task { @MainActor [weak self] in
+                        await self?.receive(invocation, lease: lease)
+                    }
+                },
+                onError: { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.handleFailure(lease: lease)
+                    }
+                }
+            )
+            onReadiness(true)
+        } catch {
+            handleFailure(lease: lease)
+        }
+    }
+
+    private func receive(_ invocation: any VoiceInvocation, lease: UInt64) async {
+        guard running, listeningLease == lease else { return }
+
+        // The Meta AI response handle is answered BEFORE the invocation is
+        // forwarded to Core/agent. A refused acknowledgement emits failure.
+        let acknowledged = await MetaDATVoiceInvocationAcknowledger.acknowledge(
+            invocation
+        )
+        guard running, listeningLease == lease, let acknowledged else {
+            return
+        }
+        onEvent(acknowledged)
+    }
+
+    private func handleFailure(lease: UInt64) {
+        guard running, listeningLease == lease else { return }
+        retireListener()
+        let attempt = failures
+        failures += 1
+        guard let delay = reopenPolicy.delay(afterFailure: attempt) else {
+            // Exhausted for this selection. A new registration/device
+            // selection, or an explicit stop/start, is the recovery boundary.
+            return
+        }
+        retryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.retryTask = nil
+            self?.reconcile()
+        }
+    }
+}
