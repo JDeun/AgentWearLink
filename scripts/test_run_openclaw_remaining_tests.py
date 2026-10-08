@@ -6,6 +6,7 @@ from unittest.mock import patch
 from run_openclaw_remaining_tests import (
     ISOLATED_CLASSES,
     PER_METHOD_GROUP_DEADLINE_SECONDS,
+    PRESTART_XCTEST_TIMEOUT,
     METHOD_GROUP_SIZE,
     method_batches,
     discover_method_shards,
@@ -128,6 +129,37 @@ class RemainingOpenClawXCTestShardsTests(unittest.TestCase):
                   "[./](?:testCase3)$"],
                  PER_METHOD_GROUP_DEADLINE_SECONDS),
             )
+
+    def test_pre_suite_timeout_retries_only_the_same_complete_batch_once(self):
+        methods = ["testCaseOne", "testCaseTwo"]
+        with (
+            patch("run_openclaw_remaining_tests.discover_remaining",
+                  return_value=["OpenClawRecoveryMatrixTests"]),
+            patch("run_openclaw_remaining_tests.discover_method_shards",
+                  return_value=methods),
+            patch("run_openclaw_remaining_tests.run_bounded",
+                  side_effect=[PRESTART_XCTEST_TIMEOUT, 0]) as run,
+        ):
+            self.assertEqual(main(), 0)
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_args_list[0], run.call_args_list[1])
+            self.assertEqual(
+                run.call_args.kwargs["expected_xctest_cases"],
+                ["AgentWearLinkOpenClawTests.OpenClawRecoveryMatrixTests testCaseOne",
+                 "AgentWearLinkOpenClawTests.OpenClawRecoveryMatrixTests testCaseTwo"]
+            )
+
+    def test_repeated_pre_suite_timeout_fails_without_unbounded_retry(self):
+        with (
+            patch("run_openclaw_remaining_tests.discover_remaining",
+                  return_value=["OpenClawRecoveryMatrixTests"]),
+            patch("run_openclaw_remaining_tests.discover_method_shards",
+                  return_value=["testCaseOne"]),
+            patch("run_openclaw_remaining_tests.run_bounded",
+                  side_effect=[PRESTART_XCTEST_TIMEOUT, PRESTART_XCTEST_TIMEOUT]) as run,
+        ):
+            self.assertEqual(main(), PRESTART_XCTEST_TIMEOUT)
+            self.assertEqual(run.call_count, 2)
 
     def test_method_batches_refuse_duplicate_or_untrusted_names(self):
         for names in ([], ["testGood", "testGood"], ["testBad|Other"]):

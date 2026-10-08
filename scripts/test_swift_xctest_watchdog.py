@@ -1,5 +1,6 @@
 import contextlib
 import io
+from types import SimpleNamespace
 import signal
 import sys
 import unittest
@@ -12,6 +13,8 @@ from swift_xctest_watchdog import (
     sample_categories,
     select_xctest_descendant,
     verify_xctest_case_output,
+    PRESTART_XCTEST_TIMEOUT,
+    unstarted_xctest_timeout_output,
 )
 
 
@@ -43,11 +46,53 @@ class SwiftXCTestWatchdogTests(unittest.TestCase):
             f"Test Case '-[{case}]' passed (0.010 seconds)." for case in cases
         ) + "\n").encode("utf-8")
         self.assertTrue(verify_xctest_case_output(output, cases))
-        self.assertFalse(verify_xctest_case_output(b"Build complete!\\n", cases))
+        self.assertFalse(verify_xctest_case_output(b"Build complete!\n", cases))
         self.assertFalse(verify_xctest_case_output(output, cases + ["missing"]))
         self.assertFalse(verify_xctest_case_output(output, cases[:1]))
         self.assertFalse(verify_xctest_case_output(output + output, cases))
         self.assertFalse(verify_xctest_case_output(output, []))
+
+    def test_pre_suite_classifier_rejects_any_test_activity_or_truncation(self):
+        startup = b"Building for debugging...\nBuild complete! (0.2s)\n"
+        self.assertTrue(unstarted_xctest_timeout_output(startup, truncated=False))
+        self.assertFalse(unstarted_xctest_timeout_output(startup, truncated=True))
+        self.assertFalse(unstarted_xctest_timeout_output(b"", truncated=False))
+        for activity in (
+            b"Test Suite 'Selected tests' started",
+            b"Test Suite 'AgentWearLinkPackageTests.xctest' started",
+            b"Test Case '-[Suite testOne]' started",
+        ):
+            self.assertFalse(unstarted_xctest_timeout_output(
+                startup + activity, truncated=False
+            ))
+
+    def test_qualified_pre_suite_timeout_has_distinct_non_success_status(self):
+        from subprocess import TimeoutExpired
+
+        class Process:
+            pid = 987
+            def __init__(self, capture):
+                capture.write(b"Build complete!\n")
+            def wait(self, timeout=None):
+                raise TimeoutExpired("swift", timeout)
+            def poll(self):
+                return None
+
+        output = SimpleNamespace(buffer=io.BytesIO())
+        with (
+            patch("swift_xctest_watchdog.subprocess.Popen",
+                  side_effect=lambda *_, **kwargs: Process(kwargs["stdout"])),
+            patch("swift_xctest_watchdog.stop_owned_group"),
+            patch("swift_xctest_watchdog.safe_stack_diagnostics"),
+            patch("swift_xctest_watchdog.sys.stdout", output),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            code = run_bounded(
+                ["swift", "test", "--filter", "RecoveryMatrix"],
+                1, expected_xctest_cases=["Suite testOne"],
+            )
+        self.assertEqual(code, PRESTART_XCTEST_TIMEOUT)
+        self.assertEqual(output.buffer.getvalue(), b"Build complete!\n")
 
     def test_rejects_non_swift_or_invalid_deadline(self):
         with self.assertRaises(ValueError):
