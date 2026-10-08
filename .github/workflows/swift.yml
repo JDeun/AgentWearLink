@@ -112,6 +112,17 @@ jobs:
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 3
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests
+      # This suite owns independent long-lived Tasks and cancellation paths.
+      # Give it a fresh XCTest process so those tasks cannot starve a
+      # later actor-based registry test on macOS CI.
+      - name: Test OpenClaw native agent lifetime
+        if: needs.changes.outputs.swift == 'true'
+        timeout-minutes: 3
+        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests
+      - name: Test OpenClaw RPC registry
+        if: needs.changes.outputs.swift == 'true'
+        timeout-minutes: 2
+        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests
       - name: Test remaining OpenClaw target
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 4
@@ -119,7 +130,9 @@ jobs:
           swift test \
             --filter AgentWearLinkOpenClawTests \
             --skip AgentWearLinkOpenClawTests.OpenClawProtocolTests \
-            --skip AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests
+            --skip AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests \
+            --skip AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests \
+            --skip AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests
       - name: Test Meta SDK-neutral target
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 3
