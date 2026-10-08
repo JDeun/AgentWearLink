@@ -13,6 +13,8 @@ struct MetaDATTestHostApp: App {
     @State private var gatewayHostname = ""
     @State private var bootstrapToken = ""
     @State private var targetSessionKey = ""
+    @State private var allowVision = false
+    @State private var photoPrompt = "Describe the photo."
 
     var body: some Scene {
         WindowGroup {
@@ -54,6 +56,8 @@ struct MetaDATTestHostApp: App {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("awl-openclaw-session-key")
+                    Toggle("Enable vision only for a verified image-capable OpenClaw model", isOn: $allowVision)
+                        .accessibilityIdentifier("awl-vision-opt-in")
                     Button("Connect reference runtime") {
                         let suppliedToken = bootstrapToken
                         bootstrapToken = ""
@@ -61,11 +65,18 @@ struct MetaDATTestHostApp: App {
                             await referenceHost.connect(
                                 hostname: gatewayHostname,
                                 token: suppliedToken,
-                                sessionKey: targetSessionKey
+                                sessionKey: targetSessionKey,
+                                enableVision: allowVision
                             )
                         }
                     }
                     .accessibilityIdentifier("awl-reference-connect")
+                    TextField("Photo question", text: $photoPrompt)
+                        .accessibilityIdentifier("awl-photo-prompt")
+                    Button("Capture one photo and ask OpenClaw") {
+                        Task { await referenceHost.captureAndAsk(prompt: photoPrompt) }
+                    }
+                    .accessibilityIdentifier("awl-reference-photo")
                     Button("Disconnect reference runtime") {
                         Task { await referenceHost.disconnect() }
                     }
