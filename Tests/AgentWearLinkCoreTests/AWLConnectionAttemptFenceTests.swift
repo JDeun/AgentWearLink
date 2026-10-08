@@ -2,14 +2,13 @@ import XCTest
 @testable import AgentWearLinkCore
 
 final class AWLConnectionAttemptFenceTests: XCTestCase {
-    func testSecondStartCannotEnterWhileFirstOwnsSetup() {
+    func testSecondStartCannotEnterWhileFirstOwnsSetup() throws {
         var fence = AWLConnectionAttemptFence()
-        let first = fence.begin()
-        XCTAssertNotNil(first)
+        let first = try XCTUnwrap(fence.begin())
         XCTAssertTrue(fence.isStarting)
         XCTAssertNil(fence.begin())
 
-        fence.finish(try! XCTUnwrap(first))
+        fence.finish(first)
         XCTAssertFalse(fence.isStarting)
         let second = fence.begin()
         XCTAssertNotNil(second)
