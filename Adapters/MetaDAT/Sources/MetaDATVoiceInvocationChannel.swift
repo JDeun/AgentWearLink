@@ -143,6 +143,10 @@ public final class MetaDATVoiceInvocationChannel {
         }
 
         guard listeningLease == nil, retryTask == nil else { return }
+        // Once bounded reopen attempts have been exhausted, incidental
+        // device-list notifications must not bypass the retry budget.
+        // A new device selection or explicit stop/start resets this counter.
+        guard failures <= reopenPolicy.delays.count else { return }
 
         leaseGeneration &+= 1
         let lease = leaseGeneration
