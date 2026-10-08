@@ -39,6 +39,20 @@ public struct OpenClawValidationProfile: Sendable, Equatable {
 
 /// This policy is only for a one-shot, unapproved identity rejection test.
 /// It must never be used for approved pairing or persistent reconnect evidence.
+/// Fail-closed admission for the read-only device-grant-only development probe.
+/// A grant with write privileges may not silently ride a read-only profile.
+public enum OpenClawReadOnlyGrantAdmission {
+    public static func permits(_ credential: OpenClawDeviceCredential?) -> Bool {
+        guard let credential,
+              credential.role == "operator",
+              credential.storageRole == "operator",
+              !credential.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return Set(credential.scopes) == Set(["operator.read"])
+    }
+}
+
 public enum OpenClawDevelopmentNegativePairingPolicy {
     public static func permitsEphemeralIdentity(
         environment: [String: String],

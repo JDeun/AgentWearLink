@@ -332,6 +332,11 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             let composed = AgentWearLinkRuntime(
                 device: runtimeDevice,
                 agent: agent,
+                // An incoming Meta AI LaunchApp acknowledgement must not wait
+                // for slow Tailnet/Gateway connect and pairing. Subscribe first
+                // (Core already does), start the independent wearable listener,
+                // then connect the agent. Media mode retains agent-first.
+                connectionOrder: (voiceWake || voiceOnly) ? .deviceFirst : .agentFirst,
                 diagnostics: diagnostics,
                 output: output
             )

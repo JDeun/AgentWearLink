@@ -51,6 +51,31 @@ struct AgentWearLinkOpenClawProbe {
         let credentialStore: any OpenClawDeviceCredentialStore = ephemeralNegativePairing
             ? InMemoryOpenClawDeviceCredentialStore()
             : KeychainOpenClawDeviceCredentialStore(service: keychainService)
+        // This explicit second-process acceptance test must never present
+        // the shared Gateway token or bootstrap handoff. It must use the
+        // scoped server-approved device grant already saved in Keychain.
+        let grantOnlyReconnect = environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == "1"
+        if grantOnlyReconnect {
+            guard environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
+                  endpoint.exposure == .loopback,
+                  environment["AWL_DEV_KEYCHAIN_NONCE"] != nil,
+                  bootstrapToken == nil,
+                  !ephemeralNegativePairing else {
+                fail("Device-grant reconnect requires isolated local development profile.", code: 2)
+            }
+            do {
+                guard let identity = try await identityStore.load(),
+                      let saved = try await GatewayScopedOpenClawDeviceCredentialStore(
+                          base: credentialStore,
+                          namespace: endpoint.credentialNamespace
+                      ).load(deviceID: try identity.deviceID, role: "operator"),
+                      OpenClawReadOnlyGrantAdmission.permits(saved) else {
+                    fail("No approved read-only device grant for isolated reconnect.", code: 2)
+                }
+            } catch {
+                fail("Stored read-only device grant could not be verified.", code: 2)
+            }
+        }
         let assembler = OpenClawConnectAssembler(
             identityManager: .init(store: identityStore),
             credentialStore: credentialStore,
@@ -78,8 +103,8 @@ struct AgentWearLinkOpenClawProbe {
             appVersion: "0.1.0-probe",
             scopes: profile.scopes,
             credentials: .init(
-                token: token,
-                bootstrapToken: bootstrapToken
+                token: grantOnlyReconnect ? nil : token,
+                bootstrapToken: grantOnlyReconnect ? nil : bootstrapToken
             ),
             clientIdentity: profile.clientIdentity
         )

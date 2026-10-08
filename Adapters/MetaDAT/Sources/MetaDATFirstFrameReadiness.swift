@@ -16,11 +16,13 @@ public final class MetaDATFirstFrameReadiness: @unchecked Sendable {
     public func observe(
         _ stream: MWDATCamera.Stream,
         onReady: @escaping @Sendable () -> Void
-    ) {
-        let listenerGeneration = generation.begin()
-        let retiredToken = lock.withLock { () -> (any AnyListenerToken)? in
-            defer { token = nil }
-            return token
+    ) -> UInt64 {
+        let (listenerGeneration, retiredToken) = lock.withLock {
+            let lease = generation.begin()
+            let previous = token
+            token = nil
+            ready = false
+            return (lease, previous)
         }
         if let retiredToken {
             Task { await retiredToken.cancel() }
@@ -51,11 +53,22 @@ public final class MetaDATFirstFrameReadiness: @unchecked Sendable {
         if shouldCancelNewToken {
             Task { await newToken.cancel() }
         }
+        return listenerGeneration
     }
 
     public func reset() {
-        generation.invalidate()
+        reset(ifCurrent: nil)
+    }
+
+    /// An old AsyncStream.onTermination may run after the next frame listener
+    /// starts. Only its own lease can reset readiness and cancel the token.
+    public func reset(ifCurrent lease: UInt64?) {
         let retiredToken = lock.withLock { () -> (any AnyListenerToken)? in
+            if let lease {
+                guard generation.invalidate(ifCurrent: lease) else { return nil }
+            } else {
+                generation.invalidate()
+            }
             ready = false
             defer { token = nil }
             return token

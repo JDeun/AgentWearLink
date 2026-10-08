@@ -19,10 +19,12 @@ fi
 echo "Running production read-only OpenClaw connection and health RPC"
 python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
 
-# A second process with the same read-only Keychain service exercises
-# another handshake. It does not prove tokenless persisted grant reuse.
-echo "Reconnecting production read-only OpenClaw health RPC"
-python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
+# A new Swift process is forbidden from reusing the shared Gateway
+# bearer token. Only the server-approved, endpoint-scoped Keychain device
+# token (persisted from the first successful hello-ok) may authenticate.
+# Missing/readonly-grant-drift/revoked credentials must fail closed.
+echo "Reconnecting via server-approved read-only device token (no shared bearer)"
+AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY=1 python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
 
 if [[ "${AWL_DEV_GATEWAY_HEALTH_ONLY:-0}" == "1" ]]; then
   echo "Authenticated real Gateway health and fresh-process reconnect passed."

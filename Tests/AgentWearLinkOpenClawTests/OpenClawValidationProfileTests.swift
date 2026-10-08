@@ -68,6 +68,34 @@ final class OpenClawValidationProfileTests: XCTestCase {
         XCTAssertEqual(normal, OpenClawValidationProfile.readOnly.keychainService)
     }
 
+    func testReadOnlyGrantReconnectRejectsWriteAndMismatchedAuthorization() {
+        let valid = OpenClawDeviceCredential(
+            deviceID: "dev", role: "operator",
+            scopes: ["operator.read"], token: "approved-grant"
+        )
+        XCTAssertTrue(OpenClawReadOnlyGrantAdmission.permits(valid))
+        XCTAssertFalse(OpenClawReadOnlyGrantAdmission.permits(nil))
+        let disallowed: [OpenClawDeviceCredential] = [
+            .init(deviceID: "dev", role: "operator",
+                  scopes: ["operator.read", "operator.write"], token: "device"),
+            .init(deviceID: "dev", role: "operator",
+                  scopes: ["operator.write"], token: "device"),
+            .init(deviceID: "dev", role: "operator",
+                  scopes: [], token: "device"),
+            .init(deviceID: "dev", role: "viewer",
+                  requestedRole: "operator",
+                  scopes: ["operator.read"], token: "device"),
+            .init(deviceID: "dev", role: "operator",
+                  storageRoleOverride: "other",
+                  scopes: ["operator.read"], token: "device"),
+            .init(deviceID: "dev", role: "operator",
+                  scopes: ["operator.read"], token: "  ")
+        ]
+        for grant in disallowed {
+            XCTAssertFalse(OpenClawReadOnlyGrantAdmission.permits(grant))
+        }
+    }
+
     func testEphemeralNegativeStoreIsRestrictedToIsolatedReadOnlyProbe() {
         let valid = [
             "AWL_DEV_GATEWAY_EXPECT_PAIRING": "1",
