@@ -118,3 +118,32 @@ This is deliberate: a brief lock/background transition must retire a media
 generation even if the UI is foreground again before the adapter task gets
 scheduled. `currentPhase` remains the authoritative latest host phase.
 Foreground never replays work or automatically resurrects retired media.
+
+## Reference iOS host composition (code-only)
+
+`TestApp/App/AWLReferenceRuntimeHost.swift` now explicitly composes:
+
+```text
+MetaDATDeviceAdapter(applicationLifecycle:, diagnostics:)
+  -> AgentWearLinkRuntime(device:agent:outputSink:)
+  -> OpenClawNativeAgentAdapter / private Tailnet Serve Gateway
+  -> AppleSpeechOutput / AVSpeechSynthesizerBridge
+```
+
+The iOS test host exposes a manual host/token/session-key screen, Meta AI
+registration action, URL callback routing, foreground/background phase changes
+and explicit connect/disconnect actions. It constructs a dedicated Keychain
+pairing identity separate from read-only and mutating CLI probes, and does not
+hardcode a Mac mini address, token or user session. Token input is cleared
+from the SwiftUI view once a connection attempt begins. Diagnostic events
+remain capacity-bounded, typed and in memory.
+
+**Important:** This is a compile-gated reference host, not physical completion.
+The project's `Info.plist` still contains test-only placeholder Meta App ID
+and client token, and the host is a test bundle; replace those values in a
+properly provisioned app build before a live Meta registration attempt.
+Normal runtime startup still requires Meta DeviceSession, and independent
+Voice Invocation does not yet wake an unconnected Core runtime. That separate
+hands-free cold-start gap remains on #95/#115/#230/#6. Tailscale connectivity,
+pairing authorization, actual headset capture and TTS routing must still be
+verified physically.

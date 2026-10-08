@@ -28,6 +28,8 @@ targets:
         product: AgentWearLinkMetaDATIntegration
       - package: MetaIntegration
         product: AgentWearLinkMetaDATTestSupport
+      - package: MetaWearablesDAT
+        product: MWDATCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.MetaDATTestHost

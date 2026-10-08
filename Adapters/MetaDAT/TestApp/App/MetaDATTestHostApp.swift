@@ -8,6 +8,11 @@ import AgentWearLinkMetaDATTestSupport
 @main
 struct MetaDATTestHostApp: App {
     @State private var state = "host-starting"
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var referenceHost = AWLReferenceRuntimeHost()
+    @State private var gatewayHostname = ""
+    @State private var bootstrapToken = ""
+    @State private var targetSessionKey = ""
 
     var body: some Scene {
         WindowGroup {
@@ -33,11 +38,59 @@ struct MetaDATTestHostApp: App {
                 .disabled(!ProcessInfo.processInfo.arguments.contains(
                     MetaDATMockHostBootstrap.launchArgument
                 ))
+
+                if !ProcessInfo.processInfo.arguments.contains(
+                    MetaDATMockHostBootstrap.launchArgument
+                ) {
+                    Text(referenceHost.status)
+                        .accessibilityIdentifier("awl-reference-runtime-state")
+                    TextField("Mac mini hostname (*.ts.net)", text: $gatewayHostname)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("awl-gateway-hostname")
+                    SecureField("Development or deployment Gateway token", text: $bootstrapToken)
+                        .accessibilityIdentifier("awl-gateway-token")
+                    TextField("Existing OpenClaw session key (optional)", text: $targetSessionKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("awl-openclaw-session-key")
+                    Button("Connect reference runtime") {
+                        let suppliedToken = bootstrapToken
+                        bootstrapToken = ""
+                        Task {
+                            await referenceHost.connect(
+                                hostname: gatewayHostname,
+                                token: suppliedToken,
+                                sessionKey: targetSessionKey
+                            )
+                        }
+                    }
+                    .accessibilityIdentifier("awl-reference-connect")
+                    Button("Disconnect reference runtime") {
+                        Task { await referenceHost.disconnect() }
+                    }
+                    .accessibilityIdentifier("awl-reference-disconnect")
+                    Button("Register with Meta AI") {
+                        Task { await referenceHost.startRegistration() }
+                    }
+                    .accessibilityIdentifier("awl-meta-register")
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                Task {
+                    await referenceHost.applicationPhase(
+                        newPhase == .active ? .foreground : .background
+                    )
+                }
+            }
+            .onOpenURL { url in
+                Task { await referenceHost.handleMetaCallback(url) }
             }
             .task {
                     guard ProcessInfo.processInfo.arguments.contains(
                         MetaDATMockHostBootstrap.launchArgument
                     ) else {
+                        await referenceHost.configureWearables()
                         state = "host-ready"
                         return
                     }
