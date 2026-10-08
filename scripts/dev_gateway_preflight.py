@@ -73,6 +73,9 @@ def validate_config(config: dict[str, str]) -> dict[str, str]:
         raise ValueError("abort proof requires mutating Gateway probe")
     if config.get("AWL_DEV_GATEWAY_ABORT_ASSERT"):
         raise ValueError("leave AWL_DEV_GATEWAY_ABORT_ASSERT unset; only the runner may set it")
+    nonce = config.get("AWL_DEV_KEYCHAIN_NONCE")
+    if nonce is not None and re.fullmatch(r"[0-9a-f]{20}", nonce) is None:
+        raise ValueError("ephemeral Keychain nonce must be 20 lowercase hex characters")
 
     return {
         "gateway_url": endpoint,
