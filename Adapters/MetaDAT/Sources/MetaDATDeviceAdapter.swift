@@ -357,7 +357,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             for await error in errorStream {
                 guard !Task.isCancelled else { break }
                 await self?.emitDeviceError(
-                    error.localizedDescription,
+                    error,
                     generation: generation
                 )
             }
@@ -528,7 +528,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         speechErrorToken = speech.errorPublisher.listen { [weak self] error in
             Task {
                 await self?.handleSpeechError(
-                    String(describing: error),
+                    error,
                     generation: generation
                 )
             }
@@ -569,13 +569,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     }
 
     private func handleSpeechError(
-        _ message: String,
+        _ error: any Error,
         generation: UInt64
     ) {
         guard !stopping, generationFence.owns(generation) else { return }
-        yieldEvent(
-            .failed(nil, .device("Meta DAT Speech error: \(message)"))
-        )
+        yieldEvent(.failed(nil, .device(MetaDATVendorFailurePolicy.message(
+            for: error,
+            surface: .speech
+        ))))
     }
 
     private func monitorSelectedDeviceSignals(
@@ -752,9 +753,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         tearDownSession(expectedGeneration: generation)
     }
 
-    private func emitDeviceError(_ message: String, generation: UInt64) {
+    private func emitDeviceError(_ error: any Error, generation: UInt64) {
         guard !stopping, generationFence.owns(generation) else { return }
-        yieldEvent(.failed(nil, .device(message)))
+        yieldEvent(.failed(nil, .device(MetaDATVendorFailurePolicy.message(
+            for: error,
+            surface: .session
+        ))))
     }
 
     private func yieldEvent(_ event: InteractionEvent) {
