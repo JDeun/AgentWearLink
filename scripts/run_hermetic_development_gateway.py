@@ -156,16 +156,22 @@ def approve_one_isolated_pairing(
     """
     entry = input_stream if input_stream is not None else sys.stdin
     state = Path(env.get("OPENCLAW_STATE_DIR", ""))
+    gateway_url = env.get("AWL_OPENCLAW_URL", "")
+    token = env.get("AWL_OPENCLAW_TOKEN", "")
+    expected_state = state.parent / "state"
     if (env.get("AWL_OPENCLAW_EXPOSURE") != "loopback"
+            or not re.fullmatch(r"ws://127\\.0\\.0\\.1:[0-9]{1,5}", gateway_url)
             or not state.name == "state"
+            or state != expected_state
             or not state.parent.name.startswith("awl-real-dev-gateway-")
-            or env.get("OPENCLAW_GATEWAY_TOKEN") != env.get("AWL_OPENCLAW_TOKEN")
+            or not token
+            or env.get("OPENCLAW_GATEWAY_TOKEN") != token
             or not entry.isatty()):
         return False
     try:
         listed = subprocess.run(
             [node, str(checkout / "dist" / "entry.js"),
-             "devices", "list", "--json"],
+             "devices", "list", "--json", "--url", gateway_url],
             cwd=checkout, env=env,
             stdin=subprocess.DEVNULL, capture_output=True,
             timeout=20, check=False,
@@ -198,7 +204,7 @@ def approve_one_isolated_pairing(
             return False
         approved = subprocess.run(
             [node, str(checkout / "dist" / "entry.js"),
-             "devices", "approve", selected],
+             "devices", "approve", selected, "--url", gateway_url],
             cwd=checkout, env=env,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, timeout=20, check=False,
