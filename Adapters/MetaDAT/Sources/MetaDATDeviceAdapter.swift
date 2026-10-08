@@ -323,11 +323,23 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             selectedDeviceLinkLossGate.markSessionStarted()
             liveCapabilities.update(sessionReady: true)
 
-            try await startSpeech(
-                on: session,
-                generation: generation
-            )
-            liveCapabilities.update(speechReady: true)
+            do {
+                try await startSpeech(
+                    on: session,
+                    generation: generation
+                )
+                liveCapabilities.update(speechReady: true)
+            } catch {
+                guard MetaDATSpeechSetupPolicy.mayContinueWithoutSpeech(error) else {
+                    // Session-generation retirement and unexpected failures
+                    // must never be misclassified as optional availability.
+                    throw error
+                }
+                // DAT Speech is optional. A missing microphone grant or
+                // unsupported device does not invalidate independently
+                // permissioned explicit camera snapshots.
+                liveCapabilities.update(speechReady: false)
+            }
 
             // Camera is attached lazily for explicit snapshots, but permission
             // is part of whether that production surface is currently usable.
