@@ -76,6 +76,15 @@ struct MetaDATTestHostApp: App {
                     }
                     .accessibilityIdentifier("awl-meta-capture-mock-photo")
                     .disabled(state != "photo-fixture-ready")
+                    Button("Deny mock camera permission") {
+                        do {
+                            try MetaDATMockHostBootstrap.denyMockCameraPermission()
+                        } catch {
+                            state = "photo-permission-fault-setup-failed"
+                        }
+                    }
+                    .accessibilityIdentifier("awl-meta-deny-camera-permission")
+                    .disabled(state != "photo-fixture-ready")
                 }
 
                 if !ProcessInfo.processInfo.arguments.contains(
