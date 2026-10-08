@@ -158,11 +158,11 @@ def approve_one_isolated_pairing(
     state = Path(env.get("OPENCLAW_STATE_DIR", ""))
     gateway_url = env.get("AWL_OPENCLAW_URL", "")
     token = env.get("AWL_OPENCLAW_TOKEN", "")
-    expected_state = state.parent / "state"
+    expected_home = state.parent / "home"
     if (env.get("AWL_OPENCLAW_EXPOSURE") != "loopback"
-            or not re.fullmatch(r"ws://127\\.0\\.0\\.1:[0-9]{1,5}", gateway_url)
+            or not re.fullmatch(r"ws://127\.0\.0\.1:[0-9]{1,5}", gateway_url)
             or not state.name == "state"
-            or state != expected_state
+            or env.get("HOME") != str(expected_home)
             or not state.parent.name.startswith("awl-real-dev-gateway-")
             or not token
             or env.get("OPENCLAW_GATEWAY_TOKEN") != token
