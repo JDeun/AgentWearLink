@@ -116,8 +116,14 @@ struct AgentWearLinkOpenClawProbe {
         environment: [String: String]
     ) {
         guard environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1",
+              environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
+              environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
+              let stateDir = environment["OPENCLAW_STATE_DIR"],
               let path = environment["AWL_DEV_GATEWAY_PHASE_FILE"],
-              !path.isEmpty else { return }
+              URL(fileURLWithPath: path).standardizedFileURL.path ==
+                URL(fileURLWithPath: stateDir).deletingLastPathComponent()
+                    .appendingPathComponent("probe-phase").standardizedFileURL.path
+        else { return }
         try? phase.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
