@@ -47,12 +47,19 @@ jobs:
           node --version
           npm install --global pnpm@12.5.1
           pnpm --version
-      - name: Build pinned real Gateway without ambient model credentials
+      - name: Build pinned real CLI Gateway with upstream cliStartup profile
         shell: bash
         timeout-minutes: 28
         run: |
           pnpm --dir .awl-hermetic-upstream install --frozen-lockfile
-          pnpm --dir .awl-hermetic-upstream build
+          # Upstream's official cliStartup profile builds its real gateway
+          # runtime and CLI metadata but intentionally omits Control UI.
+          # The full UI build enforces a gzip byte budget which is unrelated
+          # to the Gateway protocol (first run 37753023021 missed by 81 B).
+          (
+            cd .awl-hermetic-upstream
+            node --import ./scripts/tsx.mjs scripts/build-all.mts cliStartup
+          )
           test -f .awl-hermetic-upstream/dist/entry.js
           test -z "$(git -C .awl-hermetic-upstream status --porcelain --untracked-files=no)"
       - name: Compile real AWL production Gateway probe on macOS
