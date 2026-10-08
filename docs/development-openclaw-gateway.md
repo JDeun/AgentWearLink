@@ -42,34 +42,61 @@ Only the script generates the harmless test message.
 
 1. The read-only production probe completes connect/auth + `health` RPC.
 2. A second **independent Swift process** connects with the same read-only
-   Keychain namespace and repeats `health`. This exercises fresh connection
-   setup, but does **not** prove persisted device-grant reuse: the configured
+   Keychain namespace and repeats `health`. This exercises a fresh handshake,
+   but does **not** prove persistent device-grant reuse: the configured
    token may still authenticate both connections.
 3. The mutating production adapter submits one harmless agent request.
 4. At least one incremental assistant text delta arrives and exactly one
    terminal completion is observed before stream close.
 5. The harness exits nonzero for missing deltas or terminal events.
 
-Each Swift command has a 300-second **process deadline** (including Swift build
-startup). On timeout or operator interruption, the runner terminates its
-Swift child process group, including descendants where possible. All probe
-stdout/stderr is suppressed to prevent untrusted Gateway response text or
-credentials entering shell/CI logs; only stable result codes and safe status
-messages are printed. A pairing-required exit means that the operator should
-inspect the **isolated development Gateway** for the pending request; no
-pairing request ID is printed by this wrapper. In unattended CI only the
-process-wrapper unit tests run, not the live-Gateway commands.
+Every Swift command, including the optional abort probe below, has a
+300-second **process deadline** (including first-time Swift compilation).
+On timeout/interruption, the wrapper terminates the Swift process group;
+probe stdout/stderr is suppressed so untrusted Gateway replies, credentials
+and SDK error strings never enter shell or CI logs. Only stable result codes
+and redacted diagnostics are surfaced. Pairing approval must be inspected
+on the **isolated development Gateway**, not copied from probe output.
+CI tests only the wrapper and shell syntax without a live Gateway.
 
 The read-only and mutating validation identities are separate and may need
 separate local pairing. Their Keychain services remain distinct; the Gateway
 endpoint credential namespace also isolates local and Tailnet endpoints.
 No token, response text or private media is collected as an artifact.
 
+## Optional accepted-run abort proof (isolated dev Gateway only)
+
+The default smoke test above deliberately does not issue remote aborts. For a
+separate explicit cancellation check, configure the isolated development
+Gateway with a **harmless, deliberately slow** test model/agent that keeps an
+accepted run alive long enough to abort. Then run:
+
+```bash
+export AWL_DEV_GATEWAY_PROVE_ABORT=1
+bash scripts/run-openclaw-development-gateway.sh
+```
+
+The runner first repeats the existing health and assistant delta/terminal
+checks. It then uses the **production** OpenClaw agent run client and RPC
+dispatcher to submit a second harmless message under the dedicated
+`agent:<id>:awl-dev-<name>` session, verifies the Gateway-accepted session
+identity, sends `chat.abort` against that specific accepted run ID, and
+requires the Gateway's positive abort confirmation. A model that finishes too
+quickly for abort produces a **failed proof**, not an invented success. The
+command only emits static success/failure diagnostics, never model output,
+credentials, run IDs or session contents.
+
+This covers a real Gateway cancellation RPC, **not** a complete end-to-end
+`OpenClawNativeAgentAdapter.cancellationOutcome()`/reconnect/credential reuse
+matrix. The latter still requires isolated evidence under #331. The feature
+must not be run against the owner's personal Mac mini Gateway or Tailnet.
+
 ## Still required before #331 is complete
 
 A passing harness invocation with sanitized evidence and exact actual Gateway
 revision, plus automated or repeatable isolated tests for pairing/reconnect
-**credential reuse (rather than merely token-backed reconnect)**,
-abort/cancellation, event ordering, terminal reconciliation and cleanup. Until then this is the first **real Gateway smoke-test path**, not
-full integration acceptance. CI runs only preflight unit tests and shell syntax
+**credential reuse rather than token-backed reconnection**,
+full native adapter cancellation, event ordering, terminal reconciliation
+and cleanup. Until then this is the first **real Gateway smoke-test path**, not
+full integration acceptance. CI runs only preflight/process-runner unit tests and shell syntax
 checks without needing a live Gateway.
