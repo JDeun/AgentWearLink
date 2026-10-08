@@ -1,5 +1,13 @@
 import Foundation
 
+/// Fixed, non-sensitive milestones for opt-in development Gateway diagnostics.
+public enum OpenClawHandshakeProgress: String, Sendable {
+    case socketOpened = "socket-opened"
+    case challengeReceived = "challenge-received"
+    case connectSent = "connect-sent"
+    case responseReceived = "response-received"
+}
+
 public actor OpenClawGatewayConnection {
     private let socket: any OpenClawWebSocket
     private let state: OpenClawGatewayState
@@ -8,6 +16,7 @@ public actor OpenClawGatewayConnection {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let handshakeTimeout: Duration
+    private let progress: (@Sendable (OpenClawHandshakeProgress) -> Void)?
     private var nextConnectGeneration: UInt64 = 0
     private var activeConnectGeneration: UInt64?
     private var disconnectInProgress = false
@@ -16,13 +25,15 @@ public actor OpenClawGatewayConnection {
         socket: any OpenClawWebSocket,
         assembler: OpenClawConnectAssembler,
         state: OpenClawGatewayState = .init(),
-        handshakeTimeout: Duration = .seconds(10)
+        handshakeTimeout: Duration = .seconds(10),
+        progress: (@Sendable (OpenClawHandshakeProgress) -> Void)? = nil
     ) {
         precondition(handshakeTimeout > .zero)
         self.socket = socket
         self.assembler = assembler
         self.state = state
         self.handshakeTimeout = handshakeTimeout
+        self.progress = progress
     }
 
     public func connect(
@@ -42,6 +53,7 @@ public actor OpenClawGatewayConnection {
 
         await state.beginConnect()
         await socket.connect()
+        progress?(.socketOpened)
 
         do {
             try ensureActiveConnect(generation)
@@ -61,6 +73,7 @@ public actor OpenClawGatewayConnection {
             }
 
             let challenge = try decodeChallenge(payload)
+            progress?(.challengeReceived)
             guard challenge.ts >= 0, !challenge.nonce.isEmpty else {
                 throw OpenClawHandshakeError.invalidChallenge
             }
@@ -254,6 +267,7 @@ public actor OpenClawGatewayConnection {
 
         try ensureActiveConnect(generation)
         try await socket.send(text: requestText)
+        progress?(.connectSent)
         try ensureActiveConnect(generation)
 
         let responseText = try await receiveHandshakeFrame(
@@ -263,6 +277,7 @@ public actor OpenClawGatewayConnection {
         try ensureActiveConnect(generation)
 
         let responseFrame = try frameRouter.decodePreAuth(Data(responseText.utf8))
+        progress?(.responseReceived)
         guard case let .response(response) = responseFrame,
               response.id == requestID else {
             throw OpenClawHandshakeError.unexpectedConnectResponse
