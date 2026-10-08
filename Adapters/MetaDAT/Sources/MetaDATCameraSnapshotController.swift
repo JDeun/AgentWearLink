@@ -136,15 +136,15 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
                 AsyncThrowingStream<Data, Error>(
                     bufferingPolicy: .bufferingNewest(1)
                 ) { continuation in
-            readiness.observe(stream) {
-                _ = continuation.yield(Data())
-                continuation.finish()
-            }
+                    readiness.observe(stream) {
+                        _ = continuation.yield(Data())
+                        continuation.finish()
+                    }
 
-            let waitToken = gate.install {
-                readiness.reset()
-                continuation.finish(throwing: CancellationError())
-            }
+                    let waitToken = gate.install {
+                        readiness.reset()
+                        continuation.finish(throwing: CancellationError())
+                    }
                     continuation.onTermination = { _ in
                         gate.clear(waitToken)
                         readiness.reset()
