@@ -141,23 +141,83 @@ def stop_owned_group(process: subprocess.Popen[bytes]) -> None:
         process.wait()
 
 
-def run_bounded(command: list[str], deadline_seconds: int) -> int:
+_MAX_VERIFICATION_LOG_BYTES = 2_000_000
+
+
+def verify_xctest_case_output(output: bytes, expected_cases: list[str]) -> bool:
+    """Require an actual XCTest pass banner once for every selected method.
+
+    SwiftPM may return zero when a --filter regex selects zero tests. Counting
+    only process exit codes would silently omit required recovery scenarios.
+    """
+    if not expected_cases or len(set(expected_cases)) != len(expected_cases):
+        return False
+    lines = output.decode("utf-8", errors="replace").splitlines()
+    passed = [
+        line for line in lines
+        if "Test Case '-[" in line and "]' passed" in line
+    ]
+    return all(
+        sum(f"Test Case '-[{case}]' passed" in line for line in passed) == 1
+        for case in expected_cases
+    ) and len(passed) == len(expected_cases)
+
+
+def run_bounded(
+    command: list[str],
+    deadline_seconds: int,
+    *,
+    expected_xctest_cases: list[str] | None = None,
+) -> int:
     if deadline_seconds <= 0 or command[:2] != ["swift", "test"]:
         raise ValueError("only bounded 'swift test' executions are permitted")
-    process = subprocess.Popen(command, start_new_session=True)
-    try:
-        try:
-            return process.wait(timeout=deadline_seconds)
-        except subprocess.TimeoutExpired:
-            print("AWL XCTest: subprocess deadline exceeded; collecting bounded diagnostics.", file=sys.stderr)
-            safe_stack_diagnostics(process.pid)
-            return 124
-        except KeyboardInterrupt:
-            print("AWL XCTest: interrupted.", file=sys.stderr)
-            return 130
-    finally:
-        stop_owned_group(process)
+    if expected_xctest_cases is not None and not expected_xctest_cases:
+        raise ValueError("expected_xctest_cases cannot be empty")
 
+    # For the filtered recovery batches only, capture output in a temporary,
+    # private file, echo it unchanged after completion and verify actual cases.
+    # Other XCTest shards retain their ordinary live stdout/stderr behavior.
+    capture = tempfile.TemporaryFile(mode="w+b") if expected_xctest_cases else None
+    try:
+        process = subprocess.Popen(
+            command,
+            start_new_session=True,
+            stdout=capture if capture else None,
+            stderr=subprocess.STDOUT if capture else None,
+        )
+        try:
+            try:
+                status = process.wait(timeout=deadline_seconds)
+            except subprocess.TimeoutExpired:
+                print("AWL XCTest: subprocess deadline exceeded; collecting bounded diagnostics.",
+                      file=sys.stderr)
+                safe_stack_diagnostics(process.pid)
+                status = 124
+            except KeyboardInterrupt:
+                print("AWL XCTest: interrupted.", file=sys.stderr)
+                status = 130
+        finally:
+            stop_owned_group(process)
+
+        if capture is not None:
+            capture.seek(0)
+            output = capture.read(_MAX_VERIFICATION_LOG_BYTES + 1)
+            truncated = len(output) > _MAX_VERIFICATION_LOG_BYTES
+            if truncated:
+                output = output[:_MAX_VERIFICATION_LOG_BYTES]
+            sys.stdout.buffer.write(output)
+            sys.stdout.buffer.flush()
+            if status == 0 and (
+                truncated
+                or not verify_xctest_case_output(output, expected_xctest_cases or [])
+            ):
+                print("AWL XCTest: selected test case execution proof missing or ambiguous.",
+                      file=sys.stderr)
+                return 1
+        return status
+    finally:
+        if capture is not None:
+            capture.close()
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bound a macOS Swift XCTest subprocess.")

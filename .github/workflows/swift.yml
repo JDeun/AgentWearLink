@@ -38,6 +38,12 @@ jobs:
             core_swift:
               - 'Sources/**'
               - 'Tests/**'
+              - 'scripts/select_ios_simulator.py'
+              - 'scripts/test_select_ios_simulator.py'
+              - 'scripts/run_openclaw_remaining_tests.py'
+              - 'scripts/test_run_openclaw_remaining_tests.py'
+              - 'scripts/swift_xctest_watchdog.py'
+              - 'scripts/test_swift_xctest_watchdog.py'
               - 'Package.swift'
               - 'Package.resolved'
               - '.github/workflows/swift.yml'
@@ -91,6 +97,7 @@ jobs:
       - name: Test bounded simulator boot helper
         run: |
           python3 -m unittest discover -s scripts -p 'test_boot_ios_simulator.py'
+          python3 -m unittest discover -s scripts -p 'test_select_ios_simulator.py'
           python3 -m unittest discover -s scripts -p 'test_swift_xctest_watchdog.py'
           python3 -m unittest discover -s scripts -p 'test_run_openclaw_remaining_tests.py'
 
@@ -220,7 +227,7 @@ jobs:
       - name: Select available iPhone simulator
         if: needs.changes.outputs.meta_behavior == 'true' || needs.changes.outputs.meta_ui == 'true'
         run: |
-          SIMULATOR_UDID="$(xcrun simctl list devices available -j | /usr/bin/python3 -c 'import json,sys; payload=json.load(sys.stdin); print(next(device["udid"] for devices in payload.get("devices", {}).values() for device in devices if device.get("isAvailable", True) and device.get("name", "").startswith("iPhone")))')"
+          SIMULATOR_UDID="$(xcrun simctl list devices available -j | python3 scripts/select_ios_simulator.py)"
           echo "Using iPhone simulator: ${SIMULATOR_UDID}"
           echo "AWL_IOS_SIMULATOR_UDID=${SIMULATOR_UDID}" >> "$GITHUB_ENV"
       - name: Resolve pinned Meta DAT SDK

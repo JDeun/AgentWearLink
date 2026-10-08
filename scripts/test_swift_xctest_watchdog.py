@@ -11,6 +11,7 @@ from swift_xctest_watchdog import (
     run_bounded,
     sample_categories,
     select_xctest_descendant,
+    verify_xctest_case_output,
 )
 
 
@@ -32,6 +33,21 @@ class SwiftXCTestWatchdogTests(unittest.TestCase):
             sample_categories(output),
             {"AgentWearLink": 1, "OpenClaw": 1, "XCTest": 1, "pthread": 1},
         )
+
+    def test_requires_actual_selected_xctest_execution_banners(self):
+        cases = [
+            "AgentWearLinkOpenClawTests.OpenClawRecoveryMatrixTests testOne",
+            "AgentWearLinkOpenClawTests.OpenClawRecoveryMatrixTests testTwo",
+        ]
+        output = ("\n".join(
+            f"Test Case '-[{case}]' passed (0.010 seconds)." for case in cases
+        ) + "\n").encode("utf-8")
+        self.assertTrue(verify_xctest_case_output(output, cases))
+        self.assertFalse(verify_xctest_case_output(b"Build complete!\\n", cases))
+        self.assertFalse(verify_xctest_case_output(output, cases + ["missing"]))
+        self.assertFalse(verify_xctest_case_output(output, cases[:1]))
+        self.assertFalse(verify_xctest_case_output(output + output, cases))
+        self.assertFalse(verify_xctest_case_output(output, []))
 
     def test_rejects_non_swift_or_invalid_deadline(self):
         with self.assertRaises(ValueError):
