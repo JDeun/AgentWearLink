@@ -8,9 +8,25 @@ public enum MetaDATVoiceInvocationAcknowledger {
         guard let launch = invocation as? LaunchApp else {
             return nil
         }
-        guard await launch.responseHandle.sendSuccess(actionOutput: nil) else {
-            return .failed(nil, .device("Meta voice invocation acknowledgement was not delivered"))
+        let id = InteractionID()
+        let delivered = await launch.responseHandle.sendSuccess(actionOutput: nil)
+        return outcome(acknowledged: delivered, interactionID: id)
+    }
+
+    /// An acknowledgement failure belongs to one invocation, not to the
+    /// device session. ID-less AWLError.device is a terminal runtime failure.
+    /// Keep acknowledgement failures scoped so an intermittent Meta AI
+    /// response-handle refusal cannot disconnect unrelated agent work.
+    static func outcome(
+        acknowledged: Bool,
+        interactionID: InteractionID
+    ) -> InteractionEvent {
+        if acknowledged {
+            return .invocation(interactionID, nil)
         }
-        return .invocation(InteractionID(), nil)
+        return .failed(
+            interactionID,
+            .device("Meta voice invocation acknowledgement was not delivered")
+        )
     }
 }
