@@ -53,7 +53,7 @@ struct AgentWearLinkOpenClawProbe {
                       let saved = try await GatewayScopedOpenClawDeviceCredentialStore(
                           base: credentialStore,
                           namespace: endpoint.credentialNamespace
-                      ).load(deviceID: identity.deviceID, role: "operator"),
+                      ).load(deviceID: try identity.deviceID, role: "operator"),
                       OpenClawReadOnlyGrantAdmission.permits(saved) else {
                     fail("No approved read-only device grant for isolated reconnect.", code: 2)
                 }
