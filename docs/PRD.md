@@ -1,8 +1,8 @@
 # AgentWearLink Product Requirements Document
 
-**Version:** 0.2  
+**Version:** 0.3  
 **Status:** Implementation source of truth  
-**Date:** 2026-10-07  
+**Date:** 2026-10-08  
 **Repository:** AgentWearLink
 
 > This document is the canonical product/scope handoff for continuing work in a new session. Read it together with `docs/architecture.md`, ADRs, open GitHub issues, and the current code before changing architecture.
@@ -78,7 +78,7 @@ The following are invariants:
 
 - `AgentWearLinkCore`: capabilities, normalized interactions, coordinator/runtime, generic transport primitives and deterministic mocks.
 - `AgentWearLinkOpenClaw`: OpenClaw-specific HTTP/native Gateway protocol integration.
-- `Adapters/MetaDAT`: pinned Meta DAT 1.0.0 integration. Registration, selected-device handling, and device-session lifecycle are production-wired. Camera, Speech, Voice Invocation, live-capability, and foreground/background policy slices are implemented/tested but still require composition into the concrete production session path (#230). Simulator/mock support remains isolated from the production target.
+- `Adapters/MetaDAT`: pinned Meta DAT 1.0.0 integration. Registration, selected-device/session lifecycle, bounded one-shot camera, final Speech, independent Voice Invocation, dynamic capabilities, and foreground/background invalidation are now composed into the production `MetaDATDeviceAdapter` and iPhone reference host. Default still-photo capture uses the publishable-compatible Stream path; standalone `Camera.photo` remains DEBUG-only opt-in while experimental/non-publishable. App-hosted MockDeviceKit covers camera and voice behavior; #230 tracks cross-boundary evidence rather than a missing parallel session adapter. MockDeviceKit stays outside production dependencies.
 
 Future device/runtime adapters should remain outside Core.
 
@@ -277,26 +277,28 @@ When resuming work in another session:
 7. Continue the earliest unblocked delivery gate.
 8. Record material architectural changes in this PRD and/or a new ADR.
 
-## 14. Current implementation snapshot — 2026-10-06
+## 14. Implementation snapshot and pre-hardware exit criteria — 2026-10-08
 
-Implemented code-side:
+### Merged code-side foundation
 
-- capability/event/request/response contracts and coordinator/runtime;
-- deterministic mock device/agent harness and bounded streaming/HTTP/SSE primitives;
-- OpenClaw Chat Completions compatibility adapter;
-- preferred native OpenClaw Gateway WebSocket stack: challenge/connect authentication, persistent Ed25519 device identity/Keychain credentials, negotiated policy, RPC/event dispatch, incremental agent runs, cancellation, reconnect supervision, event-sequence retirement, and probes;
-- Meta DAT 1.0.0 pinned integration: production-wired registration/selected-device/device-session lifecycle, plus helper-implemented and deterministically tested live-capability, bounded camera capture/readiness/cancellation, Speech final-transcript filtering/deduplication, Voice Invocation acknowledgement/reopen, and foreground/background readiness slices; full production composition of those helper slices remains #230;
-- Apple output/TTS boundary;
-- deterministic privacy/reliability regressions including credential diagnostic redaction and representative no-replay transition scenarios.
+- Core contracts/runtime/coordinator, lifecycle, bounded transport and image/audio budgets, no-replay cancellation behavior and deterministic tests.
+- Native OpenClaw WebSocket/agent adapter: challenge-bound Ed25519 identity, Keychain device grants, Gateway policy/scope checks, RPC/event routing, incremental/terminal responses and reconnect supervision.
+- Pinned Meta DAT production adapter: selected device, dynamic capability, bounded photo capture, Speech final transcript, independent Voice Invocation, foreground/background retirement and optional post-ack foreground media handoff.
+- App-hosted MockDeviceKit exercises production camera capture, denied permission, opt-in experimental Photo success/failure, and Voice Invocation → Speech → Core mock agent. Full iOS reference-host compilation and phone-owned TTS are CI-gated.
+- PR #587 isolated macOS XCTest suites and preserved full coverage; PR #591 fixed cleanup of orphan XCTest children after their SwiftPM parent exits. Neither independently proves the root cause of #542 permanently fixed.
 
-Current unclosed evidence/work priorities:
+### Strict pre-hardware exit gates
 
-1. compose Meta camera/Speech/Voice/capability/lifecycle helper slices into the concrete production session/adapter path (#230);
-2. complete the real iOS app-hosted MockDeviceKit/XCUITest gate (#122);
-3. run the read-only OpenClaw probe against the owner's Mac mini over Tailscale;
-4. validate one existing-session incremental native agent turn over the real Tailnet (#97/#118);
-5. validate persistent Gateway credential reuse in deployment (#117);
-6. run physical Ray-Ban Meta + iPhone camera/Speech/Voice/lifecycle gates (#1/#98 and children);
-7. complete physical reliability/privacy/network transition evidence (#59/#119/#120).
+1. **CI lifetime (#542):** repeat independent macOS Core/XCTest runs and investigate any pre-test worker stalls. Do not accept a single green run or suppress failing cases.
+2. **Isolated real development Gateway (#331):** execute the production native adapter against an actual revision-recorded independent OpenClaw process. Capture authenticated health, harmless accepted agent run, incremental/terminal response, abort, pairing/reconnect grant reuse and bounded cleanup. Self-authored fixtures or a merely implemented launch script do not satisfy this gate.
+3. **App composition (#230/#95):** confirm the pinned vendor app-hosted camera/voice/Speech path and user-initiated foreground reuse of an approved endpoint-scoped Keychain grant. Foreground voice wake is not unattended locked-phone OS startup or glasses speaker playback.
+4. **Exact SDK validation:** every required Core, vendor Meta, app-hosted simulator and reference iPhone build check must pass on the actual merge candidate. Default Camera Stream still capture remains available; experimental standalone Photo is not presented as publishable.
+5. **Issue audit:** classify each remaining issue as software (#542/#331), upstream SDK (#303/#323), private deployment (#56/#97/#117/#118) or physical device (#1/#5/#6/#58/#59/#98). Do not close deployment/physical acceptance on simulator-only evidence.
 
-Helper implementation must not be reported as production wiring, and code-side completion must not be reported as deployment or physical completion. See `testing.md` for the evidence vocabulary.
+### Post-gate deployment and physical acceptance
+
+- Official unchanged DAT CameraAccess on physical Ray-Ban Meta + iPhone, with exact OS/SDK/glasses firmware and real lifecycle, camera, Speech and link evidence (#1/#98).
+- Physical iPhone → Tailscale → Mac mini/OpenClaw accepted native interaction, separately paired persistent identity, existing-session model/tools/memory, network transitions and no Telegram transport dependency (#56/#97/#117/#118).
+- Verify actual microphone/speaker routing versus phone-owned Apple TTS; locked/pocketed voice activation, explicit vision-agent one-shot snapshot, memory/leak profiles and all privacy/recovery matrix rows (#5/#6/#58/#59/#303).
+
+**Evidence rule:** compilation and MockDeviceKit do not establish real Bluetooth, Tailnet, live Gateway or background privileges. A runnable harness is not proof the harness passed. Keep code/physical issues open until their distinct acceptance is recorded.
