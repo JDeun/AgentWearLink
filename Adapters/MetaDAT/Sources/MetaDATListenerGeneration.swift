@@ -24,6 +24,17 @@ final class MetaDATListenerGeneration: @unchecked Sendable {
         }
     }
 
+    /// Retire only the callback's own lease. A late AsyncStream
+    /// onTermination must never invalidate a listener started afterward.
+    @discardableResult
+    func invalidate(ifCurrent token: Token) -> Bool {
+        lock.withLock {
+            guard current == token else { return false }
+            current &+= 1
+            return true
+        }
+    }
+
     func isCurrent(_ token: Token) -> Bool {
         lock.withLock { current == token }
     }
