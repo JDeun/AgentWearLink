@@ -6,6 +6,7 @@ Meta Wearables DAT, physical glasses, or a live OpenClaw deployment.
 | Failure mode | Automated invariant | Manual / hardware check |
 | --- | --- | --- |
 | Device disconnect | Runtime cancels active interactions on stop; connect-time events subscribed before connect (#63) | Disconnect/reconnect Ray-Ban during interaction |
+| Host connect/disconnect overlap | `AWLConnectionAttemptFence` rejects a second startup, invalidates suspended startup on disconnect, and fences late voice/channel readiness (#119) | Rapidly tap Connect/Disconnect during Gateway authentication, Meta session setup and Voice Invocation activation; verify no ghost connected status |
 | Agent reconnect | Supervisor reconnect tests; no silent request replay | Restart Mac mini OpenClaw Gateway during request |
 | Network transition | Representative reconnect transitions are deterministic-tested; non-ready transport cannot send and uncertain work is not replayed | Move iPhone Wi-Fi ↔ cellular/Tailnet and record recovery |
 | Duplicate request | Coordinator suppresses active duplicate ID; inactive terminal events do not emit aborts (#65) | Repeat invocation during active response |
