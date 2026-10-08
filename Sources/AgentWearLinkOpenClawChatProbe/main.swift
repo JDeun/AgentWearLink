@@ -64,6 +64,46 @@ struct AgentWearLinkOpenClawChatProbe {
 
         do {
             try await adapter.connect()
+
+            // Extra opt-in proof against an isolated local REAL Gateway only.
+            // This runs after the regular text/terminal smoke test in the
+            // dedicated development harness; never against private Tailnet.
+            if env["AWL_DEV_GATEWAY_ABORT_ASSERT"] == "1" {
+                guard requireDevelopmentEvidence,
+                      env["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
+                      endpoint.exposure == .loopback,
+                      let isolatedSession = nonEmpty(env["AWL_OPENCLAW_SESSION_KEY"]),
+                      isolatedSession.range(
+                          of: #"^agent:[A-Za-z0-9_-]+:awl-dev-[A-Za-z0-9_-]+$"#,
+                          options: .regularExpression
+                      ) != nil else {
+                    await adapter.disconnect()
+                    fail("Isolated loopback development Gateway and session are required for abort proof.", code: 2)
+                }
+
+                // A deliberately slow, harmless model is required. A run
+                // already completed before chat.abort cannot demonstrate
+                // confirmed remote cancellation and must fail this proof.
+                let accepted = try await client.submit(
+                    message: message,
+                    sessionKey: isolatedSession,
+                    idempotencyKey: UUID().uuidString
+                )
+                guard accepted.sessionKey == nil ||
+                      accepted.sessionKey == isolatedSession else {
+                    throw DevelopmentGatewayProbeError.unexpectedAcceptedSession
+                }
+                try await client.cancel(
+                    runID: accepted.runId,
+                    sessionKey: isolatedSession,
+                    agentID: accepted.agentId
+                )
+                await client.finishUpdates(runID: accepted.runId)
+                await adapter.disconnect()
+                print(#"{"abortConfirmed":true}"#)
+                return
+            }
+
             let responses = await adapter.responses(for: AgentRequest(interactionID: id, text: message))
             var deltaCount = 0
             var terminalCount = 0
@@ -153,4 +193,5 @@ struct AgentWearLinkOpenClawChatProbe {
 private enum DevelopmentGatewayProbeError: Error {
     case missingIncrementalOutput
     case missingTerminalCompletion
+    case unexpectedAcceptedSession
 }
