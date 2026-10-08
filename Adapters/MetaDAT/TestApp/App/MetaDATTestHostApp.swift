@@ -119,6 +119,20 @@ struct MetaDATTestHostApp: App {
                         }
                     }
                     .accessibilityIdentifier("awl-reference-voice-only-connect")
+                    Button("Connect hands-free wake + Speech (foreground)") {
+                        let suppliedToken = bootstrapToken
+                        bootstrapToken = ""
+                        Task {
+                            await referenceHost.connect(
+                                hostname: gatewayHostname,
+                                token: suppliedToken,
+                                sessionKey: targetSessionKey,
+                                enableVision: false,
+                                voiceWake: true
+                            )
+                        }
+                    }
+                    .accessibilityIdentifier("awl-reference-voice-wake-connect")
                     TextField("Photo question", text: $photoPrompt)
                         .accessibilityIdentifier("awl-photo-prompt")
                     Button("Capture one photo and ask OpenClaw") {
