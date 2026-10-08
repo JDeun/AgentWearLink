@@ -209,3 +209,16 @@ microphone readiness, but this reference host currently starts the stream
 cold activation remains outside this slice (#95/#6). A LaunchApp invocation
 with no phrase is only an acknowledgement/event until a separate final Speech
 transcript is received; it is **not** counted as an agent turn.
+
+### MockDeviceKit Voice Invocation UI acceptance
+
+The test host recognizes `--awl-meta-voice-ui-testing` only after the
+existing explicit `--awl-meta-ui-testing` bootstrap. It simulates registered
+Meta AI status only for this voice-specific regression; normal photo/pair
+UI tests retain the unregistered default. `AWLMockVoiceInvocationHarness`
+subscribes to the public production adapter's event stream and starts the
+standalone Voice Invocation channel without opening DeviceSession. The
+UI test pairs and powers MockDeviceKit glasses, observes live voice readiness,
+injects `MockDeviceTestClient.sendLaunchAppAction`, and requires an
+acknowledged invocation event. It is still simulator evidence, not proof of
+locked-phone hardware wake behavior.

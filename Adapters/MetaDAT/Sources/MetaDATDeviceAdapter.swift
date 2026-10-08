@@ -209,6 +209,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         let channel = await MainActor.run {
             MetaDATVoiceInvocationChannel(
                 wearables: wearables,
+                diagnostics: diagnostics,
                 onEvent: { event in source.yield(event) },
                 onReadiness: { ready in
                     capabilities.update(voiceInvocationReady: ready)

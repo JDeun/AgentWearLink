@@ -12,28 +12,40 @@ public final class MetaDATVoiceInvocationChannel {
     private let wearables: any WearablesInterface
     private let listener: MetaDATVoiceInvocationListener
     private let reopenPolicy: MetaDATVoiceReopenPolicy
+    // A bounded re-snapshot covers pairing/compatibility/link changes that
+    // do not always emit a fresh devicesStream event in the pinned SDK.
+    private let eligibilityPolicy = MetaDATVoiceReopenPolicy(delays: [
+        .milliseconds(250), .milliseconds(500), .seconds(1),
+        .seconds(2), .seconds(4), .seconds(8)
+    ])
+    private let diagnostics: AWLDiagnosticRecorder?
     private let onEvent: @Sendable (InteractionEvent) -> Void
     private let onReadiness: @Sendable (Bool) -> Void
 
     private var running = false
     private var selectedIdentifier: DeviceIdentifier?
     private var selectedLinkToken: (any AnyListenerToken)?
+    private var selectedCompatibilityToken: (any AnyListenerToken)?
     private var listeningLease: UInt64?
     private var leaseGeneration: UInt64 = 0
     private var failures = 0
     private var registrationTask: Task<Void, Never>?
     private var devicesTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
+    private var eligibilityRetryTask: Task<Void, Never>?
+    private var eligibilityRetries = 0
 
     public init(
         wearables: any WearablesInterface = Wearables.shared,
         reopenPolicy: MetaDATVoiceReopenPolicy = .init(),
+        diagnostics: AWLDiagnosticRecorder? = nil,
         onEvent: @escaping @Sendable (InteractionEvent) -> Void,
         onReadiness: @escaping @Sendable (Bool) -> Void
     ) {
         self.wearables = wearables
         self.listener = MetaDATVoiceInvocationListener(wearables: wearables)
         self.reopenPolicy = reopenPolicy
+        self.diagnostics = diagnostics
         self.onEvent = onEvent
         self.onReadiness = onReadiness
     }
@@ -42,6 +54,7 @@ public final class MetaDATVoiceInvocationChannel {
         guard !running else { return }
         running = true
         failures = 0
+        eligibilityRetries = 0
 
         // Subscribe before first reconciliation; changes during an initial
         // registration or device snapshot cannot be lost.
@@ -70,7 +83,34 @@ public final class MetaDATVoiceInvocationChannel {
         devicesTask?.cancel()
         registrationTask = nil
         devicesTask = nil
+        cancelEligibilityRetry(resetBudget: true)
         retireSelection()
+    }
+
+    private func cancelEligibilityRetry(resetBudget: Bool) {
+        eligibilityRetryTask?.cancel()
+        eligibilityRetryTask = nil
+        if resetBudget { eligibilityRetries = 0 }
+    }
+
+    private func scheduleEligibilityRetry() {
+        guard running, eligibilityRetryTask == nil else { return }
+        let attempt = eligibilityRetries
+        guard let delay = eligibilityPolicy.delay(afterFailure: attempt) else {
+            diagnostics?.record(.init(kind: .metaVoiceEligibilityRetryExhausted))
+            return
+        }
+        eligibilityRetries += 1
+        eligibilityRetryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.eligibilityRetryTask = nil
+            self?.reconcile()
+        }
     }
 
     private func retireSelection() {
@@ -79,7 +119,11 @@ public final class MetaDATVoiceInvocationChannel {
         if let selectedLinkToken {
             Task { await selectedLinkToken.cancel() }
         }
+        if let selectedCompatibilityToken {
+            Task { await selectedCompatibilityToken.cancel() }
+        }
         selectedLinkToken = nil
+        selectedCompatibilityToken = nil
         failures = 0
     }
 
@@ -95,23 +139,30 @@ public final class MetaDATVoiceInvocationChannel {
     private func reconcile() {
         guard running else { return }
         guard case .registered = wearables.registrationState else {
+            cancelEligibilityRetry(resetBudget: true)
             retireSelection()
             return
         }
 
         let candidates = wearables.devices.compactMap { identifier
             -> (identifier: DeviceIdentifier, rank: Int)? in
-            guard let device = wearables.deviceForIdentifier(identifier),
-                  device.compatibility() == .compatible else {
+            guard let device = wearables.deviceForIdentifier(identifier) else {
+                return nil
+            }
+            let compatibility = device.compatibility()
+            // An undefined compatibility is not permission to listen. It is
+            // only eligible for observation until DAT completes negotiation.
+            // Explicit update-required devices remain excluded.
+            guard compatibility == .compatible || compatibility == .undefined else {
                 return nil
             }
             let rank: Int
-            if device.linkState == .connected && device.donState == .donned {
-                rank = 0
+            if device.linkState == .connected && compatibility == .compatible {
+                rank = device.donState == .donned ? 0 : 1
             } else if device.linkState == .connected {
-                rank = 1
-            } else {
                 rank = 2
+            } else {
+                rank = compatibility == .compatible ? 3 : 4
             }
             return (identifier: identifier, rank: rank)
         }
@@ -123,6 +174,7 @@ public final class MetaDATVoiceInvocationChannel {
         }?.identifier
 
         if chosen != selectedIdentifier {
+            cancelEligibilityRetry(resetBudget: true)
             retireSelection()
             selectedIdentifier = chosen
             if let chosen,
@@ -132,15 +184,36 @@ public final class MetaDATVoiceInvocationChannel {
                 selectedLinkToken = device.addLinkStateListener { [weak self] _ in
                     Task { @MainActor [weak self] in self?.reconcile() }
                 }
+                // Eligibility can transition from .undefined to .compatible
+                // without publishing a new paired-device list or link state.
+                selectedCompatibilityToken = device.addCompatibilityListener {
+                    [weak self] _ in
+                    Task { @MainActor [weak self] in self?.reconcile() }
+                }
             }
         }
 
+        let candidateDevice = chosen.flatMap { wearables.deviceForIdentifier($0) }
         guard let chosen,
-              let device = wearables.deviceForIdentifier(chosen),
-              device.linkState == .connected else {
+              let device = candidateDevice,
+              device.linkState == .connected,
+              device.compatibility() == .compatible else {
             if listeningLease != nil { retireListener() }
+            let diagnostic: AWLDiagnosticKind
+            if candidateDevice == nil {
+                diagnostic = .metaVoiceNoEligibleDevice
+            } else if candidateDevice?.compatibility() == .undefined {
+                diagnostic = .metaVoiceAwaitingCompatibility
+            } else {
+                diagnostic = .metaVoiceAwaitingLink
+            }
+            diagnostics?.record(.init(kind: diagnostic))
+            scheduleEligibilityRetry()
             return
         }
+        // The candidate became eligible. Retire any in-flight snapshot timer;
+        // the independent listener retry budget is unchanged.
+        cancelEligibilityRetry(resetBudget: true)
 
         guard listeningLease == nil, retryTask == nil else { return }
         // Once bounded reopen attempts have been exhausted, incidental
@@ -162,12 +235,27 @@ public final class MetaDATVoiceInvocationChannel {
                 },
                 onError: { [weak self] _ in
                     Task { @MainActor [weak self] in
+                        self?.diagnostics?.record(.init(kind: .metaVoiceChannelError))
                         self?.handleFailure(lease: lease)
                     }
                 }
             )
+            diagnostics?.record(.init(kind: .metaVoiceListenerStarted))
             onReadiness(true)
+        } catch let error as VoiceInvocationError {
+            switch error {
+            case .deviceNotFound:
+                diagnostics?.record(.init(kind: .metaVoiceDeviceNotFound))
+            case .channelNotConnected:
+                diagnostics?.record(.init(kind: .metaVoiceChannelNotConnected))
+            case .invalidWearablesInterface:
+                diagnostics?.record(.init(kind: .metaVoiceInterfaceInvalid))
+            default:
+                diagnostics?.record(.init(kind: .metaVoiceListenerFailed))
+            }
+            handleFailure(lease: lease)
         } catch {
+            diagnostics?.record(.init(kind: .metaVoiceListenerFailed))
             handleFailure(lease: lease)
         }
     }
@@ -192,6 +280,7 @@ public final class MetaDATVoiceInvocationChannel {
         let attempt = failures
         failures += 1
         guard let delay = reopenPolicy.delay(afterFailure: attempt) else {
+            diagnostics?.record(.init(kind: .metaVoiceRetryExhausted))
             // Exhausted for this selection. A new registration/device
             // selection, or an explicit stop/start, is the recovery boundary.
             return
