@@ -11,6 +11,7 @@ struct MetaDATTestHostApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var referenceHost = AWLReferenceRuntimeHost()
     @StateObject private var mockVoice = AWLMockVoiceInvocationHarness()
+    @StateObject private var mockWake = AWLMockVoiceWakeHarness()
     @State private var gatewayHostname = ""
     @State private var bootstrapToken = ""
     @State private var targetSessionKey = ""
@@ -27,6 +28,19 @@ struct MetaDATTestHostApp: App {
                 ) {
                     Text(mockVoice.status)
                         .accessibilityIdentifier("awl-meta-voice-state")
+                }
+                if ProcessInfo.processInfo.arguments.contains(
+                    MetaDATMockHostBootstrap.wakeLaunchArgument
+                ) {
+                    Text(mockWake.status)
+                        .accessibilityIdentifier("awl-meta-wake-state")
+                    Text(mockWake.mediaStatus)
+                        .accessibilityIdentifier("awl-meta-wake-media-state")
+                    Button("Inject deterministic mock Speech transcript") {
+                        mockWake.sendFinalTranscript()
+                    }
+                    .accessibilityIdentifier("awl-meta-send-mock-transcript")
+                    .disabled(mockWake.mediaStatus != "wake-speech-ready")
                 }
                 Button("Configure mock still fixture") {
                     Task {
@@ -160,6 +174,11 @@ struct MetaDATTestHostApp: App {
                                     MetaDATMockHostBootstrap.voiceLaunchArgument
                                 ) {
                                     await mockVoice.start()
+                                }
+                                if ProcessInfo.processInfo.arguments.contains(
+                                    MetaDATMockHostBootstrap.wakeLaunchArgument
+                                ) {
+                                    await mockWake.start()
                                 }
                                 state = "host-ready"
                                 return

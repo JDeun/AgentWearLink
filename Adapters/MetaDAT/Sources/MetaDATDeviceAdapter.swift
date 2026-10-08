@@ -184,6 +184,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
     private var connecting = false
     private var stopping = false
+    // Opt-in only: acknowledging LaunchApp may start media *after* the response
+    // handle returns, and only while this app is foreground.
+    private var foregroundMediaActivationOnVoiceLaunch = false
+    private var pendingVoiceMediaLease: UInt64?
+    private var voicePhaseTask: Task<Void, Never>?
     private let connectTimeout: Duration
 
     public init(
@@ -212,6 +217,89 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         eventSource.stream()
     }
 
+    /// Opt in to post-acknowledgement foreground media activation. Disabled by
+    /// default and retired with Voice Invocation ownership; never authorize
+    /// background camera/Speech access via this method.
+    public func setForegroundMediaActivationOnVoiceLaunch(_ enabled: Bool) {
+        foregroundMediaActivationOnVoiceLaunch = enabled
+        if enabled {
+            observeForegroundForPendingVoiceLaunch()
+        } else {
+            pendingVoiceMediaLease = nil
+            voicePhaseTask?.cancel()
+            voicePhaseTask = nil
+        }
+    }
+
+    private func observeForegroundForPendingVoiceLaunch() {
+        guard foregroundMediaActivationOnVoiceLaunch,
+              voiceInvocationChannel != nil,
+              voicePhaseTask == nil,
+              let applicationLifecycle else { return }
+
+        let phases = applicationLifecycle.phases()
+        voicePhaseTask = Task { [weak self] in
+            for await phase in phases {
+                guard !Task.isCancelled else { break }
+                if phase == .foreground {
+                    await self?.resumePendingVoiceLaunchOnForeground()
+                }
+            }
+        }
+    }
+
+    private func resumePendingVoiceLaunchOnForeground() async {
+        guard let lease = pendingVoiceMediaLease,
+              voiceStartFence.owns(lease) else { return }
+        pendingVoiceMediaLease = nil
+        await activateMediaAfterAcknowledgedVoiceLaunch(voiceLease: lease)
+    }
+
+    private func activateMediaAfterAcknowledgedVoiceLaunch(voiceLease: UInt64) async {
+        // A delayed task from a retired listener must not activate media for
+        // a different listener that restarted after a disconnect/reconnect.
+        guard voiceStartFence.owns(voiceLease),
+              voiceInvocationChannel != nil else { return }
+        // Without a host lifecycle source, foreground ownership is unknown.
+        // Never interpret missing evidence as permission to start media.
+        let phase = await applicationLifecycle?.currentPhase ?? .background
+        if phase == .background {
+            // Cold launches may deliver the acknowledgement before SwiftUI
+            // reports .active. Keep one fenced handoff pending for foreground;
+            // never open a media session while iOS is backgrounded.
+            if foregroundMediaActivationOnVoiceLaunch,
+               voiceStartFence.owns(voiceLease) {
+                pendingVoiceMediaLease = voiceLease
+                observeForegroundForPendingVoiceLaunch()
+            }
+            return
+        }
+        guard MetaDATVoiceMediaActivationPolicy.mayActivate(
+            optedIn: foregroundMediaActivationOnVoiceLaunch,
+            foreground: phase == .foreground,
+            connecting: connecting,
+            sessionActive: deviceSession != nil,
+            stopping: stopping
+        ),
+        voiceStartFence.owns(voiceLease) else { return }
+
+        do {
+            // The acknowledgement event has already entered Core's event
+            // stream. Do not delay it on SDK media/session startup.
+            try await connect()
+        } catch {
+            guard foregroundMediaActivationOnVoiceLaunch,
+                  voiceStartFence.owns(voiceLease),
+                  voiceInvocationChannel != nil else { return }
+            // Media is optional for the wake channel. Failure must not retire
+            // an otherwise healthy voice-only Core/Gateway runtime.
+            yieldEvent(.failed(
+                nil,
+                .capabilityUnavailable("Meta DAT foreground media handoff failed")
+            ))
+        }
+    }
+
     /// Starts the independent, registration-gated Voice Invocation channel.
     /// This never starts DeviceSession, Speech, or the camera stream.
     /// The host must subscribe to events() before enabling the channel.
@@ -226,7 +314,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             MetaDATVoiceInvocationChannel(
                 wearables: wearables,
                 diagnostics: diagnostics,
-                onEvent: { event in source.yield(event) },
+                onEvent: { [weak self] event in
+                    source.yield(event)
+                    if case .invocation = event {
+                        Task { await self?.activateMediaAfterAcknowledgedVoiceLaunch(voiceLease: token) }
+                    }
+                },
                 onReadiness: { ready in
                     capabilities.update(voiceInvocationReady: ready)
                 }
@@ -239,6 +332,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             return
         }
         voiceInvocationChannel = channel
+        observeForegroundForPendingVoiceLaunch()
         await channel.start()
         // An async stop during channel.start() must not leave a ghost listener.
         if !voiceStartFence.owns(token) {
@@ -248,6 +342,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     /// Explicitly retires Voice Invocation without affecting DeviceSession.
     public func stopVoiceInvocationListening() async {
+        setForegroundMediaActivationOnVoiceLaunch(false)
         voiceStartFence.invalidate()
         let channel = voiceInvocationChannel
         voiceInvocationChannel = nil
@@ -270,11 +365,24 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             }
         }
 
+        // The phase check above suspends this actor. Another caller may have
+        // started/finished a media connect while we awaited it, so repeat
+        // admission immediately before taking ownership of a new generation.
+        guard try MetaDATConnectAdmission.shouldStart(
+            connecting: connecting,
+            sessionActive: deviceSession != nil
+        ) else { return }
+
         liveCapabilities.update(
             sessionReady: false,
             speechReady: false,
             cameraReady: false
         )
+        // Media's own phase observer now owns the one-slot lifecycle stream.
+        // Restore the independent voice observer when that media retires.
+        voicePhaseTask?.cancel()
+        voicePhaseTask = nil
+        pendingVoiceMediaLease = nil
         stopping = false
         connecting = true
         let generation = generationFence.begin()
@@ -711,7 +819,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
               deviceSession != nil else {
             return
         }
-        yieldEvent(.failed(nil, .device(message)))
+        emitMediaFailure(message)
         tearDownSession(expectedGeneration: generation)
     }
 
@@ -775,15 +883,13 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             cameraReady: false
         )
         diagnostics?.record(.init(kind: .metaBackgroundRetired, generation: generation))
-        yieldEvent(.failed(nil, .device("Meta DAT media retired on app background")))
+        emitMediaFailure("Meta DAT media retired on app background")
         tearDownSession(expectedGeneration: generation)
     }
 
     private func handleUnexpectedStop(generation: UInt64) {
         guard !stopping, generationFence.owns(generation) else { return }
-        yieldEvent(
-            .failed(nil, .device("Meta DAT device session stopped"))
-        )
+        emitMediaFailure("Meta DAT device session stopped")
         tearDownSession(expectedGeneration: generation)
     }
 
@@ -793,22 +899,28 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         // Registration ownership begins before DeviceSession creation. Do not
         // require deviceSession != nil here: revocation during startup must
         // invalidate the whole connect generation.
-        yieldEvent(
-            .failed(nil, .device("Meta DAT registration became unavailable"))
-        )
+        emitMediaFailure("Meta DAT registration became unavailable")
         tearDownSession(expectedGeneration: generation)
     }
 
     private func emitDeviceError(_ error: any Error, generation: UInt64) {
         guard !stopping, generationFence.owns(generation) else { return }
-        yieldEvent(.failed(nil, .device(MetaDATVendorFailurePolicy.message(
+        emitMediaFailure(MetaDATVendorFailurePolicy.message(
             for: error,
             surface: .session
-        ))))
+        ))
     }
 
     private func yieldEvent(_ event: InteractionEvent) {
         eventSource.yield(event)
+    }
+
+    private func emitMediaFailure(_ message: String) {
+        yieldEvent(MetaDATMediaFailurePolicy.event(
+            message,
+            preserveIndependentVoice:
+                foregroundMediaActivationOnVoiceLaunch && voiceInvocationChannel != nil
+        ))
     }
 
     private func tearDownSession(expectedGeneration: UInt64? = nil) {
@@ -857,5 +969,6 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         selectedDeviceLinkLossGate = MetaDATSelectedDeviceLinkLossGate()
         connecting = false
         stopping = false
+        observeForegroundForPendingVoiceLaunch()
     }
 }

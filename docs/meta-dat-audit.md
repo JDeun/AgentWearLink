@@ -119,3 +119,29 @@ MockDeviceKit cannot close:
 - real camera latency and capture reliability
 
 Keep #1, #5, #6, #58 and #59 open until physical evidence exists.
+
+
+## Foreground voice-to-media handoff (2026-10-08; #6/#95)
+
+A Meta `LaunchApp` Voice Invocation is **not a dictation payload**; its
+acknowledged normalized event carries no question text. An independent listener
+can therefore wake the app/Core without producing an agent request or speech
+reply. A follow-on DAT Speech session is required to accept the user's actual
+utterance on the reference host.
+
+The opt-in `MetaDATVoiceWakeDeviceAdapter` starts only Voice Invocation when
+Core connects. Its vendor adapter forwards a successful acknowledgement event
+first and **then**, in a separate task, conditionally starts DeviceSession and
+DAT Speech *only if* the iOS host reports foreground phase. The admission gate
+rejects overlapping connects, stopped ownership and already-ready media.
+Failures are nonterminal capability diagnostics; no speech or camera access is
+attempted merely by constructing/connecting the wake adapter.
+
+This is an optional production composition layer, not proof of OS-delivered
+cold launches, background entitlements, secure credential persistence, or
+wearable speaker output. The test-only app-hosted MockDeviceKit scenario now
+includes a launch → foreground DAT Speech → final transcript → Core → isolated
+MockAgentAdapter output assertion; it must pass the pinned iOS CI before being
+counted as evidence. The production reference-host UI still needs an explicit
+opt-in mode wired to this new adapter. Physical locked/pocketed-device
+acceptance remains #6.

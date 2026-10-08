@@ -13,6 +13,7 @@ import MWDATMockDevice
 public enum MetaDATMockHostBootstrap {
     public static let launchArgument = "--awl-meta-ui-testing"
     public static let voiceLaunchArgument = "--awl-meta-voice-ui-testing"
+    public static let wakeLaunchArgument = "--awl-meta-wake-ui-testing"
     public static let portFileEnvironment = "MWDAT_TEST_SERVER_PORT_FILE"
 
     public static func configureIfRequested(
@@ -26,10 +27,31 @@ public enum MetaDATMockHostBootstrap {
         MockDeviceKit.shared.enable(
             config: MockDeviceKitConfig(
                 initiallyRegistered: arguments.contains(voiceLaunchArgument)
+                    || arguments.contains(wakeLaunchArgument)
             )
         )
         _ = try await MockDeviceKit.shared.startTestServer(
             portFilePath: environment[portFileEnvironment]
+        )
+        #else
+        throw MetaDATMockHostError.unavailableInReleaseBuild
+        #endif
+    }
+
+    /// Injects a final DAT Speech transcript through the real vendor callback
+    /// chain, after a successful post-ack foreground media handoff.
+    public static func sendFinalMockTranscript(_ text: String) throws {
+        #if DEBUG
+        guard !text.isEmpty,
+              let glasses = MockDeviceKit.shared.pairedDevices
+                .compactMap({ $0 as? MockGlasses }).first else {
+            throw MetaDATMockHostError.noPairedDevices
+        }
+        // Exercise the pinned SDK's deterministic injected transcript path,
+        // never the phone microphone or a cloud ASR service.
+        glasses.services.speech.setTranscriptionSource(.injected)
+        glasses.services.speech.simulateTranscription(
+            text: text, isFinal: true, confidence: 1
         )
         #else
         throw MetaDATMockHostError.unavailableInReleaseBuild
