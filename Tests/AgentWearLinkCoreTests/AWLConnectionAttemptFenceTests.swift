@@ -15,6 +15,22 @@ final class AWLConnectionAttemptFenceTests: XCTestCase {
         XCTAssertNotEqual(first, second)
     }
 
+    func testRuntimeCallbackOwnershipSurvivesStartupFinishButNotDisconnect() throws {
+        var fence = AWLConnectionAttemptFence()
+        let attempt = try XCTUnwrap(fence.begin())
+        XCTAssertTrue(fence.ownsRuntime(attempt))
+
+        fence.finish(attempt)
+        XCTAssertFalse(fence.isCurrent(attempt))
+        XCTAssertTrue(fence.ownsRuntime(attempt))
+
+        fence.invalidate()
+        XCTAssertFalse(fence.ownsRuntime(attempt))
+        let next = try XCTUnwrap(fence.begin())
+        XCTAssertTrue(fence.ownsRuntime(next))
+        XCTAssertFalse(fence.ownsRuntime(attempt))
+    }
+
     func testDisconnectInvalidatesLateCompletionUntilCleanupFinishes() throws {
         var fence = AWLConnectionAttemptFence()
         let old = try XCTUnwrap(fence.begin())
