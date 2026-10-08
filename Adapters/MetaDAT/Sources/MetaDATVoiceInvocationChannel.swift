@@ -198,7 +198,12 @@ public final class MetaDATVoiceInvocationChannel {
               let device = candidateDevice,
               device.linkState == .connected,
               device.compatibility() == .compatible else {
-            if listeningLease != nil { retireListener() }
+            if listeningLease != nil || retryTask != nil { retireListener() }
+            // Actual link loss is a new negotiation boundary, even for the
+            // same selected device. Reset stream failure budget accordingly.
+            if let candidateDevice, candidateDevice.linkState != .connected {
+                failures = 0
+            }
             let diagnostic: AWLDiagnosticKind
             if candidateDevice == nil {
                 diagnostic = .metaVoiceNoEligibleDevice
