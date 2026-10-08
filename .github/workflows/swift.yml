@@ -96,19 +96,23 @@ jobs:
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 4
         run: swift test --filter AgentWearLinkCoreTests
-      # Several Xcode/macOS runners stalled immediately before the OpenClaw
-      # protocol JSON decoding fixture while other CI runs passed. Put those
-      # synchronous codec cases in a fresh XCTest process, separate from the
-      # long-lived actor/transport tests. --skip preserves full class coverage.
-      - name: Test OpenClaw protocol codecs in isolation
+      # OpenClawProtocolTests has twice stalled after logging the start of
+      # testDecodesGatewayEventEnvelopeWithObjectStateVersion, despite that
+      # test being a pure JSON fixture and previously passing in other runs.
+      # Isolate it from unrelated XCTest async-task lifetimes so a protocol
+      # failure is attributable and cannot deadlock the entire module suite.
+      - name: Test OpenClaw protocol contracts
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 2
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawProtocolTests
-      - name: Test OpenClaw RPC dispatcher in isolation
+      # An independently reproduced stall occurs at a dispatcher XCTest
+      # boundary once protocol tests are isolated. Keep all tests, but give
+      # the RPC suite a separate subprocess to localize actor/task leakage.
+      - name: Test OpenClaw RPC dispatcher
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 3
         run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests
-      - name: Test remaining OpenClaw cases in isolation
+      - name: Test remaining OpenClaw target
         if: needs.changes.outputs.swift == 'true'
         timeout-minutes: 4
         run: |
