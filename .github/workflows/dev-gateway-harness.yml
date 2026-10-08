@@ -7,12 +7,14 @@ on:
       - 'scripts/dev_gateway_preflight.py'
       - 'scripts/test_dev_gateway_preflight.py'
       - 'scripts/run-openclaw-development-gateway.sh'
+      - 'Sources/AgentWearLinkOpenClawChatProbe/**'
       - '.github/workflows/dev-gateway-harness.yml'
   pull_request:
     paths:
       - 'scripts/dev_gateway_preflight.py'
       - 'scripts/test_dev_gateway_preflight.py'
       - 'scripts/run-openclaw-development-gateway.sh'
+      - 'Sources/AgentWearLinkOpenClawChatProbe/**'
       - '.github/workflows/dev-gateway-harness.yml'
 
 permissions:
@@ -28,3 +30,13 @@ jobs:
         run: python3 -m unittest discover -s scripts -p 'test_dev_gateway_preflight.py'
       - name: Shell syntax
         run: bash -n scripts/run-openclaw-development-gateway.sh
+
+  abort-probe-build:
+    # The abort path is a Darwin/Keychain-backed executable and must be
+    # compiled on macOS. Python-only lint cannot catch Swift probe drift.
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Compile real development Gateway chat probe
+        run: swift build --product awl-openclaw-chat-probe
