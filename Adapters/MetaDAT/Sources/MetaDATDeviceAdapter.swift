@@ -162,6 +162,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     // Independent of DeviceSession: host may start Voice Invocation before
     // connecting a camera/Speech media session.
     private var voiceInvocationChannel: MetaDATVoiceInvocationChannel?
+    private var voiceStartFence = MetaDATVoiceListenerStartFence()
     private var deviceSession: DeviceSession?
     private let applicationLifecycle: MetaDATApplicationLifecycle?
     private let diagnostics: AWLDiagnosticRecorder?
@@ -215,7 +216,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     /// This never starts DeviceSession, Speech, or the camera stream.
     /// The host must subscribe to events() before enabling the channel.
     public func startVoiceInvocationListening() async {
-        guard voiceInvocationChannel == nil else { return }
+        guard voiceInvocationChannel == nil,
+              let token = voiceStartFence.begin() else { return }
+        defer { voiceStartFence.finish(token) }
+
         let source = eventSource
         let capabilities = liveCapabilities
         let channel = await MainActor.run {
@@ -228,15 +232,26 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 }
             )
         }
+        // stop() may run while the actor awaits MainActor allocation. Never
+        // publish or start a channel belonging to a retired generation.
+        guard voiceStartFence.owns(token) else {
+            await channel.stop()
+            return
+        }
         voiceInvocationChannel = channel
         await channel.start()
+        // An async stop during channel.start() must not leave a ghost listener.
+        if !voiceStartFence.owns(token) {
+            await channel.stop()
+        }
     }
 
     /// Explicitly retires Voice Invocation without affecting DeviceSession.
     public func stopVoiceInvocationListening() async {
-        guard let channel = voiceInvocationChannel else { return }
+        voiceStartFence.invalidate()
+        let channel = voiceInvocationChannel
         voiceInvocationChannel = nil
-        await channel.stop()
+        await channel?.stop()
         liveCapabilities.update(voiceInvocationReady: false)
     }
 
