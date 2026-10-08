@@ -60,7 +60,7 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         XCTAssertTrue(unpaired)
     }
     func testMockVoiceLaunchAcknowledgedWithoutMediaSession() async throws {
-        let portFile = NSTemporaryDirectory() + "awl-mwdat-voice-\\(UUID().uuidString).port"
+        let portFile = NSTemporaryDirectory() + "awl-mwdat-voice-\(UUID().uuidString).port"
         defer { try? FileManager.default.removeItem(atPath: portFile) }
 
         let app = XCUIApplication()
@@ -102,7 +102,7 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             object: voiceState
         )
         guard XCTWaiter.wait(for: [listening], timeout: 20) == .completed else {
-            XCTFail("Voice channel was not ready: \\(voiceState.label)")
+            XCTFail("Voice channel was not ready: \(voiceState.label)")
             app.terminate()
             return
         }
