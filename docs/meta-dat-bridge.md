@@ -196,6 +196,20 @@ The host does not log or transmit diagnostic reports automatically; tapping
 the button places sanitized text on the system clipboard, which the operator
 should treat as temporary and clear after capturing validation evidence.
 
+### Reference host Voice Invocation ownership
+
+After the reference host successfully starts the connected runtime, it calls
+`MetaDATDeviceAdapter.startVoiceInvocationListening()` so that the Core device
+event subscriber is already attached before any acknowledgement arrives. Normal
+explicit disconnection stops the standalone voice channel first, then retires
+the runtime. An unsuccessful startup rolls both owners back. The voice stream
+itself is not allocated by `DeviceSession` and does not require camera or
+microphone readiness, but this reference host currently starts the stream
+*after* successful Gateway/media connect; fully disconnected or locked-phone
+cold activation remains outside this slice (#95/#6). A LaunchApp invocation
+with no phrase is only an acknowledgement/event until a separate final Speech
+transcript is received; it is **not** counted as an agent turn.
+
 ### MockDeviceKit Voice Invocation UI acceptance
 
 The test host recognizes `--awl-meta-voice-ui-testing` only after the
