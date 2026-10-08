@@ -88,6 +88,9 @@ jobs:
               - 'scripts/verify-openclaw-protocol-contract.py'
               - 'docs/openclaw-protocol-contract.md'
 
+      - name: Test bounded simulator boot helper
+        run: python3 -m unittest discover -s scripts -p 'test_boot_ios_simulator.py'
+
   core-test:
     needs: changes
     runs-on: macos-15
@@ -243,20 +246,8 @@ jobs:
             build-for-testing
       - name: Boot selected iPhone Simulator
         if: needs.changes.outputs.meta_behavior == 'true'
-        timeout-minutes: 2
-        run: |
-          xcrun simctl boot "${AWL_IOS_SIMULATOR_UDID}" 2>/dev/null || true
-          for attempt in {1..60}; do
-            state="$(xcrun simctl list devices | grep "${AWL_IOS_SIMULATOR_UDID}" || true)"
-            if echo "$state" | grep -q "(Booted)"; then
-              echo "Simulator reports Booted after ${attempt}s"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Simulator did not reach Booted state within 60 seconds" >&2
-          xcrun simctl list devices >&2
-          exit 1
+        timeout-minutes: 4
+        run: python3 scripts/boot_ios_simulator.py "${AWL_IOS_SIMULATOR_UDID}"
       - name: Execute deterministic Meta DAT integration tests
         if: needs.changes.outputs.meta_behavior == 'true'
         timeout-minutes: 5
