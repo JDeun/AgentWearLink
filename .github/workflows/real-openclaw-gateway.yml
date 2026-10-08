@@ -66,6 +66,7 @@ jobs:
         shell: bash
         run: swift build --product awl-openclaw-probe
       - name: Real Gateway refuses unapproved device identity (negative contract)
+        id: negative-contract
         shell: bash
         timeout-minutes: 10
         run: |
@@ -76,7 +77,13 @@ jobs:
             --expect-pairing-required
       - name: Evidence boundary
         if: always()
+        env:
+          NEGATIVE_GATE_OUTCOME: ${{ steps.negative-contract.outcome }}
         run: |
-          echo "Negative contract ONLY: an unapproved read-only device was rejected by real Gateway."
+          if [[ "$NEGATIVE_GATE_OUTCOME" == "success" ]]; then
+            echo "Negative contract ONLY: an unapproved read-only device was rejected by real Gateway."
+          else
+            echo "Negative pairing contract FAILED or was not executed; no rejection proof."
+          fi
           echo "Do not treat this as approved authentication, health, chat or cancellation proof."
           echo "Actual pairing approval requires an operator against the disposable Gateway."
