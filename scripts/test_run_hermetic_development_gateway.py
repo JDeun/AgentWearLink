@@ -10,6 +10,7 @@ from unittest.mock import call, patch
 from dev_gateway_preflight import validate_config
 from run_hermetic_development_gateway import (
     checkout_revision,
+    approve_one_isolated_pairing,
     isolated_environment,
     main,
     retire_owned_process,
@@ -98,6 +99,81 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                 call(9001, signal.SIGTERM),
                 call(9001, signal.SIGKILL),
             ])
+
+    def test_pairing_requires_exact_human_selected_id_in_disposable_state(self):
+        class Terminal:
+            def __init__(self, text):
+                self.text = text
+            def isatty(self):
+                return True
+            def readline(self):
+                return self.text
+
+        with tempfile.TemporaryDirectory(prefix="awl-real-dev-gateway-") as directory:
+            home = Path(directory)
+            env = isolated_environment(
+                {"PATH": "/usr/bin:/bin"}, home=home, port=19231,
+                revision="b"*40, token="synthetic-local-token",
+                full_chat=False, prove_abort=False
+            )
+            checkout = home / "checkout"
+            checkout.mkdir()
+            listing = SimpleNamespace(
+                returncode=0,
+                stdout=b'{"pending":[{"requestId":"isolated-request-123","role":"operator"}]}',
+            )
+            approval = SimpleNamespace(returncode=0)
+            with (
+                patch("run_hermetic_development_gateway.subprocess.run",
+                      side_effect=[listing, approval]) as command,
+                patch("run_hermetic_development_gateway.select.select",
+                      side_effect=lambda readers, *_: (readers, [], [])),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertTrue(approve_one_isolated_pairing(
+                    "/usr/bin/node", checkout, env,
+                    input_stream=Terminal("isolated-request-123\\n"),
+                ))
+                self.assertEqual(command.call_count, 2)
+                self.assertEqual(command.call_args.args[0][-3:],
+                                 ["devices", "approve", "isolated-request-123"])
+
+            with (
+                patch("run_hermetic_development_gateway.subprocess.run",
+                      return_value=listing) as command,
+                patch("run_hermetic_development_gateway.select.select",
+                      side_effect=lambda readers, *_: (readers, [], [])),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertFalse(approve_one_isolated_pairing(
+                    "/usr/bin/node", checkout, env,
+                    input_stream=Terminal("unrelated-request-999\\n"),
+                ))
+                self.assertEqual(command.call_count, 1)
+
+    def test_manual_pairing_refuses_nonloopback_and_noninteractive(self):
+        class NoTTY:
+            def isatty(self):
+                return False
+
+        with tempfile.TemporaryDirectory(prefix="awl-real-dev-gateway-") as directory:
+            home = Path(directory)
+            env = isolated_environment(
+                {}, home=home, port=19001, revision="c"*40,
+                token="test-token", full_chat=False, prove_abort=False,
+            )
+            checkout = home / "checkout"
+            checkout.mkdir()
+            with patch("run_hermetic_development_gateway.subprocess.run") as run:
+                self.assertFalse(approve_one_isolated_pairing(
+                    "/usr/bin/node", checkout, env, input_stream=NoTTY(),
+                ))
+                self.assertFalse(approve_one_isolated_pairing(
+                    "/usr/bin/node", checkout,
+                    {**env, "AWL_OPENCLAW_EXPOSURE": "tailnet-direct"},
+                    input_stream=NoTTY(),
+                ))
+                run.assert_not_called()
 
     def test_rejects_missing_pinned_checkout_before_process_launch(self):
         with (
