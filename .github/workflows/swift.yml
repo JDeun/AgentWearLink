@@ -89,7 +89,9 @@ jobs:
               - 'docs/openclaw-protocol-contract.md'
 
       - name: Test bounded simulator boot helper
-        run: python3 -m unittest discover -s scripts -p 'test_boot_ios_simulator.py'
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_boot_ios_simulator.py'
+          python3 -m unittest discover -s scripts -p 'test_swift_xctest_watchdog.py'
 
   core-test:
     needs: changes
@@ -113,35 +115,39 @@ jobs:
       # test being a pure JSON fixture and previously passing in other runs.
       # Isolate it from unrelated XCTest async-task lifetimes so a protocol
       # failure is attributable and cannot deadlock the entire module suite.
+      # Preserve all OpenClaw XCTest coverage. The watchdog keeps each shard's
+      # existing GitHub step deadline, but triggers a short macOS process sample
+      # before cancellation and prints only allowlisted stack-category counts.
+      # These are diagnostic hints for #542, NOT a root-cause repair.
       - name: Test OpenClaw protocol contracts
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 2
-        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawProtocolTests
+        run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 95 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawProtocolTests
       # An independently reproduced stall occurs at a dispatcher XCTest
       # boundary once protocol tests are isolated. Keep all tests, but give
       # the RPC suite a separate subprocess to localize actor/task leakage.
       - name: Test OpenClaw RPC dispatcher
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
-        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests
+        run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 155 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests
       # This suite owns independent long-lived Tasks and cancellation paths.
       # Give it a fresh XCTest process so those tasks cannot starve a
       # later actor-based registry test on macOS CI.
       - name: Test OpenClaw native agent lifetime
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
-        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests
+        run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 155 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawNativeAgentAdapterTests
       - name: Test OpenClaw RPC registry
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 2
-        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests
+        run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 95 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawRPCRegistryTests
       # The handshake suite repeatedly caused a macOS XCTest stall after
       # a passing actor-based test. Give its lifetime a fresh XCTest process,
       # without disabling any tests or inflating the remaining suite deadline.
       - name: Test OpenClaw Gateway handshake lifecycle
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
-        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawGatewayConnectionTests
+        run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 155 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawGatewayConnectionTests
       # On macOS-15 the GatewayState actor suite can stall when run after
       # unrelated async XCTest lifetimes. It owns a separate process to make
       # a genuine per-suite regression visible rather than hanging the
@@ -149,12 +155,12 @@ jobs:
       - name: Test OpenClaw Gateway state actor
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 2
-        run: swift test --filter AgentWearLinkOpenClawTests.OpenClawGatewayStateTests
+        run: python3 scripts/swift_xctest_watchdog.py --deadline-seconds 95 -- swift test --filter AgentWearLinkOpenClawTests.OpenClawGatewayStateTests
       - name: Test remaining OpenClaw target
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 4
         run: |
-          swift test \
+          python3 scripts/swift_xctest_watchdog.py --deadline-seconds 215 -- swift test \
             --filter AgentWearLinkOpenClawTests \
             --skip AgentWearLinkOpenClawTests.OpenClawProtocolTests \
             --skip AgentWearLinkOpenClawTests.OpenClawRPCDispatcherTests \
