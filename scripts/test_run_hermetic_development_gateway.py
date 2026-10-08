@@ -152,6 +152,81 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                 ))
                 self.assertEqual(command.call_count, 1)
 
+    def test_ci_mode_only_approves_one_synthetic_loopback_request(self):
+        class NoTTY:
+            def isatty(self):
+                return False
+
+        with tempfile.TemporaryDirectory(prefix="awl-real-dev-gateway-") as directory:
+            home = Path(directory)
+            env = isolated_environment(
+                {}, home=home, port=19051, revision="b"*40,
+                token="synthetic-only", full_chat=False, prove_abort=False,
+            )
+            env.update({
+                "GITHUB_ACTIONS": "true",
+                "CI": "true",
+                "AWL_CI_SINGLE_REQUEST_APPROVAL": "1",
+            })
+            checkout = home / "checkout"
+            checkout.mkdir()
+            one = SimpleNamespace(
+                returncode=0,
+                stdout=b'{"pending":[{"requestId":"ci-synthetic-only"}]}',
+            )
+            approved = SimpleNamespace(returncode=0)
+            with (
+                patch("run_hermetic_development_gateway.subprocess.run",
+                      side_effect=[one, approved]) as command,
+                contextlib.redirect_stdout(io.StringIO()) as output,
+            ):
+                self.assertTrue(approve_one_isolated_pairing(
+                    "/usr/bin/node", checkout, env,
+                    input_stream=NoTTY(), ci_single_request=True,
+                ))
+                self.assertEqual(command.call_count, 2)
+                self.assertIn("ci-synthetic-only", command.call_args.args[0])
+                self.assertNotIn("ci-synthetic-only", output.getvalue())
+
+            for tampered in [
+                {**env, "AWL_CI_SINGLE_REQUEST_APPROVAL": "0"},
+                {**env, "GITHUB_ACTIONS": "false"},
+                {**env, "AWL_OPENCLAW_URL": "ws://203.0.113.3:19051"},
+                {**env, "HOME": "/Users/owner"},
+            ]:
+                with patch("run_hermetic_development_gateway.subprocess.run") as command:
+                    self.assertFalse(approve_one_isolated_pairing(
+                        "/usr/bin/node", checkout, tampered,
+                        input_stream=NoTTY(), ci_single_request=True,
+                    ))
+                    command.assert_not_called()
+
+            multiple = SimpleNamespace(
+                returncode=0,
+                stdout=b'{"pending":[{"requestId":"request-one"},{"requestId":"request-two"}]}',
+            )
+            with patch("run_hermetic_development_gateway.subprocess.run",
+                       return_value=multiple) as command:
+                self.assertFalse(approve_one_isolated_pairing(
+                    "/usr/bin/node", checkout, env,
+                    input_stream=NoTTY(), ci_single_request=True,
+                ))
+                self.assertEqual(command.call_count, 1)
+
+    def test_ci_approval_flag_refuses_local_non_ci_invocation(self):
+        with (
+            patch.dict("os.environ", {"CI": "false", "GITHUB_ACTIONS": "false"}),
+            patch("run_hermetic_development_gateway.subprocess.Popen") as process,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            status = main([
+                "--checkout", "/path/should/not/matter",
+                "--revision", "a"*40,
+                "--ci-approve-single-request",
+            ])
+            self.assertEqual(status, 2)
+            process.assert_not_called()
+
     def test_manual_pairing_refuses_nonloopback_and_noninteractive(self):
         class NoTTY:
             def isatty(self):
