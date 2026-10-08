@@ -61,6 +61,20 @@ public enum MetaDATMockHostBootstrap {
         #endif
     }
 
+    /// Test-only permission fault injection for the concrete snapshot bridge.
+    /// Camera permission denial must fail before the vendor shutter/stream and
+    /// must not surface image data or an SDK error description in the UI.
+    public static func denyMockCameraPermission() throws {
+        #if DEBUG
+        guard !MockDeviceKit.shared.pairedDevices.isEmpty else {
+            throw MetaDATMockHostError.noPairedDevices
+        }
+        MockDeviceKit.shared.permissions.set(.camera, .denied)
+        #else
+        throw MetaDATMockHostError.unavailableInReleaseBuild
+        #endif
+    }
+
     /// Configure the same deterministic captured photo on both current mock
     /// still-capture routes. Called by the UI-test host *after* pairing so no
     /// test fixture is installed in the release adapter or stored persistently.
