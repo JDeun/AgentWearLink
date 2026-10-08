@@ -109,20 +109,35 @@ def safe_stack_diagnostics(root_pid: int) -> None:
 
 
 def stop_owned_group(process: subprocess.Popen[bytes]) -> None:
-    """Terminate SwiftPM and XCTest descendants without killing other jobs."""
-    if process.poll() is not None:
-        return
+    """Retire the *owned session* even after the SwiftPM parent has exited.
+
+    subprocess.Popen(start_new_session=True) makes process.pid the sole
+    process-group ID for this invocation. SwiftPM may exit with success while
+    an xctest child is still alive. Checking only process.poll() would then
+    leak that child into the next test shard and eventually saturate the
+    macOS XCTest worker. Never scan or signal unrelated runner processes.
+    """
+    parent_running = process.poll() is None
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=3)
-    except subprocess.TimeoutExpired:
+        pass
+
+    if parent_running:
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
             pass
+
+    # The parent may have exited successfully *during* the grace period
+    # while a child remains in the same session. A final group kill still
+    # applies to those owned children. ESRCH means there is nothing left.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+    if process.poll() is None:
         process.wait()
 
 

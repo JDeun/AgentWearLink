@@ -1,8 +1,9 @@
 import contextlib
 import io
+import signal
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from swift_xctest_watchdog import (
     main,
@@ -49,10 +50,36 @@ class SwiftXCTestWatchdogTests(unittest.TestCase):
                 return self.status
             def poll(self):
                 return self.status
-        with patch("swift_xctest_watchdog.subprocess.Popen", return_value=Process(0)):
+        # Even a completed SwiftPM process owns a process group; a lingering
+        # XCTest child must not be left alive when the parent returns 0.
+        with (
+            patch("swift_xctest_watchdog.subprocess.Popen", return_value=Process(0)),
+            patch("swift_xctest_watchdog.os.killpg") as kill_group,
+        ):
             self.assertEqual(run_bounded(["swift", "test", "--filter", "Suite"], 1), 0)
-        with patch("swift_xctest_watchdog.subprocess.Popen", return_value=Process(9)):
+            self.assertEqual(
+                kill_group.call_args_list,
+                [call(123, signal.SIGTERM), call(123, signal.SIGKILL)],
+            )
+        with (
+            patch("swift_xctest_watchdog.subprocess.Popen", return_value=Process(9)),
+            patch("swift_xctest_watchdog.os.killpg") as kill_group,
+        ):
             self.assertEqual(run_bounded(["swift", "test"], 1), 9)
+            self.assertEqual(kill_group.call_count, 2)
+
+    def test_empty_process_group_does_not_override_original_exit(self):
+        class Process:
+            pid = 777
+            def wait(self, timeout=None):
+                return 0
+            def poll(self):
+                return 0
+        with (
+            patch("swift_xctest_watchdog.subprocess.Popen", return_value=Process()),
+            patch("swift_xctest_watchdog.os.killpg", side_effect=ProcessLookupError),
+        ):
+            self.assertEqual(run_bounded(["swift", "test"], 1), 0)
 
     def test_expired_deadline_invokes_diagnostics_before_cleanup(self):
         from subprocess import TimeoutExpired
