@@ -25,6 +25,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     private var visionTask: Task<Void, Never>?
     private var configured = false
     private var gatewayHealthInProgress = false
+    private var connectionFence = AWLConnectionAttemptFence()
+    private var disconnectInProgress = false
 
     /// A deliberate local user gesture copies only typed and bounded
     /// diagnostic evidence; no transport token, text or raw correlation UUID.
@@ -182,6 +184,10 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         sessionKey: String,
         enableVision: Bool
     ) async {
+        guard !connectionFence.isStarting, !disconnectInProgress else {
+            status = "connection-in-progress"
+            return
+        }
         guard runtime == nil else {
             status = "already-connected"
             return
@@ -194,6 +200,12 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             status = "gateway-token-required"
             return
         }
+
+        guard let attempt = connectionFence.begin() else {
+            status = "connection-in-progress"
+            return
+        }
+        defer { connectionFence.finish(attempt) }
 
         status = "connecting"
         do {
@@ -260,22 +272,47 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             outputSink = sink
             do {
                 try await composed.start()
+
+                // A disconnect can arrive while Core is suspended in Meta or
+                // Gateway startup. Its generation fence wins over a late
+                // successful start: never resurrect an already retired host.
+                guard connectionFence.isCurrent(attempt) else {
+                    await concreteDevice.stopVoiceInvocationListening()
+                    await composed.stop()
+                    clearRuntimeReferences()
+                    return
+                }
+
                 // Core subscribed to device.events() before connecting.
                 // Independent Meta Voice Invocation may now enter that stream.
                 await concreteDevice.startVoiceInvocationListening()
+                guard connectionFence.isCurrent(attempt) else {
+                    await concreteDevice.stopVoiceInvocationListening()
+                    await composed.stop()
+                    clearRuntimeReferences()
+                    return
+                }
                 status = "connected"
             } catch {
                 await concreteDevice.stopVoiceInvocationListening()
                 await composed.stop()
-                runtime = nil
-                device = nil
-                visionAgent = nil
-                outputSink = nil
-                status = "connection-failed"
+                clearRuntimeReferences()
+                if connectionFence.isCurrent(attempt) {
+                    status = "connection-failed"
+                }
             }
         } catch {
-            status = "invalid-private-gateway-config"
+            if connectionFence.isCurrent(attempt) {
+                status = "invalid-private-gateway-config"
+            }
         }
+    }
+
+    private func clearRuntimeReferences() {
+        runtime = nil
+        device = nil
+        visionAgent = nil
+        outputSink = nil
     }
 
     /// Explicit one-shot photo flow, never invoked by background/session
@@ -333,6 +370,11 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     }
 
     func disconnect() async {
+        guard !disconnectInProgress else { return }
+        disconnectInProgress = true
+        defer { disconnectInProgress = false }
+        // Invalidate suspended connect() before the first asynchronous stop.
+        connectionFence.invalidate()
         status = "disconnecting"
         let oldVisionTask = visionTask
         oldVisionTask?.cancel()
@@ -344,10 +386,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         if let runtime {
             await runtime.stop()
         }
-        runtime = nil
-        device = nil
-        visionAgent = nil
-        outputSink = nil
+        clearRuntimeReferences()
         status = "disconnected"
     }
 }
