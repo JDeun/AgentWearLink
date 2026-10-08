@@ -146,11 +146,16 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [hostReady], timeout: 20), .completed)
 
         let client = MockDeviceTestClient(portFilePath: portFile)
-        XCTAssertTrue(await client.waitForServer(timeout: 15))
-        let deviceID = try XCTUnwrap(await client.pairDevice())
-        XCTAssertTrue(await client.powerOn(deviceId: deviceID))
-        XCTAssertTrue(await client.unfold(deviceId: deviceID))
-        XCTAssertTrue(await client.don(deviceId: deviceID))
+        let serverReady = await client.waitForServer(timeout: 15)
+        XCTAssertTrue(serverReady)
+        let paired = await client.pairDevice()
+        let deviceID = try XCTUnwrap(paired)
+        let powered = await client.powerOn(deviceId: deviceID)
+        let unfolded = await client.unfold(deviceId: deviceID)
+        let donned = await client.don(deviceId: deviceID)
+        XCTAssertTrue(powered)
+        XCTAssertTrue(unfolded)
+        XCTAssertTrue(donned)
 
         let wake = app.staticTexts["awl-meta-wake-state"]
         XCTAssertTrue(wake.waitForExistence(timeout: 10))
@@ -193,7 +198,8 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             "Final DAT Speech did not reach Core and terminal MockAgent output: \(wake.label)"
         )
 
-        XCTAssertTrue(await client.unpairDevice(deviceId: deviceID))
+        let unpaired = await client.unpairDevice(deviceId: deviceID)
+        XCTAssertTrue(unpaired)
     }
 
 }
