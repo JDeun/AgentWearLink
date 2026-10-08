@@ -1,11 +1,13 @@
 import contextlib
 import io
 import os
+import signal
 import subprocess
 import sys
 import unittest
+from unittest.mock import call, patch
 
-from dev_gateway_probe_runner import main, run_command
+from dev_gateway_probe_runner import main, run_command, _stop_process_group
 
 
 class DevelopmentGatewayProbeRunnerTests(unittest.TestCase):
@@ -34,6 +36,29 @@ class DevelopmentGatewayProbeRunnerTests(unittest.TestCase):
             )
         self.assertEqual(result, 124)
         self.assertIn("deadline", stderr.getvalue())
+
+    def test_parent_exit_still_cleans_private_process_group(self):
+        class Exited:
+            pid = 4444
+            def poll(self):
+                return 0
+        with patch("dev_gateway_probe_runner.os.killpg") as kill_group:
+            _stop_process_group(Exited())
+            self.assertEqual(
+                kill_group.call_args_list,
+                [call(4444, signal.SIGTERM), call(4444, signal.SIGKILL)]
+            )
+
+    def test_empty_process_group_is_safe(self):
+        class Exited:
+            pid = 4444
+            def poll(self):
+                return 0
+        with patch(
+            "dev_gateway_probe_runner.os.killpg",
+            side_effect=ProcessLookupError,
+        ):
+            _stop_process_group(Exited())
 
     def test_invalid_arguments_cannot_execute_an_arbitrary_target(self):
         stderr = io.StringIO()
