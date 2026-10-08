@@ -25,6 +25,7 @@ public final class MetaDATVoiceInvocationChannel {
     private var running = false
     private var selectedIdentifier: DeviceIdentifier?
     private var selectedLinkToken: (any AnyListenerToken)?
+    private var selectedCompatibilityToken: (any AnyListenerToken)?
     private var listeningLease: UInt64?
     private var leaseGeneration: UInt64 = 0
     private var failures = 0
@@ -118,7 +119,11 @@ public final class MetaDATVoiceInvocationChannel {
         if let selectedLinkToken {
             Task { await selectedLinkToken.cancel() }
         }
+        if let selectedCompatibilityToken {
+            Task { await selectedCompatibilityToken.cancel() }
+        }
         selectedLinkToken = nil
+        selectedCompatibilityToken = nil
         failures = 0
     }
 
@@ -171,6 +176,12 @@ public final class MetaDATVoiceInvocationChannel {
                 // Device lists need not change when an already-paired pair
                 // disconnects/reconnects. Observe that link independently.
                 selectedLinkToken = device.addLinkStateListener { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.reconcile() }
+                }
+                // Eligibility can transition from .undefined to .compatible
+                // without publishing a new paired-device list or link state.
+                selectedCompatibilityToken = device.addCompatibilityListener {
+                    [weak self] _ in
                     Task { @MainActor [weak self] in self?.reconcile() }
                 }
             }
