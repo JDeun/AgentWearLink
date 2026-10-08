@@ -135,8 +135,9 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                     input_stream=Terminal("isolated-request-123\n"),
                 ))
                 self.assertEqual(command.call_count, 2)
-                self.assertEqual(command.call_args.args[0][-3:],
-                                 ["devices", "approve", "isolated-request-123"])
+                self.assertEqual(command.call_args.args[0][-5:],
+                                 ["devices", "approve", "isolated-request-123",
+                                  "--url", "ws://127.0.0.1:19231"])
 
             with (
                 patch("run_hermetic_development_gateway.subprocess.run",
@@ -172,6 +173,21 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                     "/usr/bin/node", checkout,
                     {**env, "AWL_OPENCLAW_EXPOSURE": "tailnet-direct"},
                     input_stream=NoTTY(),
+                ))
+                run.assert_not_called()
+            class Terminal:
+                def isatty(self):
+                    return True
+            with patch("run_hermetic_development_gateway.subprocess.run") as run:
+                self.assertFalse(approve_one_isolated_pairing(
+                    "/usr/bin/node", checkout,
+                    {**env, "AWL_OPENCLAW_URL": "ws://203.0.113.5:19001"},
+                    input_stream=Terminal()
+                ))
+                self.assertFalse(approve_one_isolated_pairing(
+                    "/usr/bin/node", checkout,
+                    {**env, "HOME": "/Users/real-owner"},
+                    input_stream=Terminal()
                 ))
                 run.assert_not_called()
 
