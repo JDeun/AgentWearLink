@@ -5,7 +5,7 @@ enum OpenClawGatewayErrorCodePolicy {
     private static let allowed: Set<String> = [
         "AUTH_FAILED", "DEVICE_TOKEN_REJECTED", "PAIRING_REQUIRED",
         "BUSY", "INVALID_REQUEST", "UNAUTHORIZED", "FORBIDDEN",
-        "RATE_LIMITED", "UNAVAILABLE", "TIMEOUT"
+        "RATE_LIMITED", "UNAVAILABLE", "TIMEOUT", "RUN_NOT_FOUND"
     ]
 
     static func safeCode(_ code: String?) -> String {
