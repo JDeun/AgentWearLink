@@ -1,3 +1,4 @@
+#if DEBUG
 import AgentWearLinkCore
 import Foundation
 import MWDATCamera
@@ -135,3 +136,5 @@ final class MetaDATStandalonePhotoCapture: @unchecked Sendable {
         }
     }
 }
+
+#endif // DEBUG: Meta DAT standalone Photo is experimental/non-publishable.
