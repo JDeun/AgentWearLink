@@ -121,6 +121,89 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         try assertProof(result, signs: "shared")
     }
 
+    func testTokenlessReconnectIsEndpointScopedAndUsesDeviceGrantOnly() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let deviceID = try identity.deviceID
+        let identities = InMemoryOpenClawDeviceIdentityStore(identity: identity)
+        let base = InMemoryOpenClawDeviceCredentialStore()
+        let trusted = try OpenClawGatewayCredentialNamespace(
+            stableIdentifier: "isolated-development-gateway"
+        )
+        let unrelated = try OpenClawGatewayCredentialNamespace(
+            stableIdentifier: "unrelated-gateway"
+        )
+        let scoped = GatewayScopedOpenClawDeviceCredentialStore(
+            base: base, namespace: trusted
+        )
+        try await scoped.save(
+            .init(
+                deviceID: deviceID,
+                role: "operator",
+                scopes: ["operator.read", "operator.write"],
+                token: "approved-device-grant"
+            )
+        )
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(store: identities),
+            credentialStore: base,
+            gatewayNamespace: trusted
+        )
+        let reconnect = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(),
+            challenge: challenge
+        )
+        XCTAssertTrue(reconnect.usedStoredCredential)
+        XCTAssertNil(reconnect.params.auth?.token)
+        XCTAssertNil(reconnect.params.auth?.bootstrapToken)
+        XCTAssertEqual(reconnect.params.auth?.deviceToken, "approved-device-grant")
+        try assertProof(reconnect, signs: "approved-device-grant")
+
+        let otherGateway = OpenClawConnectAssembler(
+            identityManager: .init(store: identities),
+            credentialStore: base,
+            gatewayNamespace: unrelated
+        )
+        let notAuthorized = try await otherGateway.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(),
+            challenge: challenge
+        )
+        XCTAssertFalse(notAuthorized.usedStoredCredential)
+        XCTAssertNil(notAuthorized.params.auth?.deviceToken)
+        XCTAssertNil(notAuthorized.effectiveToken)
+    }
+
+    func testTokenlessWriteAdmissionRejectsReadOnlyDowngradedOrMissingGrant() {
+        let approved = OpenClawDeviceCredential(
+            deviceID: "device",
+            role: "operator",
+            scopes: ["operator.read", "operator.write"],
+            token: "device-token"
+        )
+        XCTAssertTrue(OpenClawStoredGrantAdmission.permitsWriteRuntime(approved))
+        XCTAssertFalse(OpenClawStoredGrantAdmission.permitsWriteRuntime(nil))
+        let invalid: [OpenClawDeviceCredential] = [
+            .init(deviceID: "device", role: "operator",
+                  scopes: ["operator.read"], token: "device-token"),
+            .init(deviceID: "device", role: "operator",
+                  scopes: ["operator.write"], token: "device-token"),
+            .init(deviceID: "device", role: "viewer",
+                  requestedRole: "operator",
+                  scopes: ["operator.read", "operator.write"], token: "device-token"),
+            .init(deviceID: "device", role: "operator",
+                  storageRoleOverride: "other",
+                  scopes: ["operator.read", "operator.write"], token: "device-token"),
+            .init(deviceID: "device", role: "operator",
+                  scopes: ["operator.read", "operator.write"], token: "  ")
+        ]
+        for grant in invalid {
+            XCTAssertFalse(OpenClawStoredGrantAdmission.permitsWriteRuntime(grant))
+        }
+    }
+
     func testStoredTokenReusesApprovedScopes() async throws {
         let identity = OpenClawDeviceIdentity.generate()
         let identityStore = InMemoryOpenClawDeviceIdentityStore(identity: identity)
