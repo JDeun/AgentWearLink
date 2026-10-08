@@ -73,6 +73,23 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             "Vendor one-shot photo capture was not validated; state=\(photoState.label)"
         )
 
+        // The opt-in experimental Photo API must be exercised through the
+        // same production adapter, without replacing its publishable default.
+        let standalone = app.buttons["awl-meta-capture-experimental-photo"]
+        XCTAssertTrue(standalone.waitForExistence(timeout: 5))
+        standalone.tap()
+        let standaloneCaptured = XCTNSPredicateExpectation(
+            predicate: NSPredicate(
+                format: "label == %@", "experimental-photo-snapshot-verified"
+            ),
+            object: photoState
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [standaloneCaptured], timeout: 30),
+            .completed,
+            "Experimental Camera.photo did not deliver bounded JPEG: state=\\(photoState.label)"
+        )
+
         // The same real production snapshot entrypoint must fail closed
         // without a shutter request when the mock denies camera permission.
         let denyCamera = app.buttons["awl-meta-deny-camera-permission"]

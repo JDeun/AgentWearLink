@@ -14,15 +14,36 @@ The vendor-linked production adapter currently includes:
 - MockDeviceKit isolation from the production dependency graph
 - pinned SDK and full iPhone reference-stack compile gates for iOS Simulator
 
-### Implemented and deterministically tested, but not yet fully production-wired
+### Production composition now reachable through the vendor adapter
 
-The following slices exist as code and have deterministic helper/integration coverage, but they are not yet all composed into the concrete vendor session/adapter path. Production composition is tracked by #230:
+The current `MetaDATDeviceAdapter` exposes dynamic capabilities and composes
+bounded one-shot camera snapshots, final Speech transcripts, independent Voice
+Invocation, and foreground/background invalidation through public Core adapter
+entrypoints. MockDeviceKit app-hosted UI tests check representative runtime
+flows. Exact real-device/media evidence remains separated under #1/#58/#59.
+Issue #230 tracks remaining end-to-end evidence rather than a missing parallel
+`MetaDATSession` abstraction.
 
-- live capability derivation from current readiness
-- camera configuration, ignition/first-frame readiness, bounded shutter/photo-result handling, normalization, and cancellation generations
-- Speech transcript handling with final-only filtering and duplicate suppression
-- independent Voice Invocation listener, acknowledgement, and bounded reopen/backoff policy
-- foreground/background media invalidation and fresh-readiness rules
+### Experimental Camera.photo (explicitly not the default)
+
+**Meta DAT 1.0.0 marks standalone `Camera.photo` experimental and currently
+non-publishable.** Production and reference hosts continue using short-lived
+`camera.stream.capturePhoto(format: .jpeg)` unless a DEBUG operator explicitly
+selects `MetaDATSnapshotMode.experimentalStandalonePhoto`. The reference iOS
+host displays a DEBUG-only warning toggle, disabled until vision is enabled.
+
+Experimental mode arms Photo state/data/error listeners **before** `Photo.start()`,
+waits for `.started` before triggering `Photo.capturePhoto`, caps the whole
+capture with a deadline, discards callbacks after cancellation, accepts only
+bounded JPEG bytes, and stops Photo before Camera. It does **not** start video.
+If the SDK returns another encoding, the experimental path fails closed
+rather than silently labeling it JPEG. The default path is unaffected.
+
+The app-hosted MockDeviceKit UI test exercises default and experimental
+paths independently with the same JPEG fixture. A successful simulator gate
+is not physical camera or Apple App Review authorization. Future vendor
+updates may change the experimental release restriction; reassess before
+considering standalone Photo a publishable default (#323).
 
 MockDeviceKit host bootstrap and deterministic mock fixtures live in the separate `AgentWearLinkMetaDATTestSupport` target; the production integration target does not link MockDeviceKit.
 

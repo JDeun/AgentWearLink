@@ -10,14 +10,16 @@ final class AWLMockPhotoSnapshotHarness: ObservableObject {
     @Published private(set) var status = "photo-not-started"
     private var capturing = false
 
-    func captureOnce() async {
+    func captureOnce(experimentalStandalonePhoto: Bool = false) async {
         guard !capturing else { return }
         capturing = true
         defer { capturing = false }
 
         let adapter = MetaDATDeviceAdapter(
             connectTimeout: .seconds(15),
-            snapshotTimeout: .seconds(5)
+            snapshotTimeout: .seconds(5),
+            snapshotMode: experimentalStandalonePhoto
+                ? .experimentalStandalonePhoto : .compatibleStreamStill
         )
         status = "photo-connecting"
         let result: String
@@ -30,14 +32,18 @@ final class AWLMockPhotoSnapshotHarness: ObservableObject {
             if image.format == .jpeg, image.data.count >= 4,
                image.data.prefix(2) == Data([0xFF, 0xD8]),
                image.data.suffix(2) == Data([0xFF, 0xD9]) {
-                result = "photo-snapshot-verified"
+                result = experimentalStandalonePhoto
+                    ? "experimental-photo-snapshot-verified" : "photo-snapshot-verified"
             } else {
-                result = "photo-invalid-jpeg"
+                result = experimentalStandalonePhoto
+                    ? "experimental-photo-invalid-jpeg" : "photo-invalid-jpeg"
             }
         } catch {
             // Never surface SDK error strings or private image bytes to UI.
             result = status == "photo-connecting"
-                ? "photo-connect-failed" : "photo-capture-failed"
+                ? "photo-connect-failed"
+                : (experimentalStandalonePhoto
+                   ? "experimental-photo-capture-failed" : "photo-capture-failed")
         }
         // Both success and failure become terminal only after all camera
         // resources/session ownership have been retired. UI tests can safely

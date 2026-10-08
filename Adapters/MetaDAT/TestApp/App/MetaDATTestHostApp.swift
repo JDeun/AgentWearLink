@@ -17,6 +17,7 @@ struct MetaDATTestHostApp: App {
     @State private var bootstrapToken = ""
     @State private var targetSessionKey = ""
     @State private var allowVision = false
+    @State private var experimentalStandalonePhoto = false
     @State private var photoPrompt = "Describe the photo."
 
     var body: some Scene {
@@ -76,6 +77,15 @@ struct MetaDATTestHostApp: App {
                     }
                     .accessibilityIdentifier("awl-meta-capture-mock-photo")
                     .disabled(state != "photo-fixture-ready")
+                    // DEBUG-only explicit opt-in: pinned DAT 1.0.0 marks
+                    // standalone Camera.photo experimental/non-publishable.
+                    Button("Capture experimental standalone mock photo") {
+                        Task {
+                            await mockPhoto.captureOnce(experimentalStandalonePhoto: true)
+                        }
+                    }
+                    .accessibilityIdentifier("awl-meta-capture-experimental-photo")
+                    .disabled(state != "photo-fixture-ready")
                     Button("Deny mock camera permission") {
                         do {
                             try MetaDATMockHostBootstrap.denyMockCameraPermission()
@@ -104,6 +114,14 @@ struct MetaDATTestHostApp: App {
                         .accessibilityIdentifier("awl-openclaw-session-key")
                     Toggle("Enable vision only for a verified image-capable OpenClaw model", isOn: $allowVision)
                         .accessibilityIdentifier("awl-vision-opt-in")
+                    #if DEBUG
+                    Toggle(
+                        "Experimental standalone Camera.photo (non-publishable)",
+                        isOn: $experimentalStandalonePhoto
+                    )
+                    .accessibilityIdentifier("awl-experimental-photo-opt-in")
+                    .disabled(!allowVision)
+                    #endif
                     Text(referenceHost.gatewayHealthStatus)
                         .accessibilityIdentifier("awl-gateway-health-state")
                     Button("Check Gateway health (read-only, no glasses)") {
@@ -125,7 +143,8 @@ struct MetaDATTestHostApp: App {
                                 hostname: gatewayHostname,
                                 token: suppliedToken,
                                 sessionKey: targetSessionKey,
-                                enableVision: allowVision
+                                enableVision: allowVision,
+                                experimentalStandalonePhoto: experimentalStandalonePhoto
                             )
                         }
                     }
