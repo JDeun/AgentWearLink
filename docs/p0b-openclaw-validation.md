@@ -100,3 +100,30 @@ arbitrary upstream error/reason strings. The mutating chat probe intentionally
 prints generated model text when explicitly invoked; treat its stdout as private
 session content and avoid storing it in CI logs or shared artifacts. The
 development-Gateway smoke harness redirects chat output to `/dev/null`.
+
+## iPhone-only private Gateway health preflight
+
+The reference iOS host exposes **Check Gateway health (read-only, no glasses)**
+to verify an actual iPhone → Tailscale Serve HTTPS/WSS path before preparing
+Meta registration or connecting physical eyewear. Enter the private
+`<mac-mini>.ts.net` hostname and a development Gateway token, and tap the
+read-only button. The token input is cleared immediately and is not exported.
+
+This path composes the real production `URLSessionOpenClawWebSocket`,
+`OpenClawGatewayConnection`, `OpenClawRPCDispatcher` and
+`OpenClawGatewaySupervisor`, with `operator.read` only, a separate Keychain
+identity and `OpenClawGatewayClientIdentity.probe`. It sends just the
+`health` RPC, checks the boolean `ok`, then tears down the Gateway
+transport. It never opens a Meta `DeviceSession`, sends an agent turn,
+or prints upstream health content.
+
+States: `gateway-health-ok` means the read-only health RPC succeeded;
+`gateway-health-pairing-required` means the new iPhone-only validation
+identity needs explicit administrative approval before retry;
+`gateway-health-invalid-private-endpoint` means the private endpoint
+policy rejected the hostname; other failures remain redacted.
+
+This validates only private transport, authentication and health. A
+write-authorized, separately paired native reference runtime and existing
+OpenClaw session still require the next P0-B text/agent checks. Neither a
+health check nor simulator success proves real glasses audio or camera.

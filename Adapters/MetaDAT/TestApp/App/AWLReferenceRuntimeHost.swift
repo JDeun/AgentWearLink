@@ -14,6 +14,7 @@ import UIKit
 @MainActor
 final class AWLReferenceRuntimeHost: ObservableObject {
     @Published private(set) var status = "disconnected"
+    @Published private(set) var gatewayHealthStatus = "gateway-not-checked"
 
     private let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
     private let diagnostics = AWLDiagnosticRecorder(capacity: 256)
@@ -23,6 +24,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     private var outputSink: AppleSpeechOutput?
     private var visionTask: Task<Void, Never>?
     private var configured = false
+    private var gatewayHealthInProgress = false
 
     /// A deliberate local user gesture copies only typed and bounded
     /// diagnostic evidence; no transport token, text or raw correlation UUID.
@@ -35,6 +37,85 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             status = "sanitized-diagnostics-copied"
         } catch {
             status = "diagnostic-export-failed"
+        }
+    }
+
+    /// Read-only preflight deliberately has no Meta DAT, DeviceSession, camera
+    /// or full AgentWearLinkRuntime dependency. Validate iPhone -> Tailnet ->
+    /// Mac mini Gateway first, with an independently pairable read-only identity.
+    /// The upstream health payload and error descriptions are never surfaced.
+    func checkReadOnlyGatewayHealth(hostname: String, token: String) async {
+        guard !gatewayHealthInProgress else { return }
+        gatewayHealthInProgress = true
+        defer { gatewayHealthInProgress = false }
+
+        guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            gatewayHealthStatus = "gateway-health-token-required"
+            return
+        }
+        gatewayHealthStatus = "gateway-health-checking"
+        do {
+            let endpoint = try OpenClawEndpoint.tailnetServe(
+                hostname: hostname.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            let socket = try URLSessionOpenClawWebSocket(endpoint: endpoint)
+            let state = OpenClawGatewayState()
+            let profile = OpenClawValidationProfile.readOnly
+            // Do not share pairing grants or device identity with the
+            // mutating reference runtime, or the command-line probes.
+            let service = "dev.agentwearlink.openclaw.ios-health-probe"
+            let assembler = OpenClawConnectAssembler(
+                identityManager: .init(
+                    store: KeychainOpenClawDeviceIdentityStore(service: service)
+                ),
+                credentialStore: KeychainOpenClawDeviceCredentialStore(
+                    service: service
+                ),
+                gatewayNamespace: endpoint.credentialNamespace,
+                bootstrapHandoffPersistenceAllowed:
+                    endpoint.allowsBootstrapHandoffPersistence
+            )
+            let connection = OpenClawGatewayConnection(
+                socket: socket,
+                assembler: assembler,
+                state: state
+            )
+            let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
+            let supervisor = OpenClawGatewaySupervisor(
+                connection: connection,
+                dispatcher: dispatcher,
+                state: state,
+                socket: socket,
+                appVersion: "0.1.0-ios-health-probe",
+                scopes: profile.scopes,
+                credentials: .init(token: token),
+                clientIdentity: profile.clientIdentity,
+                diagnostics: diagnostics
+            )
+
+            do {
+                try await supervisor.start()
+                do {
+                    let response = try await dispatcher.request(
+                        method: "health",
+                        params: AWLReadOnlyHealthParams()
+                    )
+                    gatewayHealthStatus = response.ok
+                        ? "gateway-health-ok"
+                        : "gateway-health-failed"
+                } catch {
+                    gatewayHealthStatus = "gateway-health-failed"
+                }
+                await supervisor.stop()
+            } catch OpenClawHandshakeError.pairingRequired(_) {
+                await supervisor.stop()
+                gatewayHealthStatus = "gateway-health-pairing-required"
+            } catch {
+                await supervisor.stop()
+                gatewayHealthStatus = "gateway-health-failed"
+            }
+        } catch {
+            gatewayHealthStatus = "gateway-health-invalid-private-endpoint"
         }
     }
 
@@ -270,3 +351,5 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         status = "disconnected"
     }
 }
+
+private struct AWLReadOnlyHealthParams: Encodable, Sendable {}

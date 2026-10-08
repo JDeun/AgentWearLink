@@ -65,6 +65,19 @@ struct MetaDATTestHostApp: App {
                         .accessibilityIdentifier("awl-openclaw-session-key")
                     Toggle("Enable vision only for a verified image-capable OpenClaw model", isOn: $allowVision)
                         .accessibilityIdentifier("awl-vision-opt-in")
+                    Text(referenceHost.gatewayHealthStatus)
+                        .accessibilityIdentifier("awl-gateway-health-state")
+                    Button("Check Gateway health (read-only, no glasses)") {
+                        let suppliedToken = bootstrapToken
+                        bootstrapToken = ""
+                        Task {
+                            await referenceHost.checkReadOnlyGatewayHealth(
+                                hostname: gatewayHostname,
+                                token: suppliedToken
+                            )
+                        }
+                    }
+                    .accessibilityIdentifier("awl-gateway-health-check")
                     Button("Connect reference runtime") {
                         let suppliedToken = bootstrapToken
                         bootstrapToken = ""
