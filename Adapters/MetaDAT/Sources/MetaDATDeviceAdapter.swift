@@ -196,6 +196,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         connectTimeout: Duration = .seconds(15),
         eventBufferLimit: Int = MetaDATDeviceAdapter.defaultEventBufferLimit,
         snapshotTimeout: Duration = .seconds(5),
+        snapshotMode: MetaDATSnapshotMode = .compatibleStreamStill,
         maximumSnapshotBytes: Int = ImageAttachment.defaultMaximumBytes,
         applicationLifecycle: MetaDATApplicationLifecycle? = nil,
         diagnostics: AWLDiagnosticRecorder? = nil
@@ -209,7 +210,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         self.eventSource = MetaDATDeviceEventSource(bufferLimit: eventBufferLimit)
         self.cameraSnapshotController = MetaDATCameraSnapshotController(
             timeout: snapshotTimeout,
-            maximumBytes: maximumSnapshotBytes
+            maximumBytes: maximumSnapshotBytes,
+            snapshotMode: snapshotMode
         )
     }
 
