@@ -210,10 +210,10 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             status = "meta-not-configured"
             return
         }
-        guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            status = "gateway-token-required"
-            return
-        }
+        // A deliberate user gesture can reuse a previously approved,
+        // endpoint-scoped device grant instead of entering a shared bearer
+        // token again. Never infer authorization merely from an old identity.
+        let suppliedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let attempt = connectionFence.begin() else {
             status = "connection-in-progress"
@@ -231,11 +231,42 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             let socket = try URLSessionOpenClawWebSocket(endpoint: endpoint)
             let state = OpenClawGatewayState()
             let service = "dev.agentwearlink.openclaw.reference-host"
+            let identityStore = KeychainOpenClawDeviceIdentityStore(service: service)
+            let credentialStore = KeychainOpenClawDeviceCredentialStore(service: service)
+
+            if suppliedToken.isEmpty {
+                // First-time pairing still requires explicit credentials.
+                // A grant in a different Gateway namespace, a revoked grant,
+                // or a read-only grant must never authorize this write-capable
+                // runtime. Checking Keychain does not start a network session.
+                let scopedStore = GatewayScopedOpenClawDeviceCredentialStore(
+                    base: credentialStore,
+                    namespace: endpoint.credentialNamespace
+                )
+                let authorized: Bool
+                do {
+                    if let identity = try await identityStore.load(),
+                       let grant = try await scopedStore.load(
+                           deviceID: identity.deviceID,
+                           role: "operator"
+                       ) {
+                        authorized = grant.scopes.contains("operator.write")
+                            && !grant.token.isEmpty
+                    } else {
+                        authorized = false
+                    }
+                } catch {
+                    authorized = false
+                }
+                guard authorized else {
+                    status = "gateway-token-or-approved-grant-required"
+                    return
+                }
+            }
+
             let assembler = OpenClawConnectAssembler(
-                identityManager: .init(
-                    store: KeychainOpenClawDeviceIdentityStore(service: service)
-                ),
-                credentialStore: KeychainOpenClawDeviceCredentialStore(service: service),
+                identityManager: .init(store: identityStore),
+                credentialStore: credentialStore,
                 gatewayNamespace: endpoint.credentialNamespace,
                 bootstrapHandoffPersistenceAllowed: endpoint.allowsBootstrapHandoffPersistence
             )
@@ -252,7 +283,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 socket: socket,
                 appVersion: "0.1.0-reference-host",
                 scopes: ["operator.read", "operator.write"],
-                credentials: .init(token: token),
+                credentials: .init(
+                    token: suppliedToken.isEmpty ? nil : suppliedToken
+                ),
                 clientIdentity: .backend,
                 diagnostics: diagnostics
             )
