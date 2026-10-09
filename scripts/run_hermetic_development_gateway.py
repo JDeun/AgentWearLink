@@ -361,11 +361,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="Require unapproved real Gateway pairing rejection")
     parser.add_argument("--expect-health-ok", action="store_true",
                         help="Require real localhost hello-ok and health with ephemeral identity")
+    parser.add_argument("--expect-grant-reconnect", action="store_true",
+                        help="Verify two separate Swift processes and an issued "
+                             "read-only grant without shared token in the second")
     args = parser.parse_args(argv)
-    contract = args.expect_pairing_required or args.expect_health_ok
-    if (args.expect_pairing_required and args.expect_health_ok
-            or contract and (args.approve_isolated_pairing or args.full_chat
-                             or args.prove_abort or args.config_template)):
+    contract_count = sum((args.expect_pairing_required, args.expect_health_ok,
+                          args.expect_grant_reconnect))
+    contract = contract_count == 1
+    if (contract_count > 1 or contract and
+            (args.approve_isolated_pairing or args.full_chat
+             or args.prove_abort or args.config_template)):
         print("Isolated Gateway runner: synthetic contract modes must be "
               "exclusive, read-only and without external config.",
               file=sys.stderr)
@@ -422,8 +427,13 @@ def main(argv: list[str] | None = None) -> int:
         if contract:
             # An isolated, pre-built read-only Swift probe; no Keychain use.
             marker = ("AWL_DEV_GATEWAY_EXPECT_PAIRING" if args.expect_pairing_required
-                      else "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK")
+                      else "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"
+                      if args.expect_grant_reconnect else "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK")
             env[marker] = "1"
+            if args.expect_grant_reconnect:
+                grant_directory = temp / "grant-cache"
+                grant_directory.mkdir(mode=0o700)
+                env["AWL_DEV_GATEWAY_GRANT_STORE"] = str(grant_directory)
             env["AWL_DEV_GATEWAY_USE_BUILT_PROBE"] = "1"
             env["AWL_DEV_GATEWAY_PHASE_FILE"] = str(temp / "probe-phase")
             env["AWL_DEV_GATEWAY_RESULT_FILE"] = str(temp / "probe-result")
@@ -488,6 +498,42 @@ def main(argv: list[str] | None = None) -> int:
                     if args.expect_health_ok and result.returncode == 0:
                         print("Isolated real Gateway authenticated read-only health accepted.")
                         return 0
+                    if args.expect_grant_reconnect and result.returncode == 0:
+                        # The second Swift process must not receive *either*
+                        # the AWL shared Gateway bearer or the upstream token.
+                        # It only loads the device grant the real Gateway
+                        # issued to the first process in disposable storage.
+                        second = dict(env)
+                        second.pop("AWL_OPENCLAW_TOKEN", None)
+                        second.pop("OPENCLAW_GATEWAY_TOKEN", None)
+                        second["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] = "1"
+                        (temp / "probe-phase").unlink(missing_ok=True)
+                        (temp / "probe-result").unlink(missing_ok=True)
+                        try:
+                            reconnect = subprocess.run(
+                                [sys.executable, str(ROOT / "scripts" /
+                                                     "dev_gateway_probe_runner.py"),
+                                 "awl-openclaw-probe"],
+                                cwd=ROOT, env=second, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                timeout=max(1, int(deadline - time.monotonic())),
+                                check=False,
+                            )
+                        except (OSError, subprocess.TimeoutExpired):
+                            print("Isolated real Gateway device-grant reconnect timed out.",
+                                  file=sys.stderr)
+                            return 1
+                        if reconnect.returncode == 0:
+                            print("Isolated real Gateway issued read-only grant "
+                                  "and second Swift process connected without shared token.")
+                            return 0
+                        print("Isolated real Gateway second-process grant-only "
+                              "reconnect failed (last-phase="
+                              + safe_probe_phase(temp / "probe-phase")
+                              + ", failure-class="
+                              + safe_probe_result(temp / "probe-result") + ")",
+                              file=sys.stderr)
+                        return 1
                     categories = {
                         0: "unexpected-auth-success",
                         1: "handshake-or-protocol-failure",
@@ -505,11 +551,12 @@ def main(argv: list[str] | None = None) -> int:
                             )
                             and time.monotonic() + 1 < deadline):
                         print("Isolated Gateway startup sidecars not ready; "
-                              "retrying bounded negative contract probe.",
+                              "retrying bounded read-only contract probe.",
                               file=sys.stderr)
                         time.sleep(1)
                         continue
                     mode = ("negative-contract" if args.expect_pairing_required
+                            else "disposable-grant-contract" if args.expect_grant_reconnect
                             else "positive-health-contract")
                     print("Isolated real Gateway " + mode + " failed: "
                           + category + " (last-phase=" + phase

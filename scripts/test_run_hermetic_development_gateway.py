@@ -282,6 +282,23 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
             path.write_text("secret-device-id=abcd\ngateway-auth-denied")
             self.assertEqual(safe_probe_result(path), "unobserved")
 
+    def test_disposable_grant_mode_refuses_unsafe_interactive_and_mutating_flags(self):
+        for extra in (
+            ["--expect-pairing-required"], ["--expect-health-ok"],
+            ["--approve-isolated-pairing"], ["--full-chat"],
+            ["--prove-abort"], ["--config-template", "/tmp/test.json"],
+        ):
+            with (
+                patch("run_hermetic_development_gateway.subprocess.Popen") as spawn,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(main([
+                    "--checkout", "/nonexistent",
+                    "--revision", "a" * 40,
+                    "--expect-grant-reconnect", *extra,
+                ]), 2)
+                spawn.assert_not_called()
+
     def test_positive_health_mode_rejects_approval_chat_and_external_config(self):
         for extra in (
             ["--expect-pairing-required"], ["--approve-isolated-pairing"],

@@ -16,6 +16,14 @@ if [[ "${AWL_DEV_GATEWAY_EXPECT_PAIRING:-0}" == "1" ]]; then
   exit $?
 fi
 
+if [[ "${AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT:-0}" == "1" ]]; then
+  # The Python parent runs this branch TWICE with a fresh Swift process.
+  # It removes AWL_OPENCLAW_TOKEN entirely from the second environment.
+  echo "Checking disposable server-issued grant through real Gateway"
+  python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
+  exit $?
+fi
+
 if [[ "${AWL_DEV_GATEWAY_EXPECT_HEALTH_OK:-0}" == "1" ]]; then
   # Separate synthetic auto-approved localhost Gateway only. A passing probe
   # proves hello-ok + health, not Keychain grant persistence or reconnect.

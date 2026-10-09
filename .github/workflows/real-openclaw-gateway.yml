@@ -89,11 +89,21 @@ jobs:
             --checkout .awl-hermetic-upstream \
             --revision "$OPENCLAW_REVISION" \
             --expect-health-ok
+      - name: Reconnect with issued read-only device grant in a second Swift process
+        id: disposable-grant
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          python3 scripts/run_hermetic_development_gateway.py \
+            --checkout .awl-hermetic-upstream \
+            --revision "$OPENCLAW_REVISION" \
+            --expect-grant-reconnect
       - name: Evidence boundary
         if: always()
         env:
           NEGATIVE_GATE_OUTCOME: ${{ steps.negative-contract.outcome }}
           POSITIVE_HEALTH_OUTCOME: ${{ steps.positive-health.outcome }}
+          GRANT_OUTCOME: ${{ steps.disposable-grant.outcome }}
         run: |
           if [[ "$NEGATIVE_GATE_OUTCOME" == "success" ]]; then
             echo "Negative contract: unapproved read-only identity rejected."
@@ -105,4 +115,9 @@ jobs:
           else
             echo "Positive hello-ok/health contract FAILED or was not executed."
           fi
-          echo "These are NOT operator-approved pairing, Keychain reuse, tokenless reconnect, agent/abort or Tailnet evidence."
+          if [[ "$GRANT_OUTCOME" == "success" ]]; then
+            echo "Disposable real-Gateway two-process grant-only reconnect succeeded; NOT Keychain or Tailnet evidence."
+          else
+            echo "Disposable grant-only reconnect FAILED or was not executed."
+          fi
+          echo "These are NOT operator-approved pairing, Keychain persistence, agent/abort or Tailnet evidence."

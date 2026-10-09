@@ -149,6 +149,54 @@ final class OpenClawValidationProfileTests: XCTestCase {
         XCTAssertFalse(permitted(baseline.filter { $0.key != "AWL_ALLOW_DEV_GATEWAY_TEST" }))
     }
 
+    func testDisposableGrantModeIsIsolatedToOwnedLoopbackAndStrictlyTokenlessSecondProcess() {
+        let valid: [String: String] = [
+            "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT": "1",
+            "AWL_ALLOW_DEV_GATEWAY_TEST": "1",
+            "AWL_OPENCLAW_EXPOSURE": "loopback",
+            "AWL_DEV_GATEWAY_HEALTH_ONLY": "1",
+            "AWL_DEV_GATEWAY_PROVE_ABORT": "0",
+            "AWL_DEV_GATEWAY_USE_BUILT_PROBE": "1",
+            "AWL_DEV_KEYCHAIN_NONCE": "0123456789abcdefabcd",
+            "OPENCLAW_STATE_DIR": "/tmp/awl-real-dev-gateway-test/state",
+            "AWL_DEV_GATEWAY_GRANT_STORE": "/tmp/awl-real-dev-gateway-test/grant-cache",
+            "AWL_OPENCLAW_URL": "ws://127.0.0.1:19031",
+            "AWL_OPENCLAW_TOKEN": "synthetic-local-only"
+        ]
+        func permitted(_ env: [String: String], loopback: Bool = true,
+                       profile: OpenClawValidationProfile = .readOnly) -> Bool {
+            OpenClawDevelopmentDisposableGrantPolicy.permits(
+                environment: env, isLoopback: loopback, profile: profile
+            )
+        }
+        XCTAssertTrue(permitted(valid))
+        let second = valid.merging([
+            "AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY": "1"
+        ]) { _, new in new }.filter { $0.key != "AWL_OPENCLAW_TOKEN" }
+        XCTAssertTrue(permitted(second))
+        XCTAssertFalse(permitted(valid.merging([
+            "AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY": "1"
+        ]) { _, new in new }))
+        XCTAssertFalse(permitted(valid.filter { $0.key != "AWL_OPENCLAW_TOKEN" }))
+        XCTAssertFalse(permitted(valid, loopback: false))
+        XCTAssertFalse(permitted(valid, profile: .mutating))
+        for (key, value) in [
+            ("AWL_DEV_GATEWAY_EXPECT_HEALTH_OK", "1"),
+            ("AWL_DEV_GATEWAY_EXPECT_PAIRING", "1"),
+            ("AWL_DEV_GATEWAY_GRANT_STORE", "/Users/owner/.openclaw"),
+            ("AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY", "0"),
+            ("AWL_OPENCLAW_EXPOSURE", "tailnet-direct"),
+            ("AWL_OPENCLAW_URL", "ws://100.100.100.100:19031"),
+            ("AWL_DEV_GATEWAY_HEALTH_ONLY", "0"),
+            ("AWL_DEV_GATEWAY_PROVE_ABORT", "1"),
+            ("AWL_OPENCLAW_BOOTSTRAP_TOKEN", "bad"),
+            ("AWL_DEV_KEYCHAIN_NONCE", "invalid")
+        ] {
+            XCTAssertFalse(permitted(valid.merging([key: value]) { _, new in new }),
+                           "Disposable grant must reject unsafe " + key)
+        }
+    }
+
     func testEphemeralNegativeStoreIsRestrictedToIsolatedReadOnlyProbe() {
         let valid = [
             "AWL_DEV_GATEWAY_EXPECT_PAIRING": "1",
