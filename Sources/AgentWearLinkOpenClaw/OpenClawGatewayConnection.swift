@@ -9,6 +9,15 @@ public enum OpenClawHandshakeProgress: String, Sendable {
     case connectSending = "connect-sending"
     case connectSent = "connect-sent"
     case responseReceived = "response-received"
+    case gatewayNotPairedUnstructured = "gateway-not-paired-unstructured"
+    case gatewayVerifiedUserRequired = "gateway-verified-user-required"
+    case gatewayDeviceProofRejected = "gateway-device-proof-rejected"
+    case gatewaySharedAuthRejected = "gateway-shared-auth-rejected"
+    case gatewayInvalidRequest = "gateway-invalid-request"
+    case gatewayUnavailable = "gateway-unavailable"
+    case gatewayProfileUnavailable = "gateway-profile-unavailable"
+    case gatewayAuthDenied = "gateway-auth-denied"
+    case gatewayUnrecognized = "gateway-unrecognized"
 }
 
 public actor OpenClawGatewayConnection {
@@ -130,6 +139,12 @@ public actor OpenClawGatewayConnection {
                     try? await assembler.invalidateStoredCredentialIfUsed(assembled)
                     try ensureActiveConnect(generation)
                     throw OpenClawHandshakeError.pairingRequired(pairing)
+                }
+
+                if let error = response.error {
+                    // Only fixed categories cross the diagnostic boundary.
+                    // Never surface raw Gateway codes, messages or identifiers.
+                    progress?(Self.classifyGatewayRejection(error))
                 }
 
                 let retryAfter = response.error?.retryAfterMs.flatMap {
@@ -289,6 +304,43 @@ public actor OpenClawGatewayConnection {
             throw OpenClawHandshakeError.unexpectedConnectResponse
         }
         return response
+    }
+
+    static func classifyGatewayRejection(
+        _ error: OpenClawResponseEnvelope.GatewayError
+    ) -> OpenClawHandshakeProgress {
+        let detailCode: String? = {
+            guard case let .object(details)? = error.details,
+                  case let .string(code)? = details["code"] else { return nil }
+            return code
+        }()
+
+        switch detailCode {
+        case "AUTH_VERIFIED_USER_REQUIRED":
+            return .gatewayVerifiedUserRequired
+        case "DEVICE_AUTH_INVALID", "DEVICE_AUTH_SIGNATURE_INVALID",
+             "DEVICE_AUTH_NONCE_MISMATCH", "DEVICE_AUTH_NONCE_REQUIRED",
+             "DEVICE_AUTH_DEVICE_ID_MISMATCH", "DEVICE_AUTH_PUBLIC_KEY_INVALID",
+             "DEVICE_AUTH_SIGNATURE_EXPIRED":
+            return .gatewayDeviceProofRejected
+        case "AUTH_TOKEN_MISSING", "AUTH_TOKEN_MISMATCH",
+             "AUTH_TOKEN_NOT_CONFIGURED", "AUTH_REQUIRED", "AUTH_UNAUTHORIZED":
+            return .gatewaySharedAuthRejected
+        case "AUTHENTICATED_PROFILE_UNAVAILABLE":
+            return .gatewayProfileUnavailable
+        default: break
+        }
+        switch error.code {
+        case "NOT_PAIRED":
+            // A genuine pairing rejection has authoritative
+            // details.code=PAIRING_REQUIRED, parsed before this branch.
+            return .gatewayNotPairedUnstructured
+        case "INVALID_REQUEST": return .gatewayInvalidRequest
+        case "UNAVAILABLE": return .gatewayUnavailable
+        case "AUTH_FAILED", "UNAUTHORIZED", "FORBIDDEN":
+            return .gatewayAuthDenied
+        default: return .gatewayUnrecognized
+        }
     }
 
     private func decodeChallenge(

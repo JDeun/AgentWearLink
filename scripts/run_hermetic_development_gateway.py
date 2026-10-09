@@ -32,7 +32,11 @@ _SAFE_PROBE_PHASES = frozenset({
     "handshake-started", "socket-opened",
     "challenge-received", "assemble-started", "assemble-complete",
     "connect-sending", "connect-sent",
-    "response-received", "authenticated",
+    "response-received", "gateway-not-paired-unstructured",
+    "gateway-verified-user-required", "gateway-device-proof-rejected",
+    "gateway-shared-auth-rejected", "gateway-invalid-request",
+    "gateway-unavailable", "gateway-profile-unavailable",
+    "gateway-auth-denied", "gateway-unrecognized", "authenticated",
     "health-accepted", "pairing-required", "probe-error",
 })
 _SAFE_PROBE_RESULTS = frozenset({

@@ -102,6 +102,39 @@ private final class HandshakeProgressRecorder: @unchecked Sendable {
 }
 
 final class OpenClawGatewayConnectionTests: XCTestCase {
+    func testGatewayRejectionMilestonesUseAllowlistedCategoriesOnly() {
+        func error(_ code: String, detail: String? = nil)
+            -> OpenClawResponseEnvelope.GatewayError {
+            OpenClawResponseEnvelope.GatewayError(
+                code: code,
+                message: "sensitive diagnostic must not escape",
+                retryable: false,
+                retryAfterMs: nil,
+                details: detail.map { .object(["code": .string($0)]) }
+            )
+        }
+        let cases: [(OpenClawResponseEnvelope.GatewayError, OpenClawHandshakeProgress)] = [
+            (error("NOT_PAIRED"), .gatewayNotPairedUnstructured),
+            (error("NOT_PAIRED", detail: "AUTH_VERIFIED_USER_REQUIRED"),
+             .gatewayVerifiedUserRequired),
+            (error("NOT_PAIRED", detail: "DEVICE_AUTH_SIGNATURE_INVALID"),
+             .gatewayDeviceProofRejected),
+            (error("AUTH_FAILED", detail: "AUTH_TOKEN_MISMATCH"),
+             .gatewaySharedAuthRejected),
+            (error("UNAVAILABLE"), .gatewayUnavailable),
+            (error("UNAVAILABLE", detail: "AUTHENTICATED_PROFILE_UNAVAILABLE"),
+             .gatewayProfileUnavailable),
+            (error("INVALID_REQUEST"), .gatewayInvalidRequest),
+            (error("AUTH_FAILED"), .gatewayAuthDenied),
+            (error("private-secret-code"), .gatewayUnrecognized),
+        ]
+        for (gatewayError, expected) in cases {
+            let phase = OpenClawGatewayConnection.classifyGatewayRejection(gatewayError)
+            XCTAssertEqual(phase, expected)
+            XCTAssertFalse(phase.rawValue.contains("sensitive"))
+        }
+    }
+
     private func makeAssembler() -> OpenClawConnectAssembler {
         OpenClawConnectAssembler(
             identityManager: .init(
