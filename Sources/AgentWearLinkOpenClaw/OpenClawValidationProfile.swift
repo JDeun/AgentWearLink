@@ -207,6 +207,36 @@ public enum OpenClawDevelopmentAgentStreamPolicy {
     }
 }
 
+/// Proves a *real, already executing* Gateway run can be remotely aborted.
+/// Derive from the previously audited disposable agent-stream admission,
+/// adding an explicit held-model abort marker and numeric mock port.
+public enum OpenClawDevelopmentAgentAbortPolicy {
+    public static func permits(
+        environment: [String: String],
+        isLoopback: Bool,
+        profile: OpenClawValidationProfile
+    ) -> Bool {
+        guard environment["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == "1",
+              environment["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == nil,
+              environment["AWL_DEV_GATEWAY_ABORT_ASSERT"] == "1",
+              environment["AWL_DEV_GATEWAY_PROVE_ABORT"] == "1",
+              let rawPort = environment["AWL_DEV_GATEWAY_MODEL_PORT"],
+              let port = Int(rawPort), (1...65535).contains(port),
+              String(port) == rawPort else {
+            return false
+        }
+        var scoped = environment
+        scoped.removeValue(forKey: "AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT")
+        scoped.removeValue(forKey: "AWL_DEV_GATEWAY_ABORT_ASSERT")
+        scoped.removeValue(forKey: "AWL_DEV_GATEWAY_MODEL_PORT")
+        scoped["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] = "1"
+        scoped["AWL_DEV_GATEWAY_PROVE_ABORT"] = "0"
+        return OpenClawDevelopmentAgentStreamPolicy.permits(
+            environment: scoped, isLoopback: isLoopback, profile: profile
+        )
+    }
+}
+
 public enum OpenClawDevelopmentKeychainIsolationError: Error, Sendable {
     case invalidConfiguration
 }

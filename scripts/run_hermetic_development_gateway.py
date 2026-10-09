@@ -43,6 +43,7 @@ _SAFE_PROBE_PHASES = frozenset({
     "gateway-auth-denied", "gateway-unrecognized", "authenticated",
     "health-accepted", "pairing-required", "probe-error",
     "chat-started", "chat-authenticated", "chat-delta", "chat-terminal",
+    "chat-provider-ingress", "chat-abort-confirmed",
 })
 _SAFE_PROBE_RESULTS = frozenset({
     "challenge-timeout", "hello-timeout", "unexpected-connect-response",
@@ -53,6 +54,7 @@ _SAFE_PROBE_RESULTS = frozenset({
     "gateway-other", "transport-disconnected", "protocol-mismatch",
     "gateway-state-error", "frame-invalid", "decoding-failed", "other-error",
     "chat-no-delta", "chat-no-terminal", "chat-session-mismatch", "chat-other-error",
+    "chat-provider-not-executing",
 })
 
 
@@ -438,9 +440,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expect-agent-stream", action="store_true",
                         help="Run production native agent against pinned real "
                              "Gateway with a synthetic local Responses model")
+    parser.add_argument("--expect-agent-abort", action="store_true",
+                        help="Require confirmed real chat.abort after synthetic provider ingress")
     args = parser.parse_args(argv)
     contract_count = sum((args.expect_pairing_required, args.expect_health_ok,
-                          args.expect_grant_reconnect, args.expect_agent_stream))
+                          args.expect_grant_reconnect, args.expect_agent_stream,
+                          args.expect_agent_abort))
     contract = contract_count == 1
     if (contract_count > 1 or contract and
             (args.approve_isolated_pairing or args.full_chat
@@ -482,7 +487,8 @@ def main(argv: list[str] | None = None) -> int:
             (temp / "state" / "openclaw.json").chmod(0o600)
 
         port = local_port()
-        model_port = local_port() if args.expect_agent_stream else None
+        synthetic_agent = args.expect_agent_stream or args.expect_agent_abort
+        model_port = local_port() if synthetic_agent else None
         if model_port == port:
             model_port = local_port()
 
@@ -492,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
             config_data = (
                 negative_pairing_gateway_config() if args.expect_pairing_required
                 else synthetic_agent_gateway_config(model_port, temp / "workspace")
-                if args.expect_agent_stream and model_port is not None
+                if synthetic_agent and model_port is not None
                 else positive_health_gateway_config()
             )
             with configuration.open("x", encoding="utf-8") as stream:
@@ -502,7 +508,7 @@ def main(argv: list[str] | None = None) -> int:
         env = isolated_environment(
             dict(os.environ), home=temp, port=port,
             revision=args.revision, token=secrets.token_urlsafe(32),
-            full_chat=args.full_chat or args.expect_agent_stream,
+            full_chat=args.full_chat or synthetic_agent,
             prove_abort=args.prove_abort,
         )
         if contract:
@@ -512,8 +518,13 @@ def main(argv: list[str] | None = None) -> int:
                       if args.expect_grant_reconnect
                       else "AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"
                       if args.expect_agent_stream
+                      else "AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"
+                      if args.expect_agent_abort
                       else "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK")
             env[marker] = "1"
+            if args.expect_agent_abort and model_port is not None:
+                env["AWL_DEV_GATEWAY_MODEL_PORT"] = str(model_port)
+                env["AWL_DEV_GATEWAY_PROVE_ABORT"] = "1"
             if args.expect_grant_reconnect:
                 grant_directory = temp / "grant-cache"
                 grant_directory.mkdir(mode=0o700)
@@ -531,7 +542,7 @@ def main(argv: list[str] | None = None) -> int:
         # separate ephemeral 127.0.0.1 process. It never reads cloud keys,
         # personal sessions or private model endpoints.
         model_process = None
-        if args.expect_agent_stream:
+        if synthetic_agent:
             assert model_port is not None
             mock_env = dict(env)
             mock_env.update({
@@ -539,6 +550,15 @@ def main(argv: list[str] | None = None) -> int:
                 "MOCK_BIND_HOST": "127.0.0.1",
                 "SUCCESS_MARKER": "AWL_ISOLATED_SYNTHETIC_AGENT_OK",
             })
+            if args.expect_agent_abort:
+                control = temp / "held-model.json"
+                with control.open("x", encoding="utf-8") as held:
+                    json.dump({
+                        "hold": True,
+                        "response": {"text": "AWL_ISOLATED_SYNTHETIC_AGENT_OK"},
+                    }, held)
+                control.chmod(0o600)
+                mock_env["MOCK_RESPONSE_CONTROL"] = str(control)
             try:
                 model_process = subprocess.Popen(
                     [node, str(checkout / "scripts/e2e/mock-openai-server.mjs")],
@@ -614,6 +634,18 @@ def main(argv: list[str] | None = None) -> int:
                     if args.expect_health_ok and result.returncode == 0:
                         print("Isolated real Gateway authenticated read-only health accepted.")
                         return 0
+                    if args.expect_agent_abort and result.returncode == 0:
+                        if (model_port is not None
+                                and synthetic_model_received_request(model_port)
+                                and safe_probe_phase(temp / "probe-phase") ==
+                                    "chat-abort-confirmed"):
+                            print("Isolated real Gateway confirmed chat.abort "
+                                  "for active run after synthetic model ingress.")
+                            return 0
+                        print("Isolated real Gateway abort lacks active-run "
+                              "provider ingress or abort confirmation.",
+                              file=sys.stderr)
+                        return 1
                     if args.expect_agent_stream and result.returncode == 0:
                         if model_port is not None and synthetic_model_received_request(model_port):
                             print("Isolated real Gateway native agent emitted "
@@ -683,6 +715,7 @@ def main(argv: list[str] | None = None) -> int:
                     mode = ("negative-contract" if args.expect_pairing_required
                             else "disposable-grant-contract" if args.expect_grant_reconnect
                             else "agent-stream-contract" if args.expect_agent_stream
+                            else "active-agent-abort-contract" if args.expect_agent_abort
                             else "positive-health-contract")
                     print("Isolated real Gateway " + mode + " failed: "
                           + category + " (last-phase=" + phase

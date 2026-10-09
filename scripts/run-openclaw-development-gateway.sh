@@ -8,6 +8,18 @@ cd "$root"
 python3 scripts/dev_gateway_preflight.py
 export AWL_OPENCLAW_EXPOSURE=loopback
 
+if [[ "${AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT:-0}" == "1" ]]; then
+  # Held Responses provider. An already-accepted run MUST enter the actual
+  # pinned model before chat.abort is considered remotely confirmed.
+  export AWL_ALLOW_MUTATING_PROBE=1
+  export AWL_DEV_GATEWAY_ASSERT=1
+  export AWL_DEV_GATEWAY_ABORT_ASSERT=1
+  export AWL_OPENCLAW_CHAT_MESSAGE="AWL isolated integration check: reply with one short sentence."
+  echo "Checking confirmed abort of already-executing real Gateway agent"
+  python3 scripts/dev_gateway_probe_runner.py awl-openclaw-chat-probe
+  exit $?
+fi
+
 if [[ "${AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM:-0}" == "1" ]]; then
   # A real upstream Gateway handles the production native-agent adapter,
   # backed ONLY by its synthetic localhost OpenAI Responses test server.

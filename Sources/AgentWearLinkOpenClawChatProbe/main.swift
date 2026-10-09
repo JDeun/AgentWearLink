@@ -57,6 +57,15 @@ struct AgentWearLinkOpenClawChatProbe {
         }
 
         let syntheticAgentStream = env["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == "1"
+        let syntheticAgentAbort = env["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == "1"
+        if syntheticAgentAbort {
+            guard OpenClawDevelopmentAgentAbortPolicy.permits(
+                environment: env, isLoopback: endpoint.exposure == .loopback,
+                profile: profile
+            ) else {
+                fail("Synthetic abort requires isolated held-model profile.", code: 2)
+            }
+        }
         if syntheticAgentStream {
             guard OpenClawDevelopmentAgentStreamPolicy.permits(
                 environment: env,
@@ -66,11 +75,12 @@ struct AgentWearLinkOpenClawChatProbe {
                 fail("Synthetic agent stream requires isolated local mutating profile.", code: 2)
             }
         }
+        let syntheticContract = syntheticAgentStream || syntheticAgentAbort
         let identityStore: any OpenClawDeviceIdentityStore =
-            syntheticAgentStream ? InMemoryOpenClawDeviceIdentityStore()
+            syntheticContract ? InMemoryOpenClawDeviceIdentityStore()
                 : KeychainOpenClawDeviceIdentityStore(service: keychainService)
         let credentialStore: any OpenClawDeviceCredentialStore =
-            syntheticAgentStream ? InMemoryOpenClawDeviceCredentialStore()
+            syntheticContract ? InMemoryOpenClawDeviceCredentialStore()
                 : KeychainOpenClawDeviceCredentialStore(service: keychainService)
         let state = OpenClawGatewayState()
         let assembler = OpenClawConnectAssembler(
@@ -131,12 +141,24 @@ struct AgentWearLinkOpenClawChatProbe {
                       accepted.sessionKey == isolatedSession else {
                     throw DevelopmentGatewayProbeError.unexpectedAcceptedSession
                 }
+                if syntheticAgentAbort {
+                    // Provider ingress is observed BEFORE chat.abort. The
+                    // held synthetic model cannot complete by itself, so
+                    // approval alone or aborting a queued run is insufficient.
+                    try await waitForSyntheticProviderIngress(
+                        environment: env
+                    )
+                    recordStreamPhase("chat-provider-ingress", environment: env)
+                }
                 try await client.cancel(
                     runID: accepted.runId,
                     sessionKey: isolatedSession,
                     agentID: accepted.agentId
                 )
                 await client.finishUpdates(runID: accepted.runId)
+                if syntheticAgentAbort {
+                    recordStreamPhase("chat-abort-confirmed", environment: env)
+                }
                 await adapter.disconnect()
                 print(#"{"abortConfirmed":true}"#)
                 return
@@ -206,6 +228,7 @@ struct AgentWearLinkOpenClawChatProbe {
             case .missingIncrementalOutput: category = "chat-no-delta"
             case .missingTerminalCompletion: category = "chat-no-terminal"
             case .unexpectedAcceptedSession: category = "chat-session-mismatch"
+            case .missingSyntheticProviderIngress: category = "chat-provider-not-executing"
             }
         } else {
             category = "chat-other-error"
@@ -218,7 +241,8 @@ struct AgentWearLinkOpenClawChatProbe {
         _ value: String, environment: [String: String],
         key: String, name: String
     ) {
-        guard environment["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == "1",
+        guard environment["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == "1"
+                || environment["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == "1",
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
               let state = environment["OPENCLAW_STATE_DIR"],
@@ -229,6 +253,40 @@ struct AgentWearLinkOpenClawChatProbe {
             return
         }
         try? value.write(toFile: resultPath, atomically: true, encoding: .utf8)
+    }
+
+    /// Bounded check of the locally owned upstream mock's aggregate ingress
+    /// counter. The strict abort policy already validated this numeric port;
+    /// we do not fetch a URL from the Gateway or expose any request content.
+    private static func waitForSyntheticProviderIngress(
+        environment: [String: String]
+    ) async throws {
+        guard let raw = environment["AWL_DEV_GATEWAY_MODEL_PORT"],
+              let port = Int(raw), (1...65535).contains(port),
+              String(port) == raw,
+              let url = URL(string: "http://127.0.0.1:\(port)/health")
+        else { throw DevelopmentGatewayProbeError.missingSyntheticProviderIngress }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 1
+        configuration.timeoutIntervalForResource = 2
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        for _ in 0..<80 {
+            if let (data, response) = try? await session.data(from: url),
+               (response as? HTTPURLResponse)?.statusCode == 200,
+               data.count <= 8192,
+               let object = try? JSONSerialization.jsonObject(with: data)
+                    as? [String: Any],
+               let requests = object["requests"] as? [String: Any],
+               let ingress = requests["ingress"] as? [String: Any],
+               let count = ingress["responses"] as? Int,
+               count > 0 {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        throw DevelopmentGatewayProbeError.missingSyntheticProviderIngress
     }
 
     private static func configuredEndpoint(
@@ -279,4 +337,5 @@ private enum DevelopmentGatewayProbeError: Error {
     case missingIncrementalOutput
     case missingTerminalCompletion
     case unexpectedAcceptedSession
+    case missingSyntheticProviderIngress
 }

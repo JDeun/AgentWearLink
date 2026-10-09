@@ -346,3 +346,37 @@ user session or external model may be used. Model response simulation
 proves **real Gateway/native-adapter protocol interoperability**, not actual
 LLM/model quality, iPhone/WSS delivery, Keychain persistence, user-approved
 device pairing, native adapter abort or real Meta eyewear E2E.
+
+## Real accepted-run abort with held synthetic provider
+
+For the exact pinned upstream OpenClaw checkout and a locally built native Swift
+chat probe, the separate `--expect-agent-abort` lane launches an owned
+127.0.0.1 OpenAI Responses mock with a **held response**. There is no provider
+credential, uncontrolled model invocation, user workspace, Tailnet or
+connected Meta hardware:
+
+```sh
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout .awl-hermetic-upstream \
+  --revision YOUR_EXACT_PINNED_GATEWAY_COMMIT \
+  --expect-agent-abort
+```
+
+The production `OpenClawAgentRunClient` submits a harmless real agent RPC,
+obtains an accepted `runId`, then verifies that the local mock provider's
+read-only aggregate `/health` counter shows at least one actual Responses
+ingress. The mock is held at that point: the model cannot successfully
+finish by itself. Only then does the same Swift process issue the
+real Gateway `chat.abort` RPC for the accepted run and require explicit
+`aborted:true` confirmation (including the run ID if returned).
+Without actual model ingress, valid isolated session identity or confirmed
+abort, the lane fails. All model/Gateway outputs are suppressed, and a
+fixed-vocabulary phase file is the only diagnostic signal.
+
+The mode is mutually exclusive with the read-only pairing/health,
+grant-reconnect, synthetic stream, human pairing, user-configured model and
+manual abort modes. Private temporary state and the held model are removed
+at teardown. This proves real upstream **accepted, actively executing
+run → confirmed cancellation**, not correct rollback of arbitrary tools,
+model/provider quality, real credential Keychain permissions, operator
+approval or physical iPhone/Meta/Tailnet recovery.

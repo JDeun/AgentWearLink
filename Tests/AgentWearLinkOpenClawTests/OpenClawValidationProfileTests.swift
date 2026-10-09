@@ -199,6 +199,57 @@ final class OpenClawValidationProfileTests: XCTestCase {
         }
     }
 
+    func testRealGatewayActiveAbortRequiresExactlyTheHeldSyntheticModelProfile() {
+        let valid: [String: String] = [
+            "AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT": "1",
+            "AWL_DEV_GATEWAY_ABORT_ASSERT": "1",
+            "AWL_DEV_GATEWAY_PROVE_ABORT": "1",
+            "AWL_DEV_GATEWAY_MODEL_PORT": "19092",
+            "AWL_ALLOW_DEV_GATEWAY_TEST": "1",
+            "AWL_ALLOW_MUTATING_PROBE": "1",
+            "AWL_DEV_GATEWAY_ASSERT": "1",
+            "AWL_DEV_GATEWAY_USE_BUILT_PROBE": "1",
+            "AWL_DEV_GATEWAY_HEALTH_ONLY": "0",
+            "AWL_OPENCLAW_EXPOSURE": "loopback",
+            "AWL_OPENCLAW_CHAT_MESSAGE":
+                "AWL isolated integration check: reply with one short sentence.",
+            "AWL_OPENCLAW_TOKEN": "synthetic-only-token",
+            "AWL_DEV_KEYCHAIN_NONCE": "0123456789abcdefabcd",
+            "OPENCLAW_STATE_DIR": "/tmp/awl-real-dev-gateway-agent/state",
+            "AWL_OPENCLAW_URL": "ws://127.0.0.1:19031"
+        ]
+        func permitted(
+            _ env: [String: String], loopback: Bool = true,
+            profile: OpenClawValidationProfile = .mutating
+        ) -> Bool {
+            OpenClawDevelopmentAgentAbortPolicy.permits(
+                environment: env, isLoopback: loopback, profile: profile
+            )
+        }
+        XCTAssertTrue(permitted(valid))
+        XCTAssertFalse(permitted(valid, loopback: false))
+        XCTAssertFalse(permitted(valid, profile: .readOnly))
+        for (key, value) in [
+            ("AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM", "1"),
+            ("AWL_DEV_GATEWAY_ABORT_ASSERT", "0"),
+            ("AWL_DEV_GATEWAY_PROVE_ABORT", "0"),
+            ("AWL_DEV_GATEWAY_MODEL_PORT", "0"),
+            ("AWL_OPENCLAW_EXPOSURE", "tailnet-direct"),
+            ("AWL_OPENCLAW_URL", "wss://untrusted.example:443"),
+            ("AWL_OPENCLAW_BOOTSTRAP_TOKEN", "forbidden"),
+            ("AWL_ALLOW_MUTATING_PROBE", "0"),
+            ("OPENCLAW_STATE_DIR", "/Users/owner/.openclaw")
+        ] {
+            XCTAssertFalse(permitted(valid.merging([key: value]) { _, new in new }),
+                           "Held-model abort must reject unsafe " + key)
+        }
+        for badPort in ["-1", "0", "65536", "00123", "1.5", "abc", ""] {
+            XCTAssertFalse(permitted(
+                valid.merging(["AWL_DEV_GATEWAY_MODEL_PORT": badPort]) { _, new in new }
+            ))
+        }
+    }
+
     func testDisposableGrantModeIsIsolatedToOwnedLoopbackAndStrictlyTokenlessSecondProcess() {
         let valid: [String: String] = [
             "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT": "1",

@@ -97,6 +97,24 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                 ]), 2)
                 spawn.assert_not_called()
 
+    def test_active_abort_requires_exclusive_generated_local_mock(self):
+        for extra in (
+            ["--expect-pairing-required"], ["--expect-health-ok"],
+            ["--expect-grant-reconnect"], ["--expect-agent-stream"],
+            ["--approve-isolated-pairing"], ["--full-chat"],
+            ["--prove-abort"], ["--config-template", "/tmp/custom.json"],
+        ):
+            with (
+                patch("run_hermetic_development_gateway.subprocess.Popen") as spawn,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(main([
+                    "--checkout", "/nonexistent",
+                    "--revision", "a" * 40,
+                    "--expect-agent-abort", *extra,
+                ]), 2)
+                spawn.assert_not_called()
+
     def test_negative_gateway_disables_upstream_default_auto_pairing(self):
         config = negative_pairing_gateway_config()
         pairing = config["gateway"]["nodes"]["pairing"]
