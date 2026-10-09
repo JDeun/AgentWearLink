@@ -36,17 +36,22 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
         connectCalls += 1
         transportGenerationValue &+= 1
         handshakeStep = 0
-        // A real actor-observed connection attempt is stronger than a
-        // short busy-spin poll, which can starve under macOS CI load.
-        await connectionAttemptSignal.increment()
-
-        guard blockedConnectCall == connectCalls else { return }
+        // Publish a nonblocked attempt after mock transport state is ready.
+        // For deliberately blocked connects, only signal AFTER installing
+        // the release continuation. Otherwise an awakened test can call
+        // releaseBlockedConnect() before its continuation exists, deadlocking.
+        guard blockedConnectCall == connectCalls else {
+            await connectionAttemptSignal.increment()
+            return
+        }
         blockedConnectStarted = true
         blockedConnectStartedWaiter?.resume()
         blockedConnectStartedWaiter = nil
 
         await withCheckedContinuation { continuation in
             blockedConnectRelease = continuation
+            // The test observer is only notified after release is safe.
+            Task { await connectionAttemptSignal.increment() }
         }
 
         blockedConnectCall = nil
