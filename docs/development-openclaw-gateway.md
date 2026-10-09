@@ -398,8 +398,7 @@ explicit `agent:main:awl-dev-hermetic` session** and submits two sequential
 harmless requests, each with a fresh `InteractionID`. For *each* request the
 real Gateway must yield at least one nonempty text delta followed by exactly
 one terminal completion, all carrying the corresponding interaction ID.
-The owned local model's aggregate ingress counter must be **exactly two**:
-a duplicated inference or a dropped request fails the contract.
+The owned local model's aggregate ingress counter is sampled **before and after each turn**. It must strictly increase on *both* completed turns (and be at least two overall). The real OpenClaw runtime may perform multiple model calls per user turn; consequently the aggregate is **not** required to equal two. This rejects a second turn that only replays stale output, without incorrectly treating internal provider calls as duplicate agent submissions.
 
 This is a controlled same-session protocol / output attribution and
 double-submit smoke test, not evidence that a real model correctly
