@@ -298,3 +298,15 @@ auto-approval. It does **not** prove macOS/iOS Keychain behavior, explicit
 human approval, iPhone/Tailnet authenticated reconnection, real agent
 execution/terminal text/abort or physical Meta DAT integration. These remain
 separate acceptance requirements in #331/#117/#118/#56.
+
+## Merged-main real protocol regression gate
+
+When the actual Gateway protocol adapter/probe, contract runner, Swift package
+manifest/resolution, relevant Swift tests, or Gateway workflow changes on
+`main`, the same pinned three-contract **real upstream Gateway** workflow
+runs after merge as well as on pull requests. This ensures PR-head evidence
+cannot silently stand in for an unverified merge commit. It performs real
+unapproved rejection, synthetic loopback hello/health and synthetic issued
+grant-only second-process reconnect. It never reads private Mac mini secrets
+or connects to physical Tailnet. Post-merge green status still does not prove
+Keychain, human approval, model-backed agent turns or real eyewear operation.
