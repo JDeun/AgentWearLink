@@ -523,7 +523,10 @@ def prove_isolated_explicit_pairing_revocation(
         if (not may_retry_negative_gateway_startup(
                 phase=phase, exit_code=code, attempt=attempt, max_attempts=4)
                 or time.monotonic() + 1 >= deadline):
-            print("Explicit approval: unapproved read-only device not refused.", file=sys.stderr)
+            print("Explicit approval precondition failed: phase="
+                  + phase + ", class=" + safe_probe_result(temp / "probe-result")
+                  + ", code-class=" + ("timeout" if code == 124 else "rejected"),
+                  file=sys.stderr)
             return 1
         time.sleep(1)
     else:
@@ -532,15 +535,20 @@ def prove_isolated_explicit_pairing_revocation(
     try:
         listing = cli(["list", "--json"], read=True)
         if listing.returncode != 0 or len(listing.stdout) > 128_000:
+            print("Explicit approval failed at pending-list CLI.", file=sys.stderr)
             return 1
         selected = select_isolated_pending_readonly(json.loads(listing.stdout.decode("utf-8")))
         if selected is None:
+            print("Explicit approval failed: missing or ambiguous read-only pending request.",
+                  file=sys.stderr)
             return 1
         request_id, device_id = selected
         if cli(["approve", request_id]).returncode:
+            print("Explicit approval failed at exact-request approval CLI.", file=sys.stderr)
             return 1
         listed = cli(["list", "--json"], read=True)
         if listed.returncode or len(listed.stdout) > 128_000:
+            print("Explicit approval failed at post-approval list CLI.", file=sys.stderr)
             return 1
         data = json.loads(listed.stdout.decode("utf-8"))
         paired = data.get("paired")
@@ -548,18 +556,27 @@ def prove_isolated_explicit_pairing_revocation(
                 or not isinstance(paired[0], dict)
                 or paired[0].get("deviceId") != device_id
                 or data.get("pending") != []):
+            print("Explicit approval failed: paired identity not uniquely confirmed.",
+                  file=sys.stderr)
             return 1
 
         if probe(probe_env) != 0:
+            print("Explicit approval failed at approved read-only health: phase="
+                  + safe_probe_phase(temp / "probe-phase"),
+                  file=sys.stderr)
             return 1
         second = dict(probe_env)
         second.pop("AWL_OPENCLAW_TOKEN", None)
         second.pop("OPENCLAW_GATEWAY_TOKEN", None)
         second["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] = "1"
         if probe(second) != 0:
+            print("Explicit approval failed at tokenless grant reuse: phase="
+                  + safe_probe_phase(temp / "probe-phase"),
+                  file=sys.stderr)
             return 1
 
         if cli(["revoke", "--device", device_id, "--role", "operator"]).returncode:
+            print("Explicit approval failed at token revocation CLI.", file=sys.stderr)
             return 1
         rejected = probe(second)
         phase = safe_probe_phase(temp / "probe-phase")
@@ -571,12 +588,16 @@ def prove_isolated_explicit_pairing_revocation(
             and result not in ("gateway-device-token-rejected",
                                "gateway-auth-denied", "gateway-pairing-code")
         ):
+            print("Explicit approval failed at post-revocation refusal: phase="
+                  + phase + ", class=" + result, file=sys.stderr)
             return 1
         print("Isolated Gateway explicit exact-ID approval, tokenless grant reuse "
               "and revocation denial verified (automated, NOT human).")
         return 0
     except (OSError, ValueError, TypeError, AttributeError,
             subprocess.SubprocessError, UnicodeError):
+        print("Explicit approval failed with isolated CLI/probe exception.",
+              file=sys.stderr)
         return 1
 
 
