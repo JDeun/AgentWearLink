@@ -121,6 +121,17 @@ jobs:
             --checkout .awl-hermetic-upstream \
             --revision "$OPENCLAW_REVISION" \
             --expect-grant-reconnect
+      - name: Verify native macOS Keychain grant across two real Gateway Swift processes
+        id: native-keychain-grant
+        shell: bash
+        timeout-minutes: 10
+        env:
+          AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION: '1'
+        run: |
+          python3 scripts/run_hermetic_development_gateway.py \
+            --checkout .awl-hermetic-upstream \
+            --revision "$OPENCLAW_REVISION" \
+            --expect-native-keychain-grant-reconnect
       - name: Real native-agent deltas and terminal against isolated synthetic model
         id: agent-stream
         shell: bash
