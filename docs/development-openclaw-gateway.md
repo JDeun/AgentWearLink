@@ -406,3 +406,31 @@ remembers prior turns, retains tools, or works across network reconnect.
 Physical device/Tailnet and real personal session/memory validation stay
 open under #118/#97/#56. State, credentials and localhost mock process
 are deleted when the test ends.
+
+## Native macOS Keychain contract (separate from the real-Gateway smoke)
+
+GitHub Actions `Swift Core` runs a dedicated opt-in XCTest class on a
+disposable `macos-26` runner:
+
+```bash
+CI=true AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION=1 \
+  swift test --filter AgentWearLinkOpenClawTests.OpenClawNativeKeychainIntegrationTests
+```
+
+This exercises the **production** `KeychainOpenClawDeviceIdentityStore` and
+`KeychainOpenClawDeviceCredentialStore` through `Security.framework`, not an
+in-memory or file-backed substitute. A UUID-isolated service ensures no
+production credentials, developer service, or personal OpenClaw identity is
+opened. The test checks private signing identity retention across two
+independent storage actor instances; server-grant style
+`operator.read` insertion, read, and compare-and-swap rotation/removal;
+and strict namespace separation for different synthetic Gateways.
+A `defer` cleanup deletes only this service. When not explicitly enabled
+under CI, the XCTest method skips without touching local Keychain.
+
+**Evidence boundary:** A passing job confirms macOS runner Keychain native
+store interoperability for this service, not an explicit operator-approved
+pairing, a device grant actually issued by a Gateway, persistence across
+process restart, the user's Mac mini or an iOS Keychain access group. Those
+still require the corresponding real Gateway/personal macOS and hardware
+acceptance stages in #331.
