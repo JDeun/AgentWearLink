@@ -67,7 +67,7 @@ private enum OpenClawDevelopmentEphemeralProbeAdmission {
               environment[forbiddenMarker] == nil,
               ["AWL_DEV_GATEWAY_EXPECT_PAIRING", "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK",
                "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"]
-                  .filter { environment[$0] == "1" }.count == 1,
+                  .filter({ environment[$0] == "1" }).count == 1,
               (expectedMarker == "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"
                || environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == nil),
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
