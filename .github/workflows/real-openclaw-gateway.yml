@@ -3,6 +3,21 @@ name: Real isolated OpenClaw pairing contract
 # This is an actual upstream Gateway process, NOT an AWL WebSocket fixture.
 # No private tokens, models, Tailnet, Mac mini, or physical glasses are used.
 on:
+  # Re-run the same pinned real-Gateway contracts on the merged main tree,
+  # not only on a PR commit. This makes branch acceptance observable.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/real-openclaw-gateway.yml'
+      - 'scripts/run_hermetic_development_gateway.py'
+      - 'scripts/test_run_hermetic_development_gateway.py'
+      - 'scripts/dev_gateway_probe_runner.py'
+      - 'scripts/run-openclaw-development-gateway.sh'
+      - 'Sources/AgentWearLinkOpenClawProbe/**'
+      - 'Sources/AgentWearLinkOpenClaw/**'
+      - 'Tests/AgentWearLinkOpenClawTests/**'
+      - 'Package.swift'
+      - 'Package.resolved'
   pull_request:
     paths:
       - '.github/workflows/real-openclaw-gateway.yml'
@@ -12,6 +27,9 @@ on:
       - 'scripts/run-openclaw-development-gateway.sh'
       - 'Sources/AgentWearLinkOpenClawProbe/**'
       - 'Sources/AgentWearLinkOpenClaw/**'
+      - 'Tests/AgentWearLinkOpenClawTests/**'
+      - 'Package.swift'
+      - 'Package.resolved'
   workflow_dispatch:
 
 concurrency:
