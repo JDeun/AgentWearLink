@@ -161,6 +161,39 @@ public enum OpenClawDevelopmentDisposableGrantPolicy {
     }
 }
 
+/// CI-only real Keychain persistence proof using two independent Swift
+/// processes against one private, pinned, disposable OpenClaw Gateway.
+/// A developer Keychain, private Tailnet, or personal Gateway is never allowed.
+public enum OpenClawDevelopmentNativeKeychainGrantPolicy {
+    public static func permits(
+        environment: [String: String], isLoopback: Bool,
+        profile: OpenClawValidationProfile
+    ) -> Bool {
+        guard OpenClawDevelopmentEphemeralProbeAdmission.permitsEphemeralIdentity(
+            environment: environment, isLoopback: isLoopback,
+            profile: profile,
+            expectedMarker: "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT",
+            forbiddenMarker: "AWL_DEV_GATEWAY_EXPECT_PAIRING"
+        ), environment["AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"] == nil,
+           environment["AWL_DEV_GATEWAY_NATIVE_KEYCHAIN"] == "1",
+           environment["CI"] == "true",
+           environment["AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION"] == "1",
+           environment["AWL_DEV_GATEWAY_GRANT_STORE"] == nil,
+           environment["AWL_OPENCLAW_BOOTSTRAP_TOKEN"] == nil
+        else { return false }
+
+        let reconnect = environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == "1"
+        let cleanup = environment["AWL_DEV_GATEWAY_NATIVE_KEYCHAIN_CLEANUP"] == "1"
+        guard environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == nil || reconnect,
+              environment["AWL_DEV_GATEWAY_NATIVE_KEYCHAIN_CLEANUP"] == nil || cleanup,
+              !reconnect || !cleanup else { return false }
+        if reconnect || cleanup {
+            return environment["AWL_OPENCLAW_TOKEN"] == nil
+        }
+        return environment["AWL_OPENCLAW_TOKEN"]?.isEmpty == false
+    }
+}
+
 /// A deterministic synthetic-model test of the *real* OpenClaw Gateway's
 /// mutating native-agent stream, restricted to a private disposable loopback
 /// process. An unapproved physical/personal Gateway cannot opt into this.
