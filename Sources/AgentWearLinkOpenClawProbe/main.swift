@@ -220,7 +220,12 @@ struct AgentWearLinkOpenClawProbe {
         _ value: String, environment: [String: String],
         key: String, filename: String
     ) {
-        guard environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1",
+        // Diagnostics may be written only by one mutually exclusive
+        // read-only disposable real-Gateway contract. Values are separately
+        // classified into a hardcoded vocabulary and never carry raw frames.
+        let negative = environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1"
+        let positive = environment["AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"] == "1"
+        guard negative != positive,
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
               let stateDir = environment["OPENCLAW_STATE_DIR"],
