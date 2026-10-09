@@ -8,6 +8,8 @@ No provider credentials, Gateway responses, tokens or process output are logged.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import errno
 import json
 import os
 import re
@@ -195,6 +197,42 @@ def gateway_reachable(process: subprocess.Popen[bytes], port: int,
     return False
 
 
+def cleanup_disposable_gateway_directory(
+    directory: tempfile.TemporaryDirectory[str],
+    *,
+    attempts: int = 16,
+    interval_seconds: float = 0.5,
+) -> None:
+    """Bound an APFS ENOTEMPTY race while an owned Gateway is shutting down.
+
+    The process group is retired before this cleanup begins. The pinned
+    upstream may still briefly finish creating plugin-clone staging files.
+    Only re-attempt cleanup of the exact tempfile-owned directory; permission
+    errors and persistent ENOTEMPTY remain fatal. Never hide cleanup leaks.
+    """
+    if attempts < 1 or interval_seconds < 0:
+        raise ValueError("Invalid disposable cleanup retry budget")
+    for index in range(attempts):
+        try:
+            directory.cleanup()
+            return
+        except OSError as error:
+            if (error.errno not in (errno.ENOTEMPTY, errno.EEXIST)
+                    or index + 1 >= attempts):
+                raise
+            time.sleep(interval_seconds)
+
+
+@contextlib.contextmanager
+def disposable_gateway_state():
+    """Own disposal of the state even on an early return or exception."""
+    directory = tempfile.TemporaryDirectory(prefix="awl-real-dev-gateway-")
+    try:
+        yield Path(directory.name)
+    finally:
+        cleanup_disposable_gateway_directory(directory)
+
+
 def retire_owned_process(process: subprocess.Popen[bytes]) -> None:
     """Never touch another Gateway: only our unique start_new_session group."""
     try:
@@ -331,8 +369,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Isolated Gateway runner: Node.js is unavailable.", file=sys.stderr)
         return 2
 
-    with tempfile.TemporaryDirectory(prefix="awl-real-dev-gateway-") as directory:
-        temp = Path(directory)
+    with disposable_gateway_state() as temp:
         (temp / "state").mkdir(mode=0o700)
         (temp / "workspace").mkdir(mode=0o700)
 

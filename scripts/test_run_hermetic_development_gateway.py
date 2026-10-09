@@ -1,4 +1,5 @@
 import contextlib
+import errno
 import io
 import signal
 import tempfile
@@ -10,6 +11,8 @@ from unittest.mock import call, patch
 from dev_gateway_preflight import validate_config
 from run_hermetic_development_gateway import (
     checkout_revision,
+    cleanup_disposable_gateway_directory,
+    disposable_gateway_state,
     approve_one_isolated_pairing,
     isolated_environment,
     main,
@@ -119,6 +122,70 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
             ):
                 self.assertFalse(checkout_revision(checkout, "a"*40))
             self.assertFalse(checkout_revision(checkout, "invalid"))
+
+    def test_disposable_cleanup_retries_transient_directory_not_empty(self):
+        class LateWriter:
+            def __init__(self):
+                self.calls = 0
+
+            def cleanup(self):
+                self.calls += 1
+                if self.calls <= 2:
+                    raise OSError(errno.ENOTEMPTY, "upstream still writing")
+
+        fixture = LateWriter()
+        with patch("run_hermetic_development_gateway.time.sleep") as pause:
+            cleanup_disposable_gateway_directory(
+                fixture, attempts=4, interval_seconds=0.01
+            )
+        self.assertEqual(fixture.calls, 3)
+        self.assertEqual(pause.call_count, 2)
+
+    def test_disposable_cleanup_fails_closed_on_persistent_race_and_permissions(self):
+        class NotEmpty:
+            def __init__(self, code):
+                self.calls = 0
+                self.code = code
+
+            def cleanup(self):
+                self.calls += 1
+                raise OSError(self.code, "must not be suppressed")
+
+        with patch("run_hermetic_development_gateway.time.sleep") as pause:
+            fixture = NotEmpty(errno.ENOTEMPTY)
+            with self.assertRaises(OSError):
+                cleanup_disposable_gateway_directory(
+                    fixture, attempts=3, interval_seconds=0.01
+                )
+            self.assertEqual(fixture.calls, 3)
+            self.assertEqual(pause.call_count, 2)
+
+            denied = NotEmpty(errno.EACCES)
+            with self.assertRaises(OSError):
+                cleanup_disposable_gateway_directory(
+                    denied, attempts=3, interval_seconds=0.01
+                )
+            self.assertEqual(denied.calls, 1)
+
+        for attempts, delay in ((0, 0.0), (2, -1)):
+            with self.assertRaises(ValueError):
+                cleanup_disposable_gateway_directory(
+                    NotEmpty(errno.ENOTEMPTY),
+                    attempts=attempts, interval_seconds=delay
+                )
+
+    def test_disposable_state_is_removed_on_success_and_error(self):
+        with disposable_gateway_state() as temporary:
+            self.assertTrue(temporary.is_dir())
+            (temporary / "state").mkdir()
+        self.assertFalse(temporary.exists())
+
+        with self.assertRaises(RuntimeError):
+            with disposable_gateway_state() as temporary:
+                location = temporary
+                (temporary / "state").mkdir()
+                raise RuntimeError("trigger cleanup")
+        self.assertFalse(location.exists())
 
     def test_retire_owned_process_after_parent_exit_still_signals_group(self):
         class Exited:
