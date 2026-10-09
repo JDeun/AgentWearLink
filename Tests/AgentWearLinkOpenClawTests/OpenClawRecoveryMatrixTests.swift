@@ -527,25 +527,26 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         )
         await fixture.socket.makeHandshakeSucceed(afterCurrentCount: 2)
 
-        // After the pairing-required handshake, the same bounded reconnect
-        // transition should retry rather than stopping.
-        let reconnect = Task {
-            await fixture.supervisor.reconnect(
-                closeCode: 4_000,
-                closeReason: "pairing wait"
-            )
-        }
+        // This test only asserts the completed reconnect transition: there is
+        // no concurrent action that needs to observe an intermediate connect.
+        // Await the owned transition directly instead of racing a separate
+        // unstructured Task against a 5-second mock-signal deadline on a busy
+        // XCTest worker. Failure to reconnect is still caught by the bounded
+        // XCTest watchdog and by the final exact-attempt/ready assertions.
+        await fixture.supervisor.reconnect(
+            closeCode: 4_000,
+            closeReason: "pairing wait"
+        )
 
-        // Await the concrete mocked socket attempt, not a one-second
-        // scheduler-sensitive polling loop. The concurrent reconnect task
-        // may have been created but not yet scheduled on busy CI hosts.
-        try await fixture.socket.waitForConnectionCount(atLeast: 2)
-        await reconnect.value
-
+        // Prove that this was genuinely the required pairing-retry path,
+        // not simply a successful reconnect that skipped pairing.
+        try await fixture.socket.waitForPairingResponse()
         let connectionCount = await fixture.socket.connectionCount()
         let finalState = await fixture.state.connectionState
+        let dispatcherRunning = await fixture.dispatcher.isRunning
         XCTAssertEqual(connectionCount, 3)
         XCTAssertEqual(finalState, .ready)
+        XCTAssertTrue(dispatcherRunning)
 
         await fixture.supervisor.stop()
     }
