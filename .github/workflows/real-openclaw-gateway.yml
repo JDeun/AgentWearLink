@@ -80,15 +80,29 @@ jobs:
             --checkout .awl-hermetic-upstream \
             --revision "$OPENCLAW_REVISION" \
             --expect-pairing-required
+      - name: Real Gateway accepts ephemeral read-only hello and health RPC
+        id: positive-health
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          python3 scripts/run_hermetic_development_gateway.py \
+            --checkout .awl-hermetic-upstream \
+            --revision "$OPENCLAW_REVISION" \
+            --expect-health-ok
       - name: Evidence boundary
         if: always()
         env:
           NEGATIVE_GATE_OUTCOME: ${{ steps.negative-contract.outcome }}
+          POSITIVE_HEALTH_OUTCOME: ${{ steps.positive-health.outcome }}
         run: |
           if [[ "$NEGATIVE_GATE_OUTCOME" == "success" ]]; then
-            echo "Negative contract ONLY: an unapproved read-only device was rejected by real Gateway."
+            echo "Negative contract: unapproved read-only identity rejected."
           else
-            echo "Negative pairing contract FAILED or was not executed; no rejection proof."
+            echo "Negative contract FAILED or was not executed."
           fi
-          echo "Do not treat this as approved authentication, health, chat or cancellation proof."
-          echo "Actual pairing approval requires an operator against the disposable Gateway."
+          if [[ "$POSITIVE_HEALTH_OUTCOME" == "success" ]]; then
+            echo "Positive contract: disposable localhost identity authenticated with real hello-ok and health RPC."
+          else
+            echo "Positive hello-ok/health contract FAILED or was not executed."
+          fi
+          echo "These are NOT operator-approved pairing, Keychain reuse, tokenless reconnect, agent/abort or Tailnet evidence."

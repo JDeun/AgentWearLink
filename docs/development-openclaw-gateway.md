@@ -229,3 +229,33 @@ and cleanup. The tokenless second-process path is implemented but still
 requires real Gateway execution evidence before it can be called verified. Until then this is the first **real Gateway smoke-test path**, not
 full integration acceptance. CI runs only preflight/process-runner unit tests and shell syntax
 checks without needing a live Gateway.
+
+## Isolated positive hello-ok / health CI (October 2026)
+
+The real upstream macOS-26 CI workflow now runs **two independent disposable
+Gateway instances** from the same pinned checkout. The original rejection
+contract configures `autoApproveLocal: false`; the new positive health contract
+sets `autoApproveLocal: true` **only on its own synthetic localhost-only
+Gateway** and proves the real production AWL Swift connection receives
+`hello-ok` and a successful `health` RPC.
+
+```bash
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout .awl-hermetic-upstream \
+  --revision YOUR_EXACT_40_CHARACTER_COMMIT \
+  --expect-health-ok
+```
+
+The mutually exclusive `--expect-pairing-required` and `--expect-health-ok`
+modes reject supplied config templates, mutating chat/abort, and
+operator-approval requests. An unattended CI job never approves a device on
+the user's installed Gateway; only the freshly created synthetic loopback
+Gateway may auto-approve.
+
+The real production Gateway client, assembler, supervisor and dispatcher
+perform the transport/auth/health operations, using **ephemeral in-memory
+identity/credential stores** instead of a GUI-blocked Keychain on CI. The
+contract does not prove that the operator manually approved the device,
+that the Keychain persisted an issued grant, that a second independent
+process reconnected without shared auth, or that agent text/abort works.
+Those are still outstanding, separate #331 acceptance requirements.

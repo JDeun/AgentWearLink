@@ -16,6 +16,14 @@ if [[ "${AWL_DEV_GATEWAY_EXPECT_PAIRING:-0}" == "1" ]]; then
   exit $?
 fi
 
+if [[ "${AWL_DEV_GATEWAY_EXPECT_HEALTH_OK:-0}" == "1" ]]; then
+  # Separate synthetic auto-approved localhost Gateway only. A passing probe
+  # proves hello-ok + health, not Keychain grant persistence or reconnect.
+  echo "Checking isolated real Gateway authenticated read-only health"
+  python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
+  exit $?
+fi
+
 echo "Running production read-only OpenClaw connection and health RPC"
 python3 scripts/dev_gateway_probe_runner.py awl-openclaw-probe
 
