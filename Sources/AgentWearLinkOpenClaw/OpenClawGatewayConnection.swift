@@ -1,5 +1,26 @@
 import Foundation
 
+/// Fixed, non-sensitive milestones for opt-in development Gateway diagnostics.
+public enum OpenClawHandshakeProgress: String, Sendable {
+    case socketOpened = "socket-opened"
+    case challengeReceived = "challenge-received"
+    case assembleStarted = "assemble-started"
+    case assembleComplete = "assemble-complete"
+    case connectSending = "connect-sending"
+    case connectSent = "connect-sent"
+    case responseReceived = "response-received"
+    case gatewayNotPairedUnstructured = "gateway-not-paired-unstructured"
+    case gatewayVerifiedUserRequired = "gateway-verified-user-required"
+    case gatewayDeviceProofRejected = "gateway-device-proof-rejected"
+    case gatewaySharedAuthRejected = "gateway-shared-auth-rejected"
+    case gatewayInvalidRequest = "gateway-invalid-request"
+    case gatewayUnavailable = "gateway-unavailable"
+    case gatewayStartupPending = "gateway-startup-pending"
+    case gatewayProfileUnavailable = "gateway-profile-unavailable"
+    case gatewayAuthDenied = "gateway-auth-denied"
+    case gatewayUnrecognized = "gateway-unrecognized"
+}
+
 public actor OpenClawGatewayConnection {
     private let socket: any OpenClawWebSocket
     private let state: OpenClawGatewayState
@@ -8,6 +29,7 @@ public actor OpenClawGatewayConnection {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let handshakeTimeout: Duration
+    private let progress: (@Sendable (OpenClawHandshakeProgress) -> Void)?
     private var nextConnectGeneration: UInt64 = 0
     private var activeConnectGeneration: UInt64?
     private var disconnectInProgress = false
@@ -16,13 +38,15 @@ public actor OpenClawGatewayConnection {
         socket: any OpenClawWebSocket,
         assembler: OpenClawConnectAssembler,
         state: OpenClawGatewayState = .init(),
-        handshakeTimeout: Duration = .seconds(10)
+        handshakeTimeout: Duration = .seconds(10),
+        progress: (@Sendable (OpenClawHandshakeProgress) -> Void)? = nil
     ) {
         precondition(handshakeTimeout > .zero)
         self.socket = socket
         self.assembler = assembler
         self.state = state
         self.handshakeTimeout = handshakeTimeout
+        self.progress = progress
     }
 
     public func connect(
@@ -42,6 +66,7 @@ public actor OpenClawGatewayConnection {
 
         await state.beginConnect()
         await socket.connect()
+        progress?(.socketOpened)
 
         do {
             try ensureActiveConnect(generation)
@@ -61,6 +86,7 @@ public actor OpenClawGatewayConnection {
             }
 
             let challenge = try decodeChallenge(payload)
+            progress?(.challengeReceived)
             guard challenge.ts >= 0, !challenge.nonce.isEmpty else {
                 throw OpenClawHandshakeError.invalidChallenge
             }
@@ -69,6 +95,7 @@ public actor OpenClawGatewayConnection {
             await state.beginAuthentication()
             try ensureActiveConnect(generation)
 
+            progress?(.assembleStarted)
             var assembled = try await assembler.assemble(
                 version: appVersion,
                 scopes: scopes,
@@ -78,6 +105,7 @@ public actor OpenClawGatewayConnection {
                 locale: locale
             )
             try ensureActiveConnect(generation)
+            progress?(.assembleComplete)
 
             var response = try await sendConnectRequest(
                 assembled,
@@ -112,6 +140,12 @@ public actor OpenClawGatewayConnection {
                     try? await assembler.invalidateStoredCredentialIfUsed(assembled)
                     try ensureActiveConnect(generation)
                     throw OpenClawHandshakeError.pairingRequired(pairing)
+                }
+
+                if let error = response.error {
+                    // Only fixed categories cross the diagnostic boundary.
+                    // Never surface raw Gateway codes, messages or identifiers.
+                    progress?(Self.classifyGatewayRejection(error))
                 }
 
                 let retryAfter = response.error?.retryAfterMs.flatMap {
@@ -253,7 +287,9 @@ public actor OpenClawGatewayConnection {
         }
 
         try ensureActiveConnect(generation)
+        progress?(.connectSending)
         try await socket.send(text: requestText)
+        progress?(.connectSent)
         try ensureActiveConnect(generation)
 
         let responseText = try await receiveHandshakeFrame(
@@ -263,11 +299,60 @@ public actor OpenClawGatewayConnection {
         try ensureActiveConnect(generation)
 
         let responseFrame = try frameRouter.decodePreAuth(Data(responseText.utf8))
+        progress?(.responseReceived)
         guard case let .response(response) = responseFrame,
               response.id == requestID else {
             throw OpenClawHandshakeError.unexpectedConnectResponse
         }
         return response
+    }
+
+    static func classifyGatewayRejection(
+        _ error: OpenClawResponseEnvelope.GatewayError
+    ) -> OpenClawHandshakeProgress {
+        let detailCode: String? = {
+            guard case let .object(details)? = error.details,
+                  case let .string(code)? = details["code"] else { return nil }
+            return code
+        }()
+
+        // Pinned upstream startup-unavailable.ts provides a precise retry
+        // discriminator; generic UNAVAILABLE may indicate a real policy error
+        // and must never be retried or accepted as pairing evidence.
+        if error.code == "UNAVAILABLE",
+           error.retryable == true,
+           case let .object(details)? = error.details,
+           case let .string(reason)? = details["reason"],
+           reason == "startup-sidecars" {
+            return .gatewayStartupPending
+        }
+
+        switch detailCode {
+        case "AUTH_VERIFIED_USER_REQUIRED":
+            return .gatewayVerifiedUserRequired
+        case "DEVICE_AUTH_INVALID", "DEVICE_AUTH_SIGNATURE_INVALID",
+             "DEVICE_AUTH_NONCE_MISMATCH", "DEVICE_AUTH_NONCE_REQUIRED",
+             "DEVICE_AUTH_DEVICE_ID_MISMATCH", "DEVICE_AUTH_PUBLIC_KEY_INVALID",
+             "DEVICE_AUTH_SIGNATURE_EXPIRED":
+            return .gatewayDeviceProofRejected
+        case "AUTH_TOKEN_MISSING", "AUTH_TOKEN_MISMATCH",
+             "AUTH_TOKEN_NOT_CONFIGURED", "AUTH_REQUIRED", "AUTH_UNAUTHORIZED":
+            return .gatewaySharedAuthRejected
+        case "AUTHENTICATED_PROFILE_UNAVAILABLE":
+            return .gatewayProfileUnavailable
+        default: break
+        }
+        switch error.code {
+        case "NOT_PAIRED":
+            // A genuine pairing rejection has authoritative
+            // details.code=PAIRING_REQUIRED, parsed before this branch.
+            return .gatewayNotPairedUnstructured
+        case "INVALID_REQUEST": return .gatewayInvalidRequest
+        case "UNAVAILABLE": return .gatewayUnavailable
+        case "AUTH_FAILED", "UNAUTHORIZED", "FORBIDDEN":
+            return .gatewayAuthDenied
+        default: return .gatewayUnrecognized
+        }
     }
 
     private func decodeChallenge(

@@ -8,6 +8,8 @@ No provider credentials, Gateway responses, tokens or process output are logged.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import errno
 import json
 import os
 import re
@@ -28,6 +30,82 @@ ROOT = Path(__file__).resolve().parent.parent
 GATEWAY_START_DEADLINE = 45
 PROBE_DEADLINE = 900
 _REVISION = re.compile(r"^[0-9a-fA-F]{40}$")
+_SAFE_PROBE_PHASES = frozenset({
+    "handshake-started", "socket-opened",
+    "challenge-received", "assemble-started", "assemble-complete",
+    "connect-sending", "connect-sent",
+    "response-received", "gateway-not-paired-unstructured",
+    "gateway-verified-user-required", "gateway-device-proof-rejected",
+    "gateway-shared-auth-rejected", "gateway-invalid-request",
+    "gateway-unavailable", "gateway-startup-pending",
+    "gateway-profile-unavailable",
+    "gateway-auth-denied", "gateway-unrecognized", "authenticated",
+    "health-accepted", "pairing-required", "probe-error",
+})
+_SAFE_PROBE_RESULTS = frozenset({
+    "challenge-timeout", "hello-timeout", "unexpected-connect-response",
+    "challenge-required", "invalid-challenge", "missing-hello",
+    "invalid-policy", "connect-invalidated", "handshake-other",
+    "gateway-auth-denied", "gateway-invalid-request",
+    "gateway-pairing-code", "gateway-device-token-rejected",
+    "gateway-other", "transport-disconnected", "protocol-mismatch",
+    "gateway-state-error", "frame-invalid", "decoding-failed", "other-error",
+})
+
+
+def safe_probe_result(path: Path) -> str:
+    """Never relay the raw Gateway, Keychain or Swift error payload."""
+    try:
+        category = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return "unobserved"
+    return category if category in _SAFE_PROBE_RESULTS else "unobserved"
+
+
+def safe_probe_phase(path: Path) -> str:
+    """Emit only protocol-phase vocabulary, never file-supplied text."""
+    try:
+        phase = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return "unobserved"
+    return phase if phase in _SAFE_PROBE_PHASES else "unobserved"
+
+
+
+def may_retry_negative_gateway_startup(
+    *, phase: str, exit_code: int, attempt: int, max_attempts: int
+) -> bool:
+    """Only pinned upstream's structured startup-pending response is retryable.
+
+    A refusal is never counted as passed without an actual pairing-required
+    error. Invalid requests, credential denials, missing diagnostics, and
+    arbitrary UNAVAILABLE conditions fail closed.
+    """
+    return (
+        phase == "gateway-startup-pending"
+        and exit_code == 1
+        and max_attempts > 0
+        and 0 <= attempt < max_attempts - 1
+    )
+
+
+def negative_pairing_gateway_config() -> dict[str, object]:
+    """Disable the *upstream default* silent local device approval.
+
+    OpenClaw's autoApproveLocal is true by default. Without an explicit
+    override a loopback unapproved-device rejection is not a valid test.
+    This configuration is generated only inside the owned disposable state.
+    """
+    return {
+        "gateway": {
+            "nodes": {
+                "pairing": {
+                    "autoApproveLocal": False,
+                    "autoApproveCidrs": [],
+                }
+            }
+        }
+    }
 
 
 def checkout_revision(checkout: Path, expected: str) -> bool:
@@ -117,6 +195,42 @@ def gateway_reachable(process: subprocess.Popen[bytes], port: int,
         except OSError:
             time.sleep(0.25)
     return False
+
+
+def cleanup_disposable_gateway_directory(
+    directory: tempfile.TemporaryDirectory[str],
+    *,
+    attempts: int = 16,
+    interval_seconds: float = 0.5,
+) -> None:
+    """Bound an APFS ENOTEMPTY race while an owned Gateway is shutting down.
+
+    The process group is retired before this cleanup begins. The pinned
+    upstream may still briefly finish creating plugin-clone staging files.
+    Only re-attempt cleanup of the exact tempfile-owned directory; permission
+    errors and persistent ENOTEMPTY remain fatal. Never hide cleanup leaks.
+    """
+    if attempts < 1 or interval_seconds < 0:
+        raise ValueError("Invalid disposable cleanup retry budget")
+    for index in range(attempts):
+        try:
+            directory.cleanup()
+            return
+        except OSError as error:
+            if (error.errno not in (errno.ENOTEMPTY, errno.EEXIST)
+                    or index + 1 >= attempts):
+                raise
+            time.sleep(interval_seconds)
+
+
+@contextlib.contextmanager
+def disposable_gateway_state():
+    """Own disposal of the state even on an early return or exception."""
+    directory = tempfile.TemporaryDirectory(prefix="awl-real-dev-gateway-")
+    try:
+        yield Path(directory.name)
+    finally:
+        cleanup_disposable_gateway_directory(directory)
 
 
 def retire_owned_process(process: subprocess.Popen[bytes]) -> None:
@@ -229,7 +343,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--approve-isolated-pairing", action="store_true",
                         help="Allow a human to approve exact pending IDs on this "
                              "disposable Gateway only; TTY required")
+    parser.add_argument("--expect-pairing-required", action="store_true",
+                        help="Validate that the real ephemeral Gateway rejects an "
+                             "unapproved client, without granting permission")
     args = parser.parse_args(argv)
+    if args.expect_pairing_required and (args.approve_isolated_pairing or args.full_chat or args.prove_abort):
+        print("Isolated Gateway runner: negative pairing test must be read-only.",
+              file=sys.stderr)
+        return 2
 
     checkout = Path(args.checkout).expanduser().resolve()
     if not checkout_revision(checkout, args.revision):
@@ -248,8 +369,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Isolated Gateway runner: Node.js is unavailable.", file=sys.stderr)
         return 2
 
-    with tempfile.TemporaryDirectory(prefix="awl-real-dev-gateway-") as directory:
-        temp = Path(directory)
+    with disposable_gateway_state() as temp:
         (temp / "state").mkdir(mode=0o700)
         (temp / "workspace").mkdir(mode=0o700)
 
@@ -263,12 +383,29 @@ def main(argv: list[str] | None = None) -> int:
             shutil.copyfile(template, temp / "state" / "openclaw.json")
             (temp / "state" / "openclaw.json").chmod(0o600)
 
+        if args.expect_pairing_required:
+            # The pinned upstream defaults to silent localhost approval.
+            # Force explicit device-pairing rejection in disposable state only.
+            # This is not a production Mac mini / operator Gateway setting.
+            configuration = temp / "state" / "openclaw.json"
+            with configuration.open("x", encoding="utf-8") as stream:
+                json.dump(negative_pairing_gateway_config(), stream)
+            configuration.chmod(0o600)
+
         port = local_port()
         env = isolated_environment(
             dict(os.environ), home=temp, port=port,
             revision=args.revision, token=secrets.token_urlsafe(32),
             full_chat=args.full_chat, prove_abort=args.prove_abort,
         )
+        if args.expect_pairing_required:
+            # Narrow negative test to a single independently built Swift
+            # executable and one unapproved device challenge. The status
+            # classifier never emits Gateway responses or private identifiers.
+            env["AWL_DEV_GATEWAY_EXPECT_PAIRING"] = "1"
+            env["AWL_DEV_GATEWAY_USE_BUILT_PROBE"] = "1"
+            env["AWL_DEV_GATEWAY_PHASE_FILE"] = str(temp / "probe-phase")
+            env["AWL_DEV_GATEWAY_RESULT_FILE"] = str(temp / "probe-result")
         try:
             validate_config(env)
         except ValueError:
@@ -304,7 +441,12 @@ def main(argv: list[str] | None = None) -> int:
             # Only the exact request ID explicitly entered by a human can
             # enable local pairing. Read-only and write-probe identities
             # require independent approvals, never implicit privilege reuse.
-            for approval_attempt in range(3):
+            attempt_limit = 6 if args.expect_pairing_required else 3
+            for approval_attempt in range(attempt_limit):
+                if args.expect_pairing_required:
+                    # A failed attempt cannot lend stale evidence to the next.
+                    (temp / "probe-phase").unlink(missing_ok=True)
+                    (temp / "probe-result").unlink(missing_ok=True)
                 try:
                     remaining = max(1, int(deadline - time.monotonic()))
                     result = subprocess.run(
@@ -316,6 +458,36 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 except (OSError, subprocess.TimeoutExpired):
                     print("Isolated Gateway runner: bounded probes failed.",
+                          file=sys.stderr)
+                    return 1
+                if args.expect_pairing_required:
+                    if result.returncode == 3:
+                        print("Isolated real Gateway rejected unapproved read-only identity as expected.")
+                        return 0
+                    categories = {
+                        0: "unexpected-auth-success",
+                        1: "handshake-or-protocol-failure",
+                        124: "probe-timeout",
+                        127: "probe-binary-unavailable",
+                    }
+                    category = categories.get(result.returncode, "unexpected-exit")
+                    phase = safe_probe_phase(temp / "probe-phase")
+                    failure = safe_probe_result(temp / "probe-result")
+                    if (gateway.poll() is None
+                            and may_retry_negative_gateway_startup(
+                                phase=phase, exit_code=result.returncode,
+                                attempt=approval_attempt,
+                                max_attempts=attempt_limit,
+                            )
+                            and time.monotonic() + 1 < deadline):
+                        print("Isolated Gateway startup sidecars not ready; "
+                              "retrying bounded negative contract probe.",
+                              file=sys.stderr)
+                        time.sleep(1)
+                        continue
+                    print("Isolated real Gateway negative-contract failed: "
+                          + category + " (last-phase=" + phase
+                          + ", failure-class=" + failure + ")",
                           file=sys.stderr)
                     return 1
                 if result.returncode == 0:

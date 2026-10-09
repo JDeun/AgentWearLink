@@ -66,6 +66,45 @@ class DevelopmentGatewayProbeRunnerTests(unittest.TestCase):
             self.assertEqual(main(["another-command"]), 2)
         self.assertIn("Usage:", stderr.getvalue())
 
+    def test_negative_probe_requires_prebuilt_readonly_binary_and_short_deadline(self):
+        with (
+            patch.dict(os.environ, {
+                "AWL_DEV_GATEWAY_EXPECT_PAIRING": "1",
+                "AWL_DEV_GATEWAY_USE_BUILT_PROBE": "1"
+            }),
+            patch("dev_gateway_probe_runner.pathlib.Path.is_file", return_value=True),
+            patch("dev_gateway_probe_runner.run_command", return_value=3) as run,
+            contextlib.redirect_stderr(io.StringIO()) as stderr,
+        ):
+            self.assertEqual(main(["awl-openclaw-probe"]), 3)
+            self.assertEqual(run.call_args.kwargs["timeout_seconds"], 60)
+            self.assertEqual(
+                run.call_args.args[0],
+                [".build/debug/awl-openclaw-probe"]
+            )
+            self.assertIn("pairing-required", stderr.getvalue())
+        with (
+            patch.dict(os.environ, {"AWL_DEV_GATEWAY_EXPECT_PAIRING": "1"}),
+            patch("dev_gateway_probe_runner.run_command") as run,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(main(["awl-openclaw-chat-probe"]), 2)
+            run.assert_not_called()
+
+    def test_negative_probe_missing_binary_fails_closed(self):
+        with (
+            patch.dict(os.environ, {
+                "AWL_DEV_GATEWAY_EXPECT_PAIRING": "1",
+                "AWL_DEV_GATEWAY_USE_BUILT_PROBE": "1"
+            }),
+            patch("dev_gateway_probe_runner.pathlib.Path.is_file", return_value=False),
+            patch("dev_gateway_probe_runner.run_command") as run,
+            contextlib.redirect_stderr(io.StringIO()) as stderr,
+        ):
+            self.assertEqual(main(["awl-openclaw-probe"]), 127)
+            self.assertIn("missing", stderr.getvalue())
+            run.assert_not_called()
+
     def test_nonpositive_deadline_is_rejected(self):
         with self.assertRaises(ValueError):
             run_command([sys.executable, "-c", "pass"], timeout_seconds=0)

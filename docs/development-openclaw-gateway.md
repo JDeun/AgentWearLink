@@ -91,6 +91,45 @@ a fresh synthetic service namespace; their presence alone does not imply
 approval of a deployment identity. Do not confuse loopback probe success
 with iPhone/Tailnet/Ray-Ban physical evidence.
 
+## Credential-free upstream Gateway negative contract on CI
+
+The dedicated [real Gateway CI workflow](../.github/workflows/real-openclaw-gateway.yml)
+uses GitHub-hosted macOS 26 to build the exact audited upstream
+OpenClaw revision under an ephemeral home, random loopback port,
+and synthetic token. It never accesses the owner's Mac mini, Tailnet,
+model credentials or personal sessions. The pinned OpenClaw Gateway
+**silently approves local pairing by default** (`gateway.nodes.pairing.autoApproveLocal`
+defaults to `true`). For this negative-contract mode only, the runner
+writes a minimal private configuration into its fresh disposable
+`OPENCLAW_CONFIG_PATH` with `autoApproveLocal: false` and no
+trusted-CIDR auto-approval. The normal operator-approved development
+workflow and owner's production Gateway configuration remain unchanged.
+
+The automated gate only checks that the **real** OpenClaw Gateway
+rejects an unapproved, freshly generated AWL read-only device identity
+with a pairing-required response. That is a **negative protocol-contract
+test**, not successful authenticated health, persistent device-grant
+reuse, chat or abort.
+
+The negative-only CI probe intentionally constructs the production
+`OpenClawGatewayConnection` and `OpenClawConnectAssembler` with a **fresh
+in-memory identity and empty credential store**, avoiding a potential unattended
+macOS Keychain permission prompt. This does **not** exercise Keychain writes,
+approved credentials, or persistent tokenless reconnect. A fail-closed policy
+enables those stores only for the disposable loopback/read-only negative mode.
+The real operator-approved development probe retains the ordinary production
+Keychain stores. The CI redacted phase breadcrumb separates challenge receipt,
+request assembly and actual WebSocket send; timeouts are failures, not evidence. A rejection is counted as successful evidence
+only in explicit `--expect-pairing-required` mode; successful admission
+or any unrelated error fails that mode. CI does not automatically
+approve, register or trust any device.
+
+Actual positive Layer-2 Gateway acceptance still uses the interactive
+`--approve-isolated-pairing` path above, with an operator selecting
+an exact pending request ID on the fresh local test Gateway.
+Afterward the full chat, cancellation and tokenless reuse proofs
+must be collected separately before closing #331.
+
 ## Isolation and prerequisites
 
 - Launch a **separate development OpenClaw Gateway** on local loopback
