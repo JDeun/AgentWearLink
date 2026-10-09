@@ -274,6 +274,31 @@ def isolated_environment(
     return env
 
 
+def native_keychain_probe_environment(
+    isolated: dict[str, str], host: dict[str, str]
+) -> dict[str, str]:
+    """Only native Keychain Swift probes use the fresh macOS runner's HOME.
+
+    A random HOME on macOS can disconnect Security.framework from the runner's
+    unlocked login Keychain and block SecItemCopyMatching with a noninteractive
+    authorization request. Never restore HOME for upstream Gateway, Node,
+    model process or general development probes.
+    """
+    if isolated.get("AWL_DEV_GATEWAY_NATIVE_KEYCHAIN") != "1":
+        return isolated
+    if (host.get("GITHUB_ACTIONS") != "true"
+            or host.get("RUNNER_OS") != "macOS"
+            or host.get("CI") != "true"
+            or isolated.get("AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION") != "1"):
+        raise ValueError("native Keychain probe requires hosted macOS Actions")
+    home = host.get("HOME", "")
+    if not home or not Path(home).is_dir():
+        raise ValueError("macOS runner Keychain home unavailable")
+    result = dict(isolated)
+    result["HOME"] = home
+    return result
+
+
 def local_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -474,6 +499,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.expect_native_keychain_grant_reconnect and (
             os.environ.get("CI") != "true"
+            or os.environ.get("GITHUB_ACTIONS") != "true"
+            or os.environ.get("RUNNER_OS") != "macOS"
             or os.environ.get("AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION") != "1"):
         print("Native Keychain contract requires explicit disposable macOS CI opt-in.",
               file=sys.stderr)
@@ -571,6 +598,9 @@ def main(argv: list[str] | None = None) -> int:
             env["AWL_DEV_GATEWAY_RESULT_FILE"] = str(temp / "probe-result")
         try:
             validate_config(env)
+            # The real Gateway stays in a private HOME. Only the production
+            # Swift Keychain binary can see the runner's unlocked login Keychain.
+            probe_env = native_keychain_probe_environment(env, dict(os.environ))
         except ValueError:
             print("Isolated Gateway runner: safety preflight failed.", file=sys.stderr)
             return 2
@@ -656,7 +686,7 @@ def main(argv: list[str] | None = None) -> int:
                     result = subprocess.run(
                         ["bash", str(ROOT / "scripts" /
                                      "run-openclaw-development-gateway.sh")],
-                        cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                        cwd=ROOT, env=probe_env, stdin=subprocess.DEVNULL,
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                         timeout=remaining, check=False,
                     )
@@ -719,7 +749,7 @@ def main(argv: list[str] | None = None) -> int:
                         # the AWL shared Gateway bearer or the upstream token.
                         # It only loads the device grant the real Gateway
                         # issued to the first process in disposable storage.
-                        second = dict(env)
+                        second = dict(probe_env)
                         second.pop("AWL_OPENCLAW_TOKEN", None)
                         second.pop("OPENCLAW_GATEWAY_TOKEN", None)
                         second["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] = "1"
@@ -814,7 +844,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.expect_native_keychain_grant_reconnect:
                 # Always clean ONLY the randomized CI service, including after
                 # connection or grant-reuse failure. No private item is touched.
-                cleanup_env = dict(env)
+                cleanup_env = dict(probe_env)
                 cleanup_env.pop("AWL_OPENCLAW_TOKEN", None)
                 cleanup_env.pop("OPENCLAW_GATEWAY_TOKEN", None)
                 cleanup_env.pop("AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY", None)
