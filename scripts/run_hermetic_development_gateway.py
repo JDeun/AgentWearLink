@@ -158,10 +158,10 @@ def synthetic_agent_gateway_config(model_port: int, workspace: Path) -> dict[str
     }
 
 
-def synthetic_model_received_request(port: int, *, exact_requests: int | None = None) -> bool:
-    """Read only allowlisted counters from a generated loopback mock server."""
+def synthetic_model_request_count(port: int) -> int | None:
+    """Return only one nonnegative numeric aggregate; never provider payloads."""
     if not (1 <= port <= 65535):
-        return False
+        return None
     try:
         request = urllib.request.Request(f"http://127.0.0.1:{port}/health")
         # Never use inherited corporate/user HTTP proxy settings, nor a
@@ -169,16 +169,21 @@ def synthetic_model_received_request(port: int, *, exact_requests: int | None = 
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(request, timeout=3) as response:
             if response.status != 200:
-                return False
+                return None
             data = json.loads(response.read(8192))
         count = (data.get("requests", {}).get("ingress", {}).get("responses")
                  if isinstance(data, dict) and isinstance(data.get("requests"), dict)
                  else None)
-        return (isinstance(count, int) and not isinstance(count, bool)
-                and count >= 1
-                and (exact_requests is None or count == exact_requests))
+        return (count if isinstance(count, int) and not isinstance(count, bool)
+                and 0 <= count <= 10000 else None)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
-        return False
+        return None
+
+
+def synthetic_model_received_request(port: int, *, exact_requests: int | None = None) -> bool:
+    count = synthetic_model_request_count(port)
+    return (count is not None and count >= 1
+            and (exact_requests is None or count == exact_requests))
 
 
 def negative_pairing_gateway_config() -> dict[str, object]:
@@ -657,8 +662,15 @@ def main(argv: list[str] | None = None) -> int:
                                   "native agent turns in the same session with "
                                   "exactly two synthetic model requests.")
                             return 0
-                        print("Isolated real Gateway same-session contract "
-                              "did not prove exactly two model requests.",
+                        count = (synthetic_model_request_count(model_port)
+                                 if model_port is not None else None)
+                        safe_count = str(count) if count is not None else "unobserved"
+                        phase = safe_probe_phase(temp / "probe-phase")
+                        failure = safe_probe_result(temp / "probe-result")
+                        print("Isolated real Gateway same-session contract failed: "
+                              "aggregate-model-ingress=" + safe_count
+                              + " last-phase=" + phase
+                              + " failure-class=" + failure,
                               file=sys.stderr)
                         return 1
                     if args.expect_agent_abort and result.returncode == 0:
