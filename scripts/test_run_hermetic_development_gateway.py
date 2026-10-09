@@ -327,9 +327,13 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                     input_stream=Terminal("isolated-request-123\n"),
                 ))
                 self.assertEqual(command.call_count, 2)
-                self.assertEqual(command.call_args.args[0][-5:],
+                self.assertEqual(command.call_args.args[0][-7:],
                                  ["devices", "approve", "isolated-request-123",
-                                  "--url", "ws://127.0.0.1:19231"])
+                                  "--url", "ws://127.0.0.1:19231",
+                                  "--token", "synthetic-local-token"])
+                self.assertEqual(command.call_args_list[0].args[0][-5:],
+                                 ["--json", "--url", "ws://127.0.0.1:19231",
+                                  "--token", "synthetic-local-token"])
 
             with (
                 patch("run_hermetic_development_gateway.subprocess.run",
