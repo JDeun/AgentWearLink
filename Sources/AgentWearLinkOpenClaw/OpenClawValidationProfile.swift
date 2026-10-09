@@ -65,7 +65,11 @@ private enum OpenClawDevelopmentEphemeralProbeAdmission {
               profile == .readOnly,
               environment[expectedMarker] == "1",
               environment[forbiddenMarker] == nil,
-              environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == nil,
+              ["AWL_DEV_GATEWAY_EXPECT_PAIRING", "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK",
+               "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"]
+                  .filter { environment[$0] == "1" }.count == 1,
+              (expectedMarker == "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"
+               || environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == nil),
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
               environment["AWL_DEV_GATEWAY_HEALTH_ONLY"] == "1",
@@ -119,6 +123,41 @@ public enum OpenClawDevelopmentPositiveHealthPolicy {
             expectedMarker: "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK",
             forbiddenMarker: "AWL_DEV_GATEWAY_EXPECT_PAIRING"
         )
+    }
+}
+
+/// Only for two sequential processes against the same disposable
+/// localhost Gateway. Persisted data is removed with its private temp tree.
+/// This is intentionally NOT Keychain, manual approval or Tailnet proof.
+public enum OpenClawDevelopmentDisposableGrantPolicy {
+    public static func permits(
+        environment: [String: String],
+        isLoopback: Bool,
+        profile: OpenClawValidationProfile
+    ) -> Bool {
+        guard OpenClawDevelopmentEphemeralProbeAdmission.permitsEphemeralIdentity(
+            environment: environment,
+            isLoopback: isLoopback, profile: profile,
+            expectedMarker: "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT",
+            forbiddenMarker: "AWL_DEV_GATEWAY_EXPECT_PAIRING"
+        ), environment["AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"] == nil,
+           let state = environment["OPENCLAW_STATE_DIR"],
+           let raw = environment["AWL_DEV_GATEWAY_GRANT_STORE"],
+           !raw.isEmpty, raw.hasPrefix("/"),
+           URL(fileURLWithPath: raw).standardizedFileURL.path ==
+             URL(fileURLWithPath: state).deletingLastPathComponent()
+                 .appendingPathComponent("grant-cache").standardizedFileURL.path
+        else { return false }
+
+        let second = environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == "1"
+        guard environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == nil || second else {
+            return false
+        }
+        if second {
+            return environment["AWL_OPENCLAW_TOKEN"] == nil
+                || environment["AWL_OPENCLAW_TOKEN"] == ""
+        }
+        return environment["AWL_OPENCLAW_TOKEN"]?.isEmpty == false
     }
 }
 

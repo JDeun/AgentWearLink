@@ -56,12 +56,34 @@ struct AgentWearLinkOpenClawProbe {
             }
         }
         let ephemeralProbe = ephemeralNegativePairing || ephemeralPositiveHealth
-        let identityStore: any OpenClawDeviceIdentityStore = ephemeralProbe
-            ? InMemoryOpenClawDeviceIdentityStore()
-            : KeychainOpenClawDeviceIdentityStore(service: keychainService)
-        let credentialStore: any OpenClawDeviceCredentialStore = ephemeralProbe
-            ? InMemoryOpenClawDeviceCredentialStore()
-            : KeychainOpenClawDeviceCredentialStore(service: keychainService)
+        let disposableGrant = environment["AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"] == "1"
+        if disposableGrant {
+            guard OpenClawDevelopmentDisposableGrantPolicy.permits(
+                environment: environment,
+                isLoopback: endpoint.exposure == .loopback,
+                profile: profile
+            ) else {
+                fail("Disposable device-grant contract requires isolated read-only state.", code: 2)
+            }
+        }
+        // This fixture's disk store exists only under the Python harness's
+        // private, disposable 0700 test directory. Production always uses
+        // the real Keychain; other CI lanes use in-memory stores.
+        let grantDirectory = URL(fileURLWithPath:
+            environment["AWL_DEV_GATEWAY_GRANT_STORE"] ?? "/nonexistent"
+        )
+        let identityStore: any OpenClawDeviceIdentityStore
+        let credentialStore: any OpenClawDeviceCredentialStore
+        if disposableGrant {
+            identityStore = DisposableProbeIdentityStore(directory: grantDirectory)
+            credentialStore = DisposableProbeCredentialStore(directory: grantDirectory)
+        } else if ephemeralProbe {
+            identityStore = InMemoryOpenClawDeviceIdentityStore()
+            credentialStore = InMemoryOpenClawDeviceCredentialStore()
+        } else {
+            identityStore = KeychainOpenClawDeviceIdentityStore(service: keychainService)
+            credentialStore = KeychainOpenClawDeviceCredentialStore(service: keychainService)
+        }
         // This explicit second-process acceptance test must never present
         // the shared Gateway token or bootstrap handoff. It must use the
         // scoped server-approved device grant already saved in Keychain.
@@ -71,7 +93,13 @@ struct AgentWearLinkOpenClawProbe {
                   endpoint.exposure == .loopback,
                   environment["AWL_DEV_KEYCHAIN_NONCE"] != nil,
                   bootstrapToken == nil,
-                  !ephemeralProbe else {
+                  !ephemeralProbe,
+                  (!disposableGrant ||
+                   OpenClawDevelopmentDisposableGrantPolicy.permits(
+                       environment: environment,
+                       isLoopback: endpoint.exposure == .loopback,
+                       profile: profile
+                   )) else {
                 fail("Device-grant reconnect requires isolated local development profile.", code: 2)
             }
             do {
@@ -223,9 +251,12 @@ struct AgentWearLinkOpenClawProbe {
         // Diagnostics may be written only by one mutually exclusive
         // read-only disposable real-Gateway contract. Values are separately
         // classified into a hardcoded vocabulary and never carry raw frames.
-        let negative = environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1"
-        let positive = environment["AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"] == "1"
-        guard negative != positive,
+        let contractCount = [
+            "AWL_DEV_GATEWAY_EXPECT_PAIRING",
+            "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK",
+            "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"
+        ].filter { environment[$0] == "1" }.count
+        guard contractCount == 1,
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
               let stateDir = environment["OPENCLAW_STATE_DIR"],

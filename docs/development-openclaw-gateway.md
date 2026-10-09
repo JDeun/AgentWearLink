@@ -259,3 +259,42 @@ contract does not prove that the operator manually approved the device,
 that the Keychain persisted an issued grant, that a second independent
 process reconnected without shared auth, or that agent text/abort works.
 Those are still outstanding, separate #331 acceptance requirements.
+
+## Disposable, actual-Gateway second-process device-grant test
+
+The opt-in CI lane also exercises the real upstream Gateway and production
+AWL Swift handshake in **two independent processes**, using the same synthetic,
+private loopback identity and a server-issued `operator.read` device grant:
+
+```bash
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout .awl-hermetic-upstream \
+  --revision YOUR_EXACT_40_CHARACTER_COMMIT \
+  --expect-grant-reconnect
+```
+
+The first process authenticates with a randomly generated, disposable shared
+Gateway bearer. Its genuine `hello-ok` device grant and private signing
+identity are persisted **only in a 0700 temporary directory, in 0600 test
+files**. After that first process has exited, a separate Swift process
+loads the scoped grant, rejects any wrong role or missing/over-privileged
+scope, and performs a real `health` RPC with **both shared bearer variables
+absent from its environment**. The production `OpenClawConnectAssembler`
+must assemble a device-token-only handshake, with no bootstrap token.
+An absent or invalid server grant fails the second process; passing the first
+health RPC alone never satisfies this gate.
+
+This mode is disabled without the exact private `grant-cache` path, dedicated
+`AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT` marker, read-only loopback profile
+and synthetic runner nonce. It cannot combine with negative/pure-positive
+contract modes, user configuration, mutation, abort or manual approval.
+The Python harness removes the private files along with the disposable
+Gateway after every attempt and captures no secret artifacts. The test-only
+file store **must never replace production Keychain**.
+
+**Claim boundary:** A passing run proves interoperability and grant reuse
+across process boundaries against a pinned *real* Gateway under local
+auto-approval. It does **not** prove macOS/iOS Keychain behavior, explicit
+human approval, iPhone/Tailnet authenticated reconnection, real agent
+execution/terminal text/abort or physical Meta DAT integration. These remain
+separate acceptance requirements in #331/#117/#118/#56.
