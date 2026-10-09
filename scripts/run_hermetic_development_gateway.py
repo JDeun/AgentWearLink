@@ -407,7 +407,8 @@ def approve_one_isolated_pairing(
     try:
         listed = subprocess.run(
             [node, str(checkout / "dist" / "entry.js"),
-             "devices", "list", "--json", "--url", gateway_url],
+             "devices", "list", "--json", "--url", gateway_url,
+              "--token", token],
             cwd=checkout, env=env,
             stdin=subprocess.DEVNULL, capture_output=True,
             timeout=20, check=False,
@@ -440,7 +441,8 @@ def approve_one_isolated_pairing(
             return False
         approved = subprocess.run(
             [node, str(checkout / "dist" / "entry.js"),
-             "devices", "approve", selected, "--url", gateway_url],
+             "devices", "approve", selected, "--url", gateway_url,
+              "--token", token],
             cwd=checkout, env=env,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, timeout=20, check=False,
