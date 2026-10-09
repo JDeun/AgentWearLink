@@ -1,6 +1,7 @@
 import AgentWearLinkOpenClaw
 import Foundation
 import Darwin
+import Security
 
 @main
 struct AgentWearLinkOpenClawProbe {
@@ -21,6 +22,34 @@ struct AgentWearLinkOpenClawProbe {
             )
         } catch {
             fail("Isolated development Keychain configuration is invalid.", code: 2)
+        }
+
+        let nativeKeychainGrant =
+            environment["AWL_DEV_GATEWAY_NATIVE_KEYCHAIN"] == "1"
+        let keychainCleanup =
+            environment["AWL_DEV_GATEWAY_NATIVE_KEYCHAIN_CLEANUP"] == "1"
+        if nativeKeychainGrant || keychainCleanup {
+            guard nativeKeychainGrant,
+                  OpenClawDevelopmentNativeKeychainGrantPolicy.permits(
+                      environment: environment,
+                      isLoopback: endpoint.exposure == .loopback,
+                      profile: profile
+                  ) else {
+                fail("Native Keychain test requires disposable CI-only read-only mode.", code: 2)
+            }
+        }
+        if keychainCleanup {
+            // Delete only this nonce-isolated CI service; do not enumerate
+            // or modify any personal OpenClaw credentials.
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: keychainService
+            ]
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                fail("Isolated native Keychain cleanup failed.", code: 1)
+            }
+            return
         }
 
         let socket: URLSessionOpenClawWebSocket
@@ -57,7 +86,7 @@ struct AgentWearLinkOpenClawProbe {
         }
         let ephemeralProbe = ephemeralNegativePairing || ephemeralPositiveHealth
         let disposableGrant = environment["AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"] == "1"
-        if disposableGrant {
+        if disposableGrant && !nativeKeychainGrant {
             guard OpenClawDevelopmentDisposableGrantPolicy.permits(
                 environment: environment,
                 isLoopback: endpoint.exposure == .loopback,
@@ -74,7 +103,7 @@ struct AgentWearLinkOpenClawProbe {
         )
         let identityStore: any OpenClawDeviceIdentityStore
         let credentialStore: any OpenClawDeviceCredentialStore
-        if disposableGrant {
+        if disposableGrant && !nativeKeychainGrant {
             identityStore = DisposableProbeIdentityStore(directory: grantDirectory)
             credentialStore = DisposableProbeCredentialStore(directory: grantDirectory)
         } else if ephemeralProbe {
@@ -94,7 +123,7 @@ struct AgentWearLinkOpenClawProbe {
                   environment["AWL_DEV_KEYCHAIN_NONCE"] != nil,
                   bootstrapToken == nil,
                   !ephemeralProbe,
-                  (!disposableGrant ||
+                  (nativeKeychainGrant || !disposableGrant ||
                    OpenClawDevelopmentDisposableGrantPolicy.permits(
                        environment: environment,
                        isLoopback: endpoint.exposure == .loopback,
