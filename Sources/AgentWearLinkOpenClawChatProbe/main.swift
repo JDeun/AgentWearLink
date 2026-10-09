@@ -177,13 +177,18 @@ struct AgentWearLinkOpenClawChatProbe {
             // Two sequential runs target the SAME real Gateway session.
             // Distinct IDs ensure one turn cannot borrow the other's events.
             var observedIDs = Set<UUID>()
-            for _ in 0..<(syntheticAgentSession ? 2 : 1) {
+            var lastProviderIngress: Int? = syntheticAgentSession
+                ? try await syntheticProviderIngressCount(environment: env) : nil
+            for turn in 0..<(syntheticAgentSession ? 2 : 1) {
                 let interactionID = InteractionID()
                 guard observedIDs.insert(interactionID.rawValue).inserted else {
                     throw DevelopmentGatewayProbeError.duplicateInteractionID
                 }
                 let responses = await adapter.responses(
-                    for: AgentRequest(interactionID: interactionID, text: message)
+                    for: AgentRequest(
+                        interactionID: interactionID,
+                        text: syntheticAgentSession ? message + " Turn \(turn + 1)." : message
+                    )
                 )
                 var deltaCount = 0
                 var terminalCount = 0
@@ -212,6 +217,18 @@ struct AgentWearLinkOpenClawChatProbe {
                     guard terminalCount == 1 else {
                         throw DevelopmentGatewayProbeError.missingTerminalCompletion
                     }
+                }
+                if syntheticAgentSession {
+                    // The upstream runtime may make multiple LLM calls per
+                    // interaction. The proof is *per-turn ingress growth*,
+                    // not an unjustified exactly-one inference assumption.
+                    let after = try await syntheticProviderIngressCount(
+                        environment: env
+                    )
+                    guard let before = lastProviderIngress, after > before else {
+                        throw DevelopmentGatewayProbeError.missingPerTurnProviderIngress
+                    }
+                    lastProviderIngress = after
                 }
             }
             if syntheticAgentSession {
@@ -258,6 +275,7 @@ struct AgentWearLinkOpenClawChatProbe {
             case .missingSyntheticProviderIngress: category = "chat-provider-not-executing"
             case .duplicateInteractionID: category = "chat-duplicate-interaction"
             case .unexpectedInteractionID: category = "chat-interaction-mismatch"
+            case .missingPerTurnProviderIngress: category = "chat-no-turn-ingress"
             }
         } else {
             category = "chat-other-error"
@@ -288,6 +306,37 @@ struct AgentWearLinkOpenClawChatProbe {
     /// Bounded check of the locally owned upstream mock's aggregate ingress
     /// counter. The strict abort policy already validated this numeric port;
     /// we do not fetch a URL from the Gateway or expose any request content.
+    private static func syntheticProviderIngressCount(
+        environment: [String: String]
+    ) async throws -> Int {
+        guard let raw = environment["AWL_DEV_GATEWAY_MODEL_PORT"],
+              let port = Int(raw), (1...65535).contains(port),
+              String(port) == raw,
+              let url = URL(string: "http://127.0.0.1:\(port)/health")
+        else { throw DevelopmentGatewayProbeError.missingSyntheticProviderIngress }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 1
+        configuration.timeoutIntervalForResource = 2
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        for _ in 0..<12 {
+            if let (data, response) = try? await session.data(from: url),
+               (response as? HTTPURLResponse)?.statusCode == 200,
+               data.count <= 8192,
+               let object = try? JSONSerialization.jsonObject(with: data)
+                   as? [String: Any],
+               let requests = object["requests"] as? [String: Any],
+               let ingress = requests["ingress"] as? [String: Any],
+               let count = ingress["responses"] as? Int,
+               (0...10000).contains(count) {
+                return count
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw DevelopmentGatewayProbeError.missingSyntheticProviderIngress
+    }
+
     private static func waitForSyntheticProviderIngress(
         environment: [String: String]
     ) async throws {
@@ -370,4 +419,5 @@ private enum DevelopmentGatewayProbeError: Error {
     case missingSyntheticProviderIngress
     case duplicateInteractionID
     case unexpectedInteractionID
+    case missingPerTurnProviderIngress
 }
