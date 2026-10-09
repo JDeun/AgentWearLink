@@ -130,6 +130,15 @@ jobs:
             --checkout .awl-hermetic-upstream \
             --revision "$OPENCLAW_REVISION" \
             --expect-agent-stream
+      - name: Real agent accepted-run abort after held model begins execution
+        id: agent-abort
+        shell: bash
+        timeout-minutes: 12
+        run: |
+          python3 scripts/run_hermetic_development_gateway.py \
+            --checkout .awl-hermetic-upstream \
+            --revision "$OPENCLAW_REVISION" \
+            --expect-agent-abort
       - name: Evidence boundary
         if: always()
         env:
@@ -137,6 +146,7 @@ jobs:
           POSITIVE_HEALTH_OUTCOME: ${{ steps.positive-health.outcome }}
           GRANT_OUTCOME: ${{ steps.disposable-grant.outcome }}
           AGENT_STREAM_OUTCOME: ${{ steps.agent-stream.outcome }}
+          AGENT_ABORT_OUTCOME: ${{ steps.agent-abort.outcome }}
         run: |
           if [[ "$NEGATIVE_GATE_OUTCOME" == "success" ]]; then
             echo "Negative contract: unapproved read-only identity rejected."
@@ -158,4 +168,9 @@ jobs:
           else
             echo "Real Gateway synthetic-model native agent stream FAILED or not executed."
           fi
-          echo "These are NOT operator-approved pairing, Keychain persistence, real-model quality, abort or Tailnet evidence."
+          if [[ "$AGENT_ABORT_OUTCOME" == "success" ]]; then
+            echo "Real Gateway confirms active accepted-run chat.abort after held synthetic model ingress."
+          else
+            echo "Real Gateway accepted-run abort FAILED or not executed."
+          fi
+          echo "These are NOT operator-approved pairing, Keychain persistence, real-model quality or Tailnet evidence."
