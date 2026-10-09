@@ -161,10 +161,64 @@ class RemainingOpenClawXCTestShardsTests(unittest.TestCase):
             self.assertEqual(main(), PRESTART_XCTEST_TIMEOUT)
             self.assertEqual(run.call_count, 2)
 
+    def test_repeated_pre_suite_batch_stall_requires_every_single_method_pass(self):
+        methods = ["testCaseA", "testCaseB", "testCaseC"]
+        with (
+            patch("run_openclaw_remaining_tests.discover_remaining",
+                  return_value=["OpenClawRecoveryMatrixTests"]),
+            patch("run_openclaw_remaining_tests.discover_method_shards",
+                  return_value=methods),
+            patch("run_openclaw_remaining_tests.run_bounded",
+                  side_effect=[PRESTART_XCTEST_TIMEOUT, PRESTART_XCTEST_TIMEOUT, 0, 0, 0]) as run,
+        ):
+            self.assertEqual(main(), 0)
+            self.assertEqual(run.call_count, 5)
+            self.assertEqual(run.call_args_list[0], run.call_args_list[1])
+            recovered = run.call_args_list[2:]
+            for i, single in enumerate(methods):
+                self.assertEqual(
+                    recovered[i].kwargs["expected_xctest_cases"],
+                    [f"AgentWearLinkOpenClawTests.OpenClawRecoveryMatrixTests {single}"],
+                )
+            self.assertEqual(
+                len({item.args[0][-1] for item in recovered}), 3
+            )
+
+    def test_single_method_fallback_fails_closed_on_real_failure(self):
+        methods = ["testCaseA", "testCaseB", "testCaseC"]
+        with (
+            patch("run_openclaw_remaining_tests.discover_remaining",
+                  return_value=["OpenClawRecoveryMatrixTests"]),
+            patch("run_openclaw_remaining_tests.discover_method_shards",
+                  return_value=methods),
+            patch("run_openclaw_remaining_tests.run_bounded",
+                  side_effect=[PRESTART_XCTEST_TIMEOUT, PRESTART_XCTEST_TIMEOUT, 0, 1]) as run,
+        ):
+            self.assertEqual(main(), 1)
+            self.assertEqual(run.call_count, 4)
+
+    def test_single_method_fallback_retries_only_pre_suite_stall(self):
+        methods = ["testCaseA", "testCaseB"]
+        with (
+            patch("run_openclaw_remaining_tests.discover_remaining",
+                  return_value=["OpenClawRecoveryMatrixTests"]),
+            patch("run_openclaw_remaining_tests.discover_method_shards",
+                  return_value=methods),
+            patch("run_openclaw_remaining_tests.run_bounded",
+                  side_effect=[PRESTART_XCTEST_TIMEOUT, PRESTART_XCTEST_TIMEOUT,
+                               PRESTART_XCTEST_TIMEOUT, 0, 0]) as run,
+        ):
+            self.assertEqual(main(), 0)
+            self.assertEqual(run.call_count, 5)
+            self.assertEqual(run.call_args_list[2], run.call_args_list[3])
+
     def test_method_batches_refuse_duplicate_or_untrusted_names(self):
         for names in ([], ["testGood", "testGood"], ["testBad|Other"]):
             with self.assertRaises(ValueError):
                 method_batches("OpenClawRecoveryMatrixTests", names)
+        for size in (0, -1, METHOD_GROUP_SIZE + 1):
+            with self.assertRaises(ValueError):
+                method_batches("OpenClawRecoveryMatrixTests", ["testGood"], group_size=size)
 
 
 if __name__ == "__main__":
