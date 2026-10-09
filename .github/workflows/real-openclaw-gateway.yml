@@ -139,6 +139,15 @@ jobs:
             --checkout .awl-hermetic-upstream \
             --revision "$OPENCLAW_REVISION" \
             --expect-agent-abort
+      - name: Real Gateway two-turn same-session native agent contract
+        id: agent-session
+        shell: bash
+        timeout-minutes: 12
+        run: |
+          python3 scripts/run_hermetic_development_gateway.py \
+            --checkout .awl-hermetic-upstream \
+            --revision "$OPENCLAW_REVISION" \
+            --expect-agent-session
       - name: Evidence boundary
         if: always()
         env:
@@ -147,6 +156,7 @@ jobs:
           GRANT_OUTCOME: ${{ steps.disposable-grant.outcome }}
           AGENT_STREAM_OUTCOME: ${{ steps.agent-stream.outcome }}
           AGENT_ABORT_OUTCOME: ${{ steps.agent-abort.outcome }}
+          AGENT_SESSION_OUTCOME: ${{ steps.agent-session.outcome }}
         run: |
           if [[ "$NEGATIVE_GATE_OUTCOME" == "success" ]]; then
             echo "Negative contract: unapproved read-only identity rejected."
@@ -172,5 +182,10 @@ jobs:
             echo "Real Gateway confirms active accepted-run chat.abort after held synthetic model ingress."
           else
             echo "Real Gateway accepted-run abort FAILED or not executed."
+          fi
+          if [[ "$AGENT_SESSION_OUTCOME" == "success" ]]; then
+            echo "Real Gateway sequential same-session turns complete with exactly two model ingress requests."
+          else
+            echo "Real Gateway same-session native agent contract FAILED or not executed."
           fi
           echo "These are NOT operator-approved pairing, Keychain persistence, real-model quality or Tailnet evidence."
