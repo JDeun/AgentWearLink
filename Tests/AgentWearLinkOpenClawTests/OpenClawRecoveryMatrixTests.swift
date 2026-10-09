@@ -15,6 +15,7 @@ private struct SupervisorPairingResponse: Sendable {
 
 private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var connectCalls = 0
+    private let connectionAttemptSignal = OpenClawTestCountSignal()
     private let pairingResponseSignal = OpenClawTestCountSignal()
     private var transportGenerationValue: UInt64 = 0
     private var handshakeStep = 0
@@ -35,14 +36,22 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
         connectCalls += 1
         transportGenerationValue &+= 1
         handshakeStep = 0
-
-        guard blockedConnectCall == connectCalls else { return }
+        // Publish a nonblocked attempt after mock transport state is ready.
+        // For deliberately blocked connects, only signal AFTER installing
+        // the release continuation. Otherwise an awakened test can call
+        // releaseBlockedConnect() before its continuation exists, deadlocking.
+        guard blockedConnectCall == connectCalls else {
+            await connectionAttemptSignal.increment()
+            return
+        }
         blockedConnectStarted = true
         blockedConnectStartedWaiter?.resume()
         blockedConnectStartedWaiter = nil
 
         await withCheckedContinuation { continuation in
             blockedConnectRelease = continuation
+            // The test observer is only notified after release is safe.
+            Task { await connectionAttemptSignal.increment() }
         }
 
         blockedConnectCall = nil
@@ -156,6 +165,14 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     }
 
     func connectionCount() -> Int { connectCalls }
+
+    func waitForConnectionCount(atLeast target: Int) async throws {
+        try await connectionAttemptSignal.wait(
+            until: target,
+            timeout: .seconds(5),
+            label: "socket connect attempt count"
+        )
+    }
     func closeCount() -> Int { closeCalls }
     func sentCount() -> Int { sentFrames.count }
 
@@ -290,11 +307,7 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
         // The configured gateway tick interval is 15 seconds. Reaching the
         // second connect inside the bounded test deadline proves recovery came
         // from the dispatcher failure signal, not the periodic watchdog.
-        try await waitUntilOpenClawTestCondition(
-            "receive failure triggered reconnect immediately"
-        ) {
-            await fixture.socket.connectionCount() >= 2
-        }
+        try await fixture.socket.waitForConnectionCount(atLeast: 2)
 
         let reconnectingState = await fixture.state.connectionState
         XCTAssertNotEqual(reconnectingState, .ready)
@@ -523,11 +536,10 @@ final class OpenClawRecoveryMatrixTests: XCTestCase {
             )
         }
 
-        try await waitUntilOpenClawTestCondition(
-            "pairing-required reconnect observed"
-        ) {
-            await fixture.socket.connectionCount() >= 2
-        }
+        // Await the concrete mocked socket attempt, not a one-second
+        // scheduler-sensitive polling loop. The concurrent reconnect task
+        // may have been created but not yet scheduled on busy CI hosts.
+        try await fixture.socket.waitForConnectionCount(atLeast: 2)
         await reconnect.value
 
         let connectionCount = await fixture.socket.connectionCount()
