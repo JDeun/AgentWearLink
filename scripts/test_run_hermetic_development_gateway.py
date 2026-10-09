@@ -377,6 +377,28 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                 ]), 2)
                 spawn.assert_not_called()
 
+    def test_native_keychain_mode_requires_ci_opt_in_and_exclusive_contract(self):
+        args = ["--checkout", "/nonexistent", "--revision", "a" * 40,
+                "--expect-native-keychain-grant-reconnect"]
+        with (
+            patch.dict(os.environ, {"CI": "false",
+                                    "AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION": "0"}),
+            patch("run_hermetic_development_gateway.subprocess.Popen") as spawn,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(main(args), 2)
+            spawn.assert_not_called()
+        for extra in (["--expect-grant-reconnect"],
+                      ["--expect-agent-stream"],
+                      ["--approve-isolated-pairing"],
+                      ["--full-chat"]):
+            with (
+                patch("run_hermetic_development_gateway.subprocess.Popen") as spawn,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(main(args + extra), 2)
+                spawn.assert_not_called()
+
     def test_positive_health_mode_rejects_approval_chat_and_external_config(self):
         for extra in (
             ["--expect-pairing-required"], ["--approve-isolated-pairing"],
