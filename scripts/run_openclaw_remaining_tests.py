@@ -77,7 +77,10 @@ def discover_method_shards(root: Path, name: str) -> list[str]:
     return sorted(methods)
 
 
-def method_batches(name: str, methods: list[str]) -> list[tuple[list[str], str]]:
+def method_batches(
+    name: str, methods: list[str], *,
+    group_size: int = METHOD_GROUP_SIZE
+) -> list[tuple[list[str], str]]:
     """Partition each discovered XCTest method exactly once into regex filters.
 
     SwiftPM supports regex --filter; [./] accepts its module/class separator
@@ -87,11 +90,13 @@ def method_batches(name: str, methods: list[str]) -> list[tuple[list[str], str]]
         raise ValueError("Invalid XCTest class identifier")
     if not methods or len(set(methods)) != len(methods):
         raise ValueError("Missing or duplicate XCTest methods")
+    if not (1 <= group_size <= METHOD_GROUP_SIZE):
+        raise ValueError("Invalid XCTest batch group size")
     if any(re.fullmatch(r"test[A-Za-z0-9_]+", method) is None for method in methods):
         raise ValueError("Invalid XCTest method name")
     batches: list[tuple[list[str], str]] = []
-    for offset in range(0, len(methods), METHOD_GROUP_SIZE):
-        names = methods[offset:offset + METHOD_GROUP_SIZE]
+    for offset in range(0, len(methods), group_size):
+        names = methods[offset:offset + group_size]
         pattern = (
             r"AgentWearLinkOpenClawTests[./]" + name +
             r"[./](?:" + "|".join(names) + r")$"
@@ -153,6 +158,47 @@ def main() -> int:
                         command, PER_METHOD_GROUP_DEADLINE_SECONDS,
                         expected_xctest_cases=expected,
                     )
+                if code == PRESTART_XCTEST_TIMEOUT and len(names) > 1:
+                    # A second full-batch pre-suite stall is not evidence of
+                    # passing. Bisect into *every* exact test-method filter;
+                    # require each method's own successful XCTest banner.
+                    # Fail on any started-test failure or repeated unstarted
+                    # method. Never waive one test or retry a partial run.
+                    print(
+                        "OpenClaw XCTest batch failed to start twice: "
+                        "isolating every selected method with strict proof.",
+                        flush=True,
+                    )
+                    code = 0
+                    for single_names, single_filter in method_batches(
+                        name, names, group_size=1
+                    ):
+                        single = single_names[0]
+                        single_command = ["swift", "test", "--filter", single_filter]
+                        single_expected = [
+                            f"AgentWearLinkOpenClawTests.{name} {single}"
+                        ]
+                        code = run_bounded(
+                            single_command, PER_METHOD_GROUP_DEADLINE_SECONDS,
+                            expected_xctest_cases=single_expected,
+                        )
+                        if code == PRESTART_XCTEST_TIMEOUT:
+                            print(
+                                "OpenClaw XCTest single method pre-suite stall: "
+                                f"one bounded retry for {name}.{single}.",
+                                flush=True,
+                            )
+                            code = run_bounded(
+                                single_command, PER_METHOD_GROUP_DEADLINE_SECONDS,
+                                expected_xctest_cases=single_expected,
+                            )
+                        if code != 0:
+                            print(
+                                "OpenClaw XCTest isolated method failed: "
+                                f"{name}.{single}; exit={code}",
+                                file=sys.stderr,
+                            )
+                            break
                 if code != 0:
                     print(f"OpenClaw XCTest batch failed or timed out: "
                           f"{name}: {', '.join(names)}; exit={code}",
