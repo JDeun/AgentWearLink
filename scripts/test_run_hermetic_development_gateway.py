@@ -20,6 +20,7 @@ from run_hermetic_development_gateway import (
     safe_probe_phase,
     safe_probe_result,
     negative_pairing_gateway_config,
+    positive_health_gateway_config,
     may_retry_negative_gateway_startup,
 )
 
@@ -42,6 +43,18 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
             self.assertFalse(may_retry_negative_gateway_startup(
                 **(good | changes)
             ))
+
+    def test_positive_hello_health_explicitly_uses_only_disposable_auto_approval(self):
+        config = positive_health_gateway_config()
+        pairing = config["gateway"]["nodes"]["pairing"]
+        self.assertIs(pairing["autoApproveLocal"], True)
+        self.assertEqual(pairing["autoApproveCidrs"], [])
+        self.assertEqual(set(config), {"gateway"})
+        self.assertEqual(set(config["gateway"]), {"nodes"})
+        self.assertIs(
+            negative_pairing_gateway_config()["gateway"]["nodes"]["pairing"]["autoApproveLocal"],
+            False,
+        )
 
     def test_negative_gateway_disables_upstream_default_auto_pairing(self):
         config = negative_pairing_gateway_config()
@@ -268,6 +281,23 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
             self.assertEqual(safe_probe_result(path), "unobserved")
             path.write_text("secret-device-id=abcd\ngateway-auth-denied")
             self.assertEqual(safe_probe_result(path), "unobserved")
+
+    def test_positive_health_mode_rejects_approval_chat_and_external_config(self):
+        for extra in (
+            ["--expect-pairing-required"], ["--approve-isolated-pairing"],
+            ["--full-chat"], ["--prove-abort"],
+            ["--config-template", "/tmp/synthetic.json"],
+        ):
+            with (
+                patch("run_hermetic_development_gateway.subprocess.Popen") as spawn,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(main([
+                    "--checkout", "/nonexistent",
+                    "--revision", "a" * 40,
+                    "--expect-health-ok", *extra,
+                ]), 2)
+                spawn.assert_not_called()
 
     def test_negative_pairing_mode_cannot_be_combined_with_approval_or_chat(self):
         for extra in (

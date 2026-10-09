@@ -36,6 +36,7 @@ struct AgentWearLinkOpenClawProbe {
         // the CI-only negative probe uses disposable in-memory stores.
         // Operator-approved and tokenless-reuse probes retain real Keychain.
         let ephemeralNegativePairing = environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1"
+        let ephemeralPositiveHealth = environment["AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"] == "1"
         if ephemeralNegativePairing {
             guard OpenClawDevelopmentNegativePairingPolicy.permitsEphemeralIdentity(
                 environment: environment,
@@ -45,10 +46,20 @@ struct AgentWearLinkOpenClawProbe {
                 fail("Negative pairing probe requires isolated loopback read-only state.", code: 2)
             }
         }
-        let identityStore: any OpenClawDeviceIdentityStore = ephemeralNegativePairing
+        if ephemeralPositiveHealth {
+            guard OpenClawDevelopmentPositiveHealthPolicy.permitsEphemeralIdentity(
+                environment: environment,
+                isLoopback: endpoint.exposure == .loopback,
+                profile: profile
+            ) else {
+                fail("Positive health probe requires isolated loopback read-only state.", code: 2)
+            }
+        }
+        let ephemeralProbe = ephemeralNegativePairing || ephemeralPositiveHealth
+        let identityStore: any OpenClawDeviceIdentityStore = ephemeralProbe
             ? InMemoryOpenClawDeviceIdentityStore()
             : KeychainOpenClawDeviceIdentityStore(service: keychainService)
-        let credentialStore: any OpenClawDeviceCredentialStore = ephemeralNegativePairing
+        let credentialStore: any OpenClawDeviceCredentialStore = ephemeralProbe
             ? InMemoryOpenClawDeviceCredentialStore()
             : KeychainOpenClawDeviceCredentialStore(service: keychainService)
         // This explicit second-process acceptance test must never present
@@ -60,7 +71,7 @@ struct AgentWearLinkOpenClawProbe {
                   endpoint.exposure == .loopback,
                   environment["AWL_DEV_KEYCHAIN_NONCE"] != nil,
                   bootstrapToken == nil,
-                  !ephemeralNegativePairing else {
+                  !ephemeralProbe else {
                 fail("Device-grant reconnect requires isolated local development profile.", code: 2)
             }
             do {
@@ -209,7 +220,12 @@ struct AgentWearLinkOpenClawProbe {
         _ value: String, environment: [String: String],
         key: String, filename: String
     ) {
-        guard environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1",
+        // Diagnostics may be written only by one mutually exclusive
+        // read-only disposable real-Gateway contract. Values are separately
+        // classified into a hardcoded vocabulary and never carry raw frames.
+        let negative = environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1"
+        let positive = environment["AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"] == "1"
+        guard negative != positive,
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
               let stateDir = environment["OPENCLAW_STATE_DIR"],

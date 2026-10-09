@@ -53,15 +53,19 @@ public enum OpenClawReadOnlyGrantAdmission {
     }
 }
 
-public enum OpenClawDevelopmentNegativePairingPolicy {
-    public static func permitsEphemeralIdentity(
+private enum OpenClawDevelopmentEphemeralProbeAdmission {
+    static func permitsEphemeralIdentity(
         environment: [String: String],
         isLoopback: Bool,
-        profile: OpenClawValidationProfile
+        profile: OpenClawValidationProfile,
+        expectedMarker: String,
+        forbiddenMarker: String
     ) -> Bool {
         guard isLoopback,
               profile == .readOnly,
-              environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == "1",
+              environment[expectedMarker] == "1",
+              environment[forbiddenMarker] == nil,
+              environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == nil,
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
               environment["AWL_DEV_GATEWAY_HEALTH_ONLY"] == "1",
@@ -87,6 +91,34 @@ public enum OpenClawDevelopmentNegativePairingPolicy {
         return path.lastPathComponent == "state"
             && path.deletingLastPathComponent().lastPathComponent
                 .hasPrefix("awl-real-dev-gateway-")
+    }
+}
+
+public enum OpenClawDevelopmentNegativePairingPolicy {
+    public static func permitsEphemeralIdentity(
+        environment: [String: String], isLoopback: Bool,
+        profile: OpenClawValidationProfile
+    ) -> Bool {
+        OpenClawDevelopmentEphemeralProbeAdmission.permitsEphemeralIdentity(
+            environment: environment, isLoopback: isLoopback, profile: profile,
+            expectedMarker: "AWL_DEV_GATEWAY_EXPECT_PAIRING",
+            forbiddenMarker: "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"
+        )
+    }
+}
+
+/// Proves only real Gateway hello-ok and read-only health with ephemeral stores.
+/// Persistent Keychain grants and tokenless reconnect are separately tested.
+public enum OpenClawDevelopmentPositiveHealthPolicy {
+    public static func permitsEphemeralIdentity(
+        environment: [String: String], isLoopback: Bool,
+        profile: OpenClawValidationProfile
+    ) -> Bool {
+        OpenClawDevelopmentEphemeralProbeAdmission.permitsEphemeralIdentity(
+            environment: environment, isLoopback: isLoopback, profile: profile,
+            expectedMarker: "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK",
+            forbiddenMarker: "AWL_DEV_GATEWAY_EXPECT_PAIRING"
+        )
     }
 }
 

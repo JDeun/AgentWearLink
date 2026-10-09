@@ -89,6 +89,20 @@ def may_retry_negative_gateway_startup(
     )
 
 
+def positive_health_gateway_config() -> dict[str, object]:
+    """Enable local approval only on a disposable synthetic positive Gateway."""
+    return {
+        "gateway": {
+            "nodes": {
+                "pairing": {
+                    "autoApproveLocal": True,
+                    "autoApproveCidrs": [],
+                }
+            }
+        }
+    }
+
+
 def negative_pairing_gateway_config() -> dict[str, object]:
     """Disable the *upstream default* silent local device approval.
 
@@ -344,11 +358,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="Allow a human to approve exact pending IDs on this "
                              "disposable Gateway only; TTY required")
     parser.add_argument("--expect-pairing-required", action="store_true",
-                        help="Validate that the real ephemeral Gateway rejects an "
-                             "unapproved client, without granting permission")
+                        help="Require unapproved real Gateway pairing rejection")
+    parser.add_argument("--expect-health-ok", action="store_true",
+                        help="Require real localhost hello-ok and health with ephemeral identity")
     args = parser.parse_args(argv)
-    if args.expect_pairing_required and (args.approve_isolated_pairing or args.full_chat or args.prove_abort):
-        print("Isolated Gateway runner: negative pairing test must be read-only.",
+    contract = args.expect_pairing_required or args.expect_health_ok
+    if (args.expect_pairing_required and args.expect_health_ok
+            or contract and (args.approve_isolated_pairing or args.full_chat
+                             or args.prove_abort or args.config_template)):
+        print("Isolated Gateway runner: synthetic contract modes must be "
+              "exclusive, read-only and without external config.",
               file=sys.stderr)
         return 2
 
@@ -383,13 +402,15 @@ def main(argv: list[str] | None = None) -> int:
             shutil.copyfile(template, temp / "state" / "openclaw.json")
             (temp / "state" / "openclaw.json").chmod(0o600)
 
-        if args.expect_pairing_required:
-            # The pinned upstream defaults to silent localhost approval.
-            # Force explicit device-pairing rejection in disposable state only.
-            # This is not a production Mac mini / operator Gateway setting.
+        if contract:
+            # These configs exist solely inside the disposable loopback state.
             configuration = temp / "state" / "openclaw.json"
+            config_data = (
+                negative_pairing_gateway_config() if args.expect_pairing_required
+                else positive_health_gateway_config()
+            )
             with configuration.open("x", encoding="utf-8") as stream:
-                json.dump(negative_pairing_gateway_config(), stream)
+                json.dump(config_data, stream)
             configuration.chmod(0o600)
 
         port = local_port()
@@ -398,11 +419,11 @@ def main(argv: list[str] | None = None) -> int:
             revision=args.revision, token=secrets.token_urlsafe(32),
             full_chat=args.full_chat, prove_abort=args.prove_abort,
         )
-        if args.expect_pairing_required:
-            # Narrow negative test to a single independently built Swift
-            # executable and one unapproved device challenge. The status
-            # classifier never emits Gateway responses or private identifiers.
-            env["AWL_DEV_GATEWAY_EXPECT_PAIRING"] = "1"
+        if contract:
+            # An isolated, pre-built read-only Swift probe; no Keychain use.
+            marker = ("AWL_DEV_GATEWAY_EXPECT_PAIRING" if args.expect_pairing_required
+                      else "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK")
+            env[marker] = "1"
             env["AWL_DEV_GATEWAY_USE_BUILT_PROBE"] = "1"
             env["AWL_DEV_GATEWAY_PHASE_FILE"] = str(temp / "probe-phase")
             env["AWL_DEV_GATEWAY_RESULT_FILE"] = str(temp / "probe-result")
@@ -441,9 +462,9 @@ def main(argv: list[str] | None = None) -> int:
             # Only the exact request ID explicitly entered by a human can
             # enable local pairing. Read-only and write-probe identities
             # require independent approvals, never implicit privilege reuse.
-            attempt_limit = 6 if args.expect_pairing_required else 3
+            attempt_limit = 6 if contract else 3
             for approval_attempt in range(attempt_limit):
-                if args.expect_pairing_required:
+                if contract:
                     # A failed attempt cannot lend stale evidence to the next.
                     (temp / "probe-phase").unlink(missing_ok=True)
                     (temp / "probe-result").unlink(missing_ok=True)
@@ -460,9 +481,12 @@ def main(argv: list[str] | None = None) -> int:
                     print("Isolated Gateway runner: bounded probes failed.",
                           file=sys.stderr)
                     return 1
-                if args.expect_pairing_required:
-                    if result.returncode == 3:
+                if contract:
+                    if args.expect_pairing_required and result.returncode == 3:
                         print("Isolated real Gateway rejected unapproved read-only identity as expected.")
+                        return 0
+                    if args.expect_health_ok and result.returncode == 0:
+                        print("Isolated real Gateway authenticated read-only health accepted.")
                         return 0
                     categories = {
                         0: "unexpected-auth-success",
@@ -485,7 +509,9 @@ def main(argv: list[str] | None = None) -> int:
                               file=sys.stderr)
                         time.sleep(1)
                         continue
-                    print("Isolated real Gateway negative-contract failed: "
+                    mode = ("negative-contract" if args.expect_pairing_required
+                            else "positive-health-contract")
+                    print("Isolated real Gateway " + mode + " failed: "
                           + category + " (last-phase=" + phase
                           + ", failure-class=" + failure + ")",
                           file=sys.stderr)
