@@ -165,6 +165,7 @@ jobs:
           NEGATIVE_GATE_OUTCOME: ${{ steps.negative-contract.outcome }}
           POSITIVE_HEALTH_OUTCOME: ${{ steps.positive-health.outcome }}
           GRANT_OUTCOME: ${{ steps.disposable-grant.outcome }}
+          NATIVE_KEYCHAIN_OUTCOME: ${{ steps.native-keychain-grant.outcome }}
           AGENT_STREAM_OUTCOME: ${{ steps.agent-stream.outcome }}
           AGENT_ABORT_OUTCOME: ${{ steps.agent-abort.outcome }}
           AGENT_SESSION_OUTCOME: ${{ steps.agent-session.outcome }}
@@ -184,6 +185,11 @@ jobs:
           else
             echo "Disposable grant-only reconnect FAILED or was not executed."
           fi
+          if [[ "$NATIVE_KEYCHAIN_OUTCOME" == "success" ]]; then
+            echo "Real Gateway grant persisted in native CI macOS Keychain and reused by a second Swift process without a shared bearer."
+          else
+            echo "Real Gateway native Keychain grant process-boundary proof FAILED or not executed."
+          fi
           if [[ "$AGENT_STREAM_OUTCOME" == "success" ]]; then
             echo "Real Gateway native agent emits deltas and a terminal event with a synthetic local model."
           else
@@ -195,8 +201,8 @@ jobs:
             echo "Real Gateway accepted-run abort FAILED or not executed."
           fi
           if [[ "$AGENT_SESSION_OUTCOME" == "success" ]]; then
-            echo "Real Gateway sequential same-session turns complete with exactly two model ingress requests."
+            echo "Real Gateway sequential same-session turns complete with distinct interactions and per-turn synthetic model ingress (request count is not exactly-once proof)."
           else
             echo "Real Gateway same-session native agent contract FAILED or not executed."
           fi
-          echo "These are NOT operator-approved pairing, Keychain persistence, real-model quality or Tailnet evidence."
+          echo "These are NOT operator-approved pairing, iOS Keychain, real-model quality, user Tailnet, or wearable/iPhone hardware evidence."
