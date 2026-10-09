@@ -8,6 +8,18 @@ cd "$root"
 python3 scripts/dev_gateway_preflight.py
 export AWL_OPENCLAW_EXPOSURE=loopback
 
+if [[ "${AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM:-0}" == "1" ]]; then
+  # A real upstream Gateway handles the production native-agent adapter,
+  # backed ONLY by its synthetic localhost OpenAI Responses test server.
+  # CI must use the separately verified prebuilt Swift chat executable.
+  export AWL_ALLOW_MUTATING_PROBE=1
+  export AWL_DEV_GATEWAY_ASSERT=1
+  export AWL_OPENCLAW_CHAT_MESSAGE="AWL isolated integration check: reply with one short sentence."
+  echo "Checking real native-agent deltas and terminal completion with synthetic model"
+  python3 scripts/dev_gateway_probe_runner.py awl-openclaw-chat-probe
+  exit $?
+fi
+
 if [[ "${AWL_DEV_GATEWAY_EXPECT_PAIRING:-0}" == "1" ]]; then
   # Exactly one freshly generated, unapproved identity. No permission grant
   # or follow-up health probe is attempted in this negative contract.

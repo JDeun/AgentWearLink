@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 from pathlib import Path
 
 from dev_gateway_preflight import validate_config
@@ -41,6 +42,7 @@ _SAFE_PROBE_PHASES = frozenset({
     "gateway-profile-unavailable",
     "gateway-auth-denied", "gateway-unrecognized", "authenticated",
     "health-accepted", "pairing-required", "probe-error",
+    "chat-started", "chat-authenticated", "chat-delta", "chat-terminal",
 })
 _SAFE_PROBE_RESULTS = frozenset({
     "challenge-timeout", "hello-timeout", "unexpected-connect-response",
@@ -50,6 +52,7 @@ _SAFE_PROBE_RESULTS = frozenset({
     "gateway-pairing-code", "gateway-device-token-rejected",
     "gateway-other", "transport-disconnected", "protocol-mismatch",
     "gateway-state-error", "frame-invalid", "decoding-failed", "other-error",
+    "chat-no-delta", "chat-no-terminal", "chat-session-mismatch", "chat-other-error",
 })
 
 
@@ -101,6 +104,74 @@ def positive_health_gateway_config() -> dict[str, object]:
             }
         }
     }
+
+
+def synthetic_agent_gateway_config(model_port: int, workspace: Path) -> dict[str, object]:
+    """Pinned real Gateway + its OWN local mock Responses model; no credentials.
+
+    A concrete agent turn goes through real Gateway RPC/run/event handling,
+    but the deterministic model is NOT a live LLM or a private provider.
+    """
+    if not (1 <= model_port <= 65535):
+        raise ValueError("invalid synthetic model port")
+    return {
+        **positive_health_gateway_config(),
+        "models": {
+            "mode": "replace",
+            "catalogRefresh": {"enabled": False},
+            "providers": {
+                "openai": {
+                    "baseUrl": f"http://127.0.0.1:{model_port}/v1",
+                    "apiKey": "sk-awl-synthetic-test-not-secret",
+                    "api": "openai-responses",
+                    "agentRuntime": {"id": "openclaw"},
+                    "request": {"allowPrivateNetwork": True},
+                    "models": [{
+                        "id": "gpt-5.6-luna",
+                        "name": "AWL Synthetic Fixture",
+                        "api": "openai-responses",
+                        "agentRuntime": {"id": "openclaw"},
+                        "reasoning": False,
+                        "input": ["text"],
+                        "cost": {
+                            "input": 0, "output": 0,
+                            "cacheRead": 0, "cacheWrite": 0,
+                        },
+                        "contextWindow": 32000,
+                        "maxTokens": 2048,
+                    }],
+                }
+            },
+        },
+        "agents": {"defaults": {
+            "workspace": str(workspace),
+            "model": {"primary": "openai/gpt-5.6-luna"},
+            "models": {"openai/gpt-5.6-luna": {
+                "params": {"transport": "sse", "openaiWsWarmup": False},
+            }},
+        }},
+        "tools": {"profile": "minimal", "deny": ["*"]},
+    }
+
+
+def synthetic_model_received_request(port: int) -> bool:
+    """Read only allowlisted counters from a generated loopback mock server."""
+    if not (1 <= port <= 65535):
+        return False
+    try:
+        request = urllib.request.Request(f"http://127.0.0.1:{port}/health")
+        # Never use inherited corporate/user HTTP proxy settings, nor a
+        # user-provided hostname or any URL returned by the mock service.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(request, timeout=3) as response:
+            if response.status != 200:
+                return False
+            data = json.loads(response.read(8192))
+        return (isinstance(data, dict)
+                and isinstance(data.get("requests"), dict)
+                and data["requests"].get("ingress", {}).get("responses", 0) >= 1)
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return False
 
 
 def negative_pairing_gateway_config() -> dict[str, object]:
@@ -364,9 +435,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expect-grant-reconnect", action="store_true",
                         help="Verify two separate Swift processes and an issued "
                              "read-only grant without shared token in the second")
+    parser.add_argument("--expect-agent-stream", action="store_true",
+                        help="Run production native agent against pinned real "
+                             "Gateway with a synthetic local Responses model")
     args = parser.parse_args(argv)
     contract_count = sum((args.expect_pairing_required, args.expect_health_ok,
-                          args.expect_grant_reconnect))
+                          args.expect_grant_reconnect, args.expect_agent_stream))
     contract = contract_count == 1
     if (contract_count > 1 or contract and
             (args.approve_isolated_pairing or args.full_chat
@@ -407,28 +481,38 @@ def main(argv: list[str] | None = None) -> int:
             shutil.copyfile(template, temp / "state" / "openclaw.json")
             (temp / "state" / "openclaw.json").chmod(0o600)
 
+        port = local_port()
+        model_port = local_port() if args.expect_agent_stream else None
+        if model_port == port:
+            model_port = local_port()
+
         if contract:
             # These configs exist solely inside the disposable loopback state.
             configuration = temp / "state" / "openclaw.json"
             config_data = (
                 negative_pairing_gateway_config() if args.expect_pairing_required
+                else synthetic_agent_gateway_config(model_port, temp / "workspace")
+                if args.expect_agent_stream and model_port is not None
                 else positive_health_gateway_config()
             )
             with configuration.open("x", encoding="utf-8") as stream:
                 json.dump(config_data, stream)
             configuration.chmod(0o600)
 
-        port = local_port()
         env = isolated_environment(
             dict(os.environ), home=temp, port=port,
             revision=args.revision, token=secrets.token_urlsafe(32),
-            full_chat=args.full_chat, prove_abort=args.prove_abort,
+            full_chat=args.full_chat or args.expect_agent_stream,
+            prove_abort=args.prove_abort,
         )
         if contract:
             # An isolated, pre-built read-only Swift probe; no Keychain use.
             marker = ("AWL_DEV_GATEWAY_EXPECT_PAIRING" if args.expect_pairing_required
                       else "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"
-                      if args.expect_grant_reconnect else "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK")
+                      if args.expect_grant_reconnect
+                      else "AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"
+                      if args.expect_agent_stream
+                      else "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK")
             env[marker] = "1"
             if args.expect_grant_reconnect:
                 grant_directory = temp / "grant-cache"
@@ -442,6 +526,36 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError:
             print("Isolated Gateway runner: safety preflight failed.", file=sys.stderr)
             return 2
+
+        # The pinned upstream's own E2E mock Responses provider remains a
+        # separate ephemeral 127.0.0.1 process. It never reads cloud keys,
+        # personal sessions or private model endpoints.
+        model_process = None
+        if args.expect_agent_stream:
+            assert model_port is not None
+            mock_env = dict(env)
+            mock_env.update({
+                "MOCK_PORT": str(model_port),
+                "MOCK_BIND_HOST": "127.0.0.1",
+                "SUCCESS_MARKER": "AWL_ISOLATED_SYNTHETIC_AGENT_OK",
+            })
+            try:
+                model_process = subprocess.Popen(
+                    [node, str(checkout / "scripts/e2e/mock-openai-server.mjs")],
+                    cwd=checkout, env=mock_env, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except OSError:
+                print("Isolated Gateway runner: synthetic model failed to start.",
+                      file=sys.stderr)
+                return 1
+            if not gateway_reachable(model_process, model_port,
+                                     deadline_seconds=20):
+                retire_owned_process(model_process)
+                print("Isolated Gateway runner: synthetic model not ready.",
+                      file=sys.stderr)
+                return 1
 
         # Use the actual checked-out CLI rather than an unrelated globally
         # installed OpenClaw version. No force/restart/service commands.
@@ -457,6 +571,8 @@ def main(argv: list[str] | None = None) -> int:
                 stderr=subprocess.DEVNULL, start_new_session=True,
             )
         except OSError:
+            if model_process is not None:
+                retire_owned_process(model_process)
             print("Isolated Gateway runner: pinned Gateway did not start.",
                   file=sys.stderr)
             return 1
@@ -498,6 +614,15 @@ def main(argv: list[str] | None = None) -> int:
                     if args.expect_health_ok and result.returncode == 0:
                         print("Isolated real Gateway authenticated read-only health accepted.")
                         return 0
+                    if args.expect_agent_stream and result.returncode == 0:
+                        if model_port is not None and synthetic_model_received_request(model_port):
+                            print("Isolated real Gateway native agent emitted "
+                                  "incremental text and terminal completion "
+                                  "using a synthetic local model.")
+                            return 0
+                        print("Isolated real Gateway agent stream: synthetic "
+                              "model request was not observed.", file=sys.stderr)
+                        return 1
                     if args.expect_grant_reconnect and result.returncode == 0:
                         # The second Swift process must not receive *either*
                         # the AWL shared Gateway bearer or the upstream token.
@@ -557,6 +682,7 @@ def main(argv: list[str] | None = None) -> int:
                         continue
                     mode = ("negative-contract" if args.expect_pairing_required
                             else "disposable-grant-contract" if args.expect_grant_reconnect
+                            else "agent-stream-contract" if args.expect_agent_stream
                             else "positive-health-contract")
                     print("Isolated real Gateway " + mode + " failed: "
                           + category + " (last-phase=" + phase
@@ -584,6 +710,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         finally:
             retire_owned_process(gateway)
+            if model_process is not None:
+                retire_owned_process(model_process)
 
 
 if __name__ == "__main__":

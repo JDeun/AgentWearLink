@@ -14,6 +14,7 @@ on:
       - 'scripts/dev_gateway_probe_runner.py'
       - 'scripts/run-openclaw-development-gateway.sh'
       - 'Sources/AgentWearLinkOpenClawProbe/**'
+      - 'Sources/AgentWearLinkOpenClawChatProbe/**'
       - 'Sources/AgentWearLinkOpenClaw/**'
       - 'Tests/AgentWearLinkOpenClawTests/**'
       - 'Package.swift'
@@ -26,6 +27,7 @@ on:
       - 'scripts/dev_gateway_probe_runner.py'
       - 'scripts/run-openclaw-development-gateway.sh'
       - 'Sources/AgentWearLinkOpenClawProbe/**'
+      - 'Sources/AgentWearLinkOpenClawChatProbe/**'
       - 'Sources/AgentWearLinkOpenClaw/**'
       - 'Tests/AgentWearLinkOpenClawTests/**'
       - 'Package.swift'
@@ -88,6 +90,9 @@ jobs:
       - name: Compile real AWL production Gateway probe on macOS
         shell: bash
         run: swift build --product awl-openclaw-probe
+      - name: Compile real AWL production native chat probe on macOS
+        shell: bash
+        run: swift build --product awl-openclaw-chat-probe
       - name: Real Gateway refuses unapproved device identity (negative contract)
         id: negative-contract
         shell: bash
@@ -116,12 +121,22 @@ jobs:
             --checkout .awl-hermetic-upstream \
             --revision "$OPENCLAW_REVISION" \
             --expect-grant-reconnect
+      - name: Real native-agent deltas and terminal against isolated synthetic model
+        id: agent-stream
+        shell: bash
+        timeout-minutes: 12
+        run: |
+          python3 scripts/run_hermetic_development_gateway.py \
+            --checkout .awl-hermetic-upstream \
+            --revision "$OPENCLAW_REVISION" \
+            --expect-agent-stream
       - name: Evidence boundary
         if: always()
         env:
           NEGATIVE_GATE_OUTCOME: ${{ steps.negative-contract.outcome }}
           POSITIVE_HEALTH_OUTCOME: ${{ steps.positive-health.outcome }}
           GRANT_OUTCOME: ${{ steps.disposable-grant.outcome }}
+          AGENT_STREAM_OUTCOME: ${{ steps.agent-stream.outcome }}
         run: |
           if [[ "$NEGATIVE_GATE_OUTCOME" == "success" ]]; then
             echo "Negative contract: unapproved read-only identity rejected."
@@ -138,4 +153,9 @@ jobs:
           else
             echo "Disposable grant-only reconnect FAILED or was not executed."
           fi
-          echo "These are NOT operator-approved pairing, Keychain persistence, agent/abort or Tailnet evidence."
+          if [[ "$AGENT_STREAM_OUTCOME" == "success" ]]; then
+            echo "Real Gateway native agent emits deltas and a terminal event with a synthetic local model."
+          else
+            echo "Real Gateway synthetic-model native agent stream FAILED or not executed."
+          fi
+          echo "These are NOT operator-approved pairing, Keychain persistence, real-model quality, abort or Tailnet evidence."

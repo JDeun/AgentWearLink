@@ -310,3 +310,39 @@ unapproved rejection, synthetic loopback hello/health and synthetic issued
 grant-only second-process reconnect. It never reads private Mac mini secrets
 or connects to physical Tailnet. Post-merge green status still does not prove
 Keychain, human approval, model-backed agent turns or real eyewear operation.
+
+## Deterministic real Gateway → native agent stream smoke contract
+
+The pinned real upstream OpenClaw checkout already includes its own
+`scripts/e2e/mock-openai-server.mjs`. The hermetic CI harness launches that
+provider **as a separate owned loopback-only test process**, with a fixed
+response marker and no model/API credentials. A temporary Gateway config
+uses a single `openai-responses` model mapped exclusively to that local
+provider; remote catalog refresh is disabled and the model is denied all
+tools. Neither personal provider credentials nor the owner's session/model
+are copied into the disposable workspace.
+
+```bash
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout .awl-hermetic-upstream \
+  --revision YOUR_EXACT_40_CHARACTER_COMMIT \
+  --expect-agent-stream
+```
+
+A **separately compiled production** `awl-openclaw-chat-probe` connects
+using its mutating OpenClaw validation profile, with a fresh in-memory
+identity/credential store on headless CI. It submits one fixed harmless
+prompt through the real `OpenClawNativeAgentAdapter`, requires at least one
+incremental assistant text event and exactly one terminal completion, and
+then disconnects. The runner also verifies that the pinned mock provider
+actually received a Responses request. It emits only fixed diagnostic
+categories; generated model text remains suppressed.
+
+The flag fails closed unless it owns a fresh loopback Gateway, runs the
+exact built Swift probe and synthetic model, and is mutually exclusive
+with all other contract flags, supplied custom configs, interactive pairing,
+full-chat and abort options. No Tailnet endpoint, hardware camera/microphone,
+user session or external model may be used. Model response simulation
+proves **real Gateway/native-adapter protocol interoperability**, not actual
+LLM/model quality, iPhone/WSS delivery, Keychain persistence, user-approved
+device pairing, native adapter abort or real Meta eyewear E2E.

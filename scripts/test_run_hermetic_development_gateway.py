@@ -21,6 +21,8 @@ from run_hermetic_development_gateway import (
     safe_probe_result,
     negative_pairing_gateway_config,
     positive_health_gateway_config,
+    synthetic_agent_gateway_config,
+    synthetic_model_received_request,
     may_retry_negative_gateway_startup,
 )
 
@@ -55,6 +57,45 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
             negative_pairing_gateway_config()["gateway"]["nodes"]["pairing"]["autoApproveLocal"],
             False,
         )
+
+    def test_synthetic_agent_model_is_strictly_local_and_tools_disabled(self):
+        config = synthetic_agent_gateway_config(
+            19092, Path("/tmp/awl-real-dev-gateway-fixture/workspace")
+        )
+        self.assertTrue(config["gateway"]["nodes"]["pairing"]["autoApproveLocal"])
+        self.assertEqual(config["gateway"]["nodes"]["pairing"]["autoApproveCidrs"], [])
+        self.assertEqual(config["models"]["mode"], "replace")
+        self.assertIs(config["models"]["catalogRefresh"]["enabled"], False)
+        provider = config["models"]["providers"]["openai"]
+        self.assertEqual(provider["baseUrl"], "http://127.0.0.1:19092/v1")
+        self.assertEqual(provider["api"], "openai-responses")
+        self.assertEqual(provider["request"]["allowPrivateNetwork"], True)
+        self.assertTrue(provider["apiKey"].startswith("sk-awl-synthetic-"))
+        self.assertEqual(config["tools"]["deny"], ["*"])
+        self.assertEqual(config["agents"]["defaults"]["model"]["primary"],
+                         "openai/gpt-5.6-luna")
+        self.assertFalse(synthetic_model_received_request(0))
+        self.assertFalse(synthetic_model_received_request(65536))
+        with self.assertRaises(ValueError):
+            synthetic_agent_gateway_config(0, Path("/tmp"))
+    
+    def test_synthetic_stream_mode_refuses_custom_models_and_manual_pairing(self):
+        for extra in (
+            ["--expect-pairing-required"], ["--expect-health-ok"],
+            ["--expect-grant-reconnect"], ["--approve-isolated-pairing"],
+            ["--full-chat"], ["--prove-abort"],
+            ["--config-template", "/tmp/custom.json"],
+        ):
+            with (
+                patch("run_hermetic_development_gateway.subprocess.Popen") as spawn,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(main([
+                    "--checkout", "/nonexistent",
+                    "--revision", "a" * 40,
+                    "--expect-agent-stream", *extra,
+                ]), 2)
+                spawn.assert_not_called()
 
     def test_negative_gateway_disables_upstream_default_auto_pairing(self):
         config = negative_pairing_gateway_config()
