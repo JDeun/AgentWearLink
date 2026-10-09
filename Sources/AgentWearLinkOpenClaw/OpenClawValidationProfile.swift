@@ -161,6 +161,52 @@ public enum OpenClawDevelopmentDisposableGrantPolicy {
     }
 }
 
+/// A deterministic synthetic-model test of the *real* OpenClaw Gateway's
+/// mutating native-agent stream, restricted to a private disposable loopback
+/// process. An unapproved physical/personal Gateway cannot opt into this.
+public enum OpenClawDevelopmentAgentStreamPolicy {
+    public static func permits(
+        environment: [String: String],
+        isLoopback: Bool,
+        profile: OpenClawValidationProfile
+    ) -> Bool {
+        guard isLoopback, profile == .mutating,
+              environment["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == "1",
+              environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == nil,
+              environment["AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"] == nil,
+              environment["AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"] == nil,
+              environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == nil,
+              environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
+              environment["AWL_ALLOW_MUTATING_PROBE"] == "1",
+              environment["AWL_DEV_GATEWAY_ASSERT"] == "1",
+              environment["AWL_DEV_GATEWAY_USE_BUILT_PROBE"] == "1",
+              environment["AWL_DEV_GATEWAY_HEALTH_ONLY"] == "0",
+              environment["AWL_DEV_GATEWAY_PROVE_ABORT"] == "0",
+              environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
+              environment["AWL_OPENCLAW_BOOTSTRAP_TOKEN"] == nil,
+              environment["AWL_OPENCLAW_CHAT_MESSAGE"] ==
+                "AWL isolated integration check: reply with one short sentence.",
+              let token = environment["AWL_OPENCLAW_TOKEN"], !token.isEmpty,
+              let nonce = environment["AWL_DEV_KEYCHAIN_NONCE"],
+              nonce.range(of: #"^[0-9a-f]{20}$"#, options: .regularExpression) != nil,
+              let state = environment["OPENCLAW_STATE_DIR"],
+              let url = environment["AWL_OPENCLAW_URL"],
+              let components = URLComponents(string: url),
+              components.scheme == "ws",
+              components.host == "127.0.0.1",
+              components.port != nil,
+              components.path.isEmpty || components.path == "/",
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else {
+            return false
+        }
+        let path = URL(fileURLWithPath: state).standardizedFileURL
+        return path.lastPathComponent == "state"
+            && path.deletingLastPathComponent().lastPathComponent
+                .hasPrefix("awl-real-dev-gateway-")
+    }
+}
+
 public enum OpenClawDevelopmentKeychainIsolationError: Error, Sendable {
     case invalidConfiguration
 }

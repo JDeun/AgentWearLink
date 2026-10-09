@@ -149,6 +149,56 @@ final class OpenClawValidationProfileTests: XCTestCase {
         XCTAssertFalse(permitted(baseline.filter { $0.key != "AWL_ALLOW_DEV_GATEWAY_TEST" }))
     }
 
+    func testRealGatewaySyntheticAgentStreamPolicyRequiresPrivateMutatingMode() {
+        let valid: [String: String] = [
+            "AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM": "1",
+            "AWL_ALLOW_DEV_GATEWAY_TEST": "1",
+            "AWL_ALLOW_MUTATING_PROBE": "1",
+            "AWL_DEV_GATEWAY_ASSERT": "1",
+            "AWL_DEV_GATEWAY_USE_BUILT_PROBE": "1",
+            "AWL_DEV_GATEWAY_HEALTH_ONLY": "0",
+            "AWL_DEV_GATEWAY_PROVE_ABORT": "0",
+            "AWL_OPENCLAW_EXPOSURE": "loopback",
+            "AWL_OPENCLAW_CHAT_MESSAGE":
+                "AWL isolated integration check: reply with one short sentence.",
+            "AWL_OPENCLAW_TOKEN": "synthetic-only-token",
+            "AWL_DEV_KEYCHAIN_NONCE": "0123456789abcdefabcd",
+            "OPENCLAW_STATE_DIR": "/tmp/awl-real-dev-gateway-agent/state",
+            "AWL_OPENCLAW_URL": "ws://127.0.0.1:19031"
+        ]
+        func permitted(
+            _ env: [String: String], loopback: Bool = true,
+            profile: OpenClawValidationProfile = .mutating
+        ) -> Bool {
+            OpenClawDevelopmentAgentStreamPolicy.permits(
+                environment: env, isLoopback: loopback, profile: profile
+            )
+        }
+        XCTAssertTrue(permitted(valid))
+        XCTAssertFalse(permitted(valid, loopback: false))
+        XCTAssertFalse(permitted(valid, profile: .readOnly))
+        for (key, value) in [
+            ("AWL_DEV_GATEWAY_EXPECT_PAIRING", "1"),
+            ("AWL_DEV_GATEWAY_EXPECT_HEALTH_OK", "1"),
+            ("AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT", "1"),
+            ("AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY", "1"),
+            ("AWL_OPENCLAW_BOOTSTRAP_TOKEN", "forbidden"),
+            ("AWL_OPENCLAW_EXPOSURE", "tailnet-direct"),
+            ("AWL_OPENCLAW_URL", "wss://mac-mini.ts.net:443"),
+            ("AWL_DEV_GATEWAY_HEALTH_ONLY", "1"),
+            ("AWL_DEV_GATEWAY_PROVE_ABORT", "1"),
+            ("AWL_OPENCLAW_CHAT_MESSAGE", "arbitrary command"),
+            ("AWL_ALLOW_MUTATING_PROBE", "0"),
+            ("AWL_DEV_GATEWAY_ASSERT", "0"),
+            ("AWL_DEV_GATEWAY_USE_BUILT_PROBE", "0"),
+            ("AWL_DEV_KEYCHAIN_NONCE", "bad"),
+            ("OPENCLAW_STATE_DIR", "/Users/owner/.openclaw")
+        ] {
+            XCTAssertFalse(permitted(valid.merging([key: value]) { _, new in new }),
+                           "Synthetic agent contract must reject unsafe " + key)
+        }
+    }
+
     func testDisposableGrantModeIsIsolatedToOwnedLoopbackAndStrictlyTokenlessSecondProcess() {
         let valid: [String: String] = [
             "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT": "1",

@@ -56,21 +56,36 @@ struct AgentWearLinkOpenClawChatProbe {
             fail("Invalid OpenClaw WebSocket endpoint: \(String(describing: error))", code: 2)
         }
 
+        let syntheticAgentStream = env["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == "1"
+        if syntheticAgentStream {
+            guard OpenClawDevelopmentAgentStreamPolicy.permits(
+                environment: env,
+                isLoopback: endpoint.exposure == .loopback,
+                profile: profile
+            ) else {
+                fail("Synthetic agent stream requires isolated local mutating profile.", code: 2)
+            }
+        }
+        let identityStore: any OpenClawDeviceIdentityStore =
+            syntheticAgentStream ? InMemoryOpenClawDeviceIdentityStore()
+                : KeychainOpenClawDeviceIdentityStore(service: keychainService)
+        let credentialStore: any OpenClawDeviceCredentialStore =
+            syntheticAgentStream ? InMemoryOpenClawDeviceCredentialStore()
+                : KeychainOpenClawDeviceCredentialStore(service: keychainService)
         let state = OpenClawGatewayState()
         let assembler = OpenClawConnectAssembler(
-            identityManager: .init(
-                store: KeychainOpenClawDeviceIdentityStore(
-                    service: keychainService
-                )
-            ),
-            credentialStore: KeychainOpenClawDeviceCredentialStore(
-                service: keychainService
-            ),
+            identityManager: .init(store: identityStore),
+            credentialStore: credentialStore,
             gatewayNamespace: endpoint.credentialNamespace,
             bootstrapHandoffPersistenceAllowed:
                 endpoint.allowsBootstrapHandoffPersistence
         )
-        let connection = OpenClawGatewayConnection(socket: socket, assembler: assembler, state: state)
+        let connection = OpenClawGatewayConnection(
+            socket: socket, assembler: assembler, state: state,
+            progress: { phase in
+                recordStreamPhase(phase.rawValue, environment: env)
+            }
+        )
         let dispatcher = OpenClawRPCDispatcher(socket: socket, state: state)
         let supervisor = OpenClawGatewaySupervisor(
             connection: connection,
@@ -96,7 +111,9 @@ struct AgentWearLinkOpenClawChatProbe {
         let requireDevelopmentEvidence = env["AWL_DEV_GATEWAY_ASSERT"] == "1"
 
         do {
+            recordStreamPhase("chat-started", environment: env)
             try await adapter.connect()
+            recordStreamPhase("chat-authenticated", environment: env)
 
             // Extra opt-in proof against an isolated local REAL Gateway only.
             // This runs after the regular text/terminal smoke test in the
@@ -132,10 +149,12 @@ struct AgentWearLinkOpenClawChatProbe {
                 switch response {
                 case let .textDelta(_, text):
                     deltaCount += 1
+                    recordStreamPhase("chat-delta", environment: env)
                     print(text, terminator: "")
                     fflush(stdout)
                 case .completed:
                     terminalCount += 1
+                    recordStreamPhase("chat-terminal", environment: env)
                     print("")
                 case let .failed(_, error):
                     throw error
@@ -151,6 +170,7 @@ struct AgentWearLinkOpenClawChatProbe {
             }
             await adapter.disconnect()
         } catch let OpenClawHandshakeError.pairingRequired(pairing) {
+            recordStreamPhase("pairing-required", environment: env)
             await adapter.disconnect()
             var lines = [
                 "OpenClaw mutating validation identity requires its own pairing approval.",
@@ -162,9 +182,53 @@ struct AgentWearLinkOpenClawChatProbe {
             }
             fail(lines.joined(separator: "\n"), code: 3)
         } catch {
+            recordStreamFailure(error, environment: env)
             await adapter.disconnect()
             fail("OpenClaw chat probe failed (details redacted)", code: 1)
         }
+    }
+
+    /// Test-only fixed-vocabulary phase labels. This path is restricted to
+    /// a generated 0700 real-Gateway temp directory, never user sessions.
+    private static func recordStreamPhase(
+        _ value: String, environment: [String: String]
+    ) {
+        writeStreamDiagnostic(value, environment: environment,
+                              key: "AWL_DEV_GATEWAY_PHASE_FILE", name: "probe-phase")
+    }
+
+    private static func recordStreamFailure(
+        _ error: Error, environment: [String: String]
+    ) {
+        let category: String
+        if let failure = error as? DevelopmentGatewayProbeError {
+            switch failure {
+            case .missingIncrementalOutput: category = "chat-no-delta"
+            case .missingTerminalCompletion: category = "chat-no-terminal"
+            case .unexpectedAcceptedSession: category = "chat-session-mismatch"
+            }
+        } else {
+            category = "chat-other-error"
+        }
+        writeStreamDiagnostic(category, environment: environment,
+                              key: "AWL_DEV_GATEWAY_RESULT_FILE", name: "probe-result")
+    }
+
+    private static func writeStreamDiagnostic(
+        _ value: String, environment: [String: String],
+        key: String, name: String
+    ) {
+        guard environment["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == "1",
+              environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
+              environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
+              let state = environment["OPENCLAW_STATE_DIR"],
+              let resultPath = environment[key],
+              URL(fileURLWithPath: resultPath).standardizedFileURL.path ==
+                URL(fileURLWithPath: state).deletingLastPathComponent()
+                    .appendingPathComponent(name).standardizedFileURL.path else {
+            return
+        }
+        try? value.write(toFile: resultPath, atomically: true, encoding: .utf8)
     }
 
     private static func configuredEndpoint(
