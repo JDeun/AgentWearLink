@@ -434,3 +434,29 @@ pairing, a device grant actually issued by a Gateway, persistence across
 process restart, the user's Mac mini or an iOS Keychain access group. Those
 still require the corresponding real Gateway/personal macOS and hardware
 acceptance stages in #331.
+
+## Real Gateway + native macOS Keychain grant (CI-only)
+
+The dedicated macOS 26 real-Gateway job has a separate
+`--expect-native-keychain-grant-reconnect` lane. Unlike the existing
+disposable-file-grant test, this uses production
+`KeychainOpenClawDeviceIdentityStore` and
+`KeychainOpenClawDeviceCredentialStore` through macOS `Security.framework`.
+Two independent Swift processes talk to the *same* pinned real disposable
+loopback Gateway: the first receives an `operator.read` device grant; the
+second receives no shared Gateway bearer or bootstrap token, loads the
+persisted identity and endpoint-scoped grant from native Keychain, and
+must pass authenticated `health`.
+
+This path requires both `CI=true` and
+`AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION=1`, rejects personal/Tailnet endpoints,
+uses a random nonce-isolated Keychain service on the temporary CI runner
+and executes narrowly scoped cleanup even when the Gateway probe fails.
+Cleanup failure makes the job fail rather than silently leave synthetic
+credentials behind.
+
+**Evidence boundary:** This establishes native macOS CI Keychain ↔ real
+upstream Gateway interoperability across processes if green. It does not
+establish explicit human approval, iOS Keychain entitlements, the owner's
+Mac mini or Tailnet, real model/tool/memory behavior, or physical Meta/iPhone
+acceptance.
