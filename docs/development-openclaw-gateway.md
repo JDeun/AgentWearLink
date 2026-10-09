@@ -466,3 +466,32 @@ upstream Gateway interoperability across processes if green. It does not
 establish explicit human approval, iOS Keychain entitlements, the owner's
 Mac mini or Tailnet, real model/tool/memory behavior, or physical Meta/iPhone
 acceptance.
+
+
+## Isolated exact-request CLI approval and token revocation CI
+
+The pinned real Gateway workflow also has an **automated operator-CLI**
+contract (`--expect-explicit-approval-revocation`). It creates a **new,
+disposable loopback Gateway** with local auto-approval disabled and a
+private, mode-0700 file grant store. The production read-only Swift probe
+first receives a genuine pairing-required rejection; the CI harness lists
+pending requests and accepts **exactly one**, which must request only
+`operator.read`. It then invokes the upstream `devices approve <requestId>`
+command, requires the same identity to receive the server-issued grant,
+reconnects in a separate Swift process without the Gateway bearer, invokes
+`devices revoke --device <id> --role operator`, and requires a further
+grant-only reconnection to fail with a typed authentication rejection.
+
+It can run **only** with `CI=true`, `GITHUB_ACTIONS=true`,
+`RUNNER_OS=macOS` and the explicit
+`AWL_RUN_EXPLICIT_APPROVAL_INTEGRATION=1` opt-in. No personal Gateway,
+Mac mini, Tailnet, iPhone or actual glasses are contacted. The
+`--url`-scoped CLI commands explicitly pass the **disposable** Gateway
+token, consistent with the pinned upstream CLI requirement. Their output
+and credentials are never sent to CI logs. Failure or multiple, unknown,
+admin/write requests does not trigger an approval.
+
+**This is automated, deliberate exact-ID CLI approval, not a human
+operator personally reviewing and approving a device.** Live deployment,
+iOS credentials, real-model semantics and physical hardware remain
+separate acceptance gates.
