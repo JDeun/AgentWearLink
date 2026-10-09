@@ -350,6 +350,61 @@ final class OpenClawValidationProfileTests: XCTestCase {
         }
     }
 
+    func testNativeKeychainGrantRequiresPrivateLoopbackAndExplicitCI() {
+        let valid: [String: String] = [
+            "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT": "1",
+            "AWL_DEV_GATEWAY_NATIVE_KEYCHAIN": "1",
+            "AWL_ALLOW_DEV_GATEWAY_TEST": "1",
+            "AWL_OPENCLAW_EXPOSURE": "loopback",
+            "AWL_DEV_GATEWAY_HEALTH_ONLY": "1",
+            "AWL_DEV_GATEWAY_PROVE_ABORT": "0",
+            "AWL_DEV_GATEWAY_USE_BUILT_PROBE": "1",
+            "AWL_DEV_KEYCHAIN_NONCE": "0123456789abcdefabcd",
+            "OPENCLAW_STATE_DIR": "/tmp/awl-real-dev-gateway-test/state",
+            "AWL_OPENCLAW_URL": "ws://127.0.0.1:19031",
+            "AWL_OPENCLAW_TOKEN": "synthetic-only-token",
+            "CI": "true",
+            "AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION": "1"
+        ]
+        func permitted(_ env: [String: String], loopback: Bool = true,
+                       profile: OpenClawValidationProfile = .readOnly) -> Bool {
+            OpenClawDevelopmentNativeKeychainGrantPolicy.permits(
+                environment: env, isLoopback: loopback, profile: profile
+            )
+        }
+        XCTAssertTrue(permitted(valid))
+        let noToken = valid.filter { $0.key != "AWL_OPENCLAW_TOKEN" }
+        let second = noToken.merging([
+            "AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY": "1"
+        ]) { _, new in new }
+        let cleanup = noToken.merging([
+            "AWL_DEV_GATEWAY_NATIVE_KEYCHAIN_CLEANUP": "1"
+        ]) { _, new in new }
+        XCTAssertTrue(permitted(second))
+        XCTAssertTrue(permitted(cleanup))
+        XCTAssertFalse(permitted(valid, loopback: false))
+        XCTAssertFalse(permitted(valid, profile: .mutating))
+        XCTAssertFalse(permitted(second.merging([
+            "AWL_OPENCLAW_TOKEN": "never-on-second-process"
+        ]) { _, new in new }))
+        XCTAssertFalse(permitted(valid.filter { $0.key != "AWL_OPENCLAW_TOKEN" }))
+        for (key, value) in [
+            ("CI", "false"),
+            ("AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION", "0"),
+            ("AWL_DEV_GATEWAY_NATIVE_KEYCHAIN", "0"),
+            ("AWL_DEV_GATEWAY_GRANT_STORE", "/tmp/awl-real-dev-gateway-test/grant-cache"),
+            ("AWL_OPENCLAW_EXPOSURE", "tailnet-direct"),
+            ("AWL_OPENCLAW_BOOTSTRAP_TOKEN", "forbidden"),
+            ("AWL_DEV_KEYCHAIN_NONCE", "not-a-nonce"),
+            ("AWL_OPENCLAW_URL", "ws://198.51.100.1:19031"),
+            ("OPENCLAW_STATE_DIR", "/Users/owner/.openclaw"),
+            ("AWL_DEV_GATEWAY_EXPECT_HEALTH_OK", "1")
+        ] {
+            XCTAssertFalse(permitted(valid.merging([key: value]) { _, new in new }),
+                           "Native Keychain policy must reject " + key)
+        }
+    }
+
     func testEphemeralNegativeStoreIsRestrictedToIsolatedReadOnlyProbe() {
         let valid = [
             "AWL_DEV_GATEWAY_EXPECT_PAIRING": "1",
