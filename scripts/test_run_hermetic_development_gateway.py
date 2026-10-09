@@ -15,6 +15,7 @@ from run_hermetic_development_gateway import (
     cleanup_disposable_gateway_directory,
     disposable_gateway_state,
     approve_one_isolated_pairing,
+    select_isolated_pending_readonly,
     isolated_environment,
     native_keychain_probe_environment,
     main,
@@ -291,6 +292,75 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                 call(9001, signal.SIGTERM),
                 call(9001, signal.SIGKILL),
             ])
+
+    def test_automated_approval_selector_refuses_write_scope_and_ambiguity(self):
+        entry = {
+            "requestId": "isolated-request-123",
+            "deviceId": "c" * 64,
+            "role": "operator",
+            "roles": ["operator"],
+            "scopes": ["operator.read"],
+        }
+        self.assertEqual(select_isolated_pending_readonly({
+            "pending": [entry], "paired": [],
+        }), ("isolated-request-123", "c" * 64))
+        for changed in (
+            {"scopes": ["operator.read", "operator.write"]},
+            {"scopes": ["operator.admin"]},
+            {"roles": ["node"]},
+            {"role": "node"},
+            {"deviceId": "wrong-device"},
+            {"requestId": "../../unsafe"},
+        ):
+            self.assertIsNone(select_isolated_pending_readonly({
+                "pending": [entry | changed], "paired": [],
+            }))
+        self.assertIsNone(select_isolated_pending_readonly({
+            "pending": [entry, entry], "paired": [],
+        }))
+        self.assertIsNone(select_isolated_pending_readonly({
+            "pending": [entry], "paired": [entry],
+        }))
+        self.assertIsNone(select_isolated_pending_readonly({
+            "pending": [], "paired": [],
+        }))
+
+    def test_explicit_approval_requires_hosted_ci_opt_in_and_exclusive_contract(self):
+        with (
+            patch("run_hermetic_development_gateway.subprocess.Popen") as spawn,
+            patch.dict(os.environ, {
+                "CI": "true", "GITHUB_ACTIONS": "true",
+                "RUNNER_OS": "macOS",
+                "AWL_RUN_EXPLICIT_APPROVAL_INTEGRATION": "0",
+            }),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(main([
+                "--checkout", "/nonexistent", "--revision", "a" * 40,
+                "--expect-explicit-approval-revocation",
+            ]), 2)
+            spawn.assert_not_called()
+        with (
+            patch("run_hermetic_development_gateway.subprocess.Popen") as spawn,
+            patch.dict(os.environ, {
+                "CI": "true", "GITHUB_ACTIONS": "true",
+                "RUNNER_OS": "macOS",
+                "AWL_RUN_EXPLICIT_APPROVAL_INTEGRATION": "1",
+            }),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            for extra in (
+                ["--approve-isolated-pairing"],
+                ["--expect-native-keychain-grant-reconnect"],
+                ["--expect-pairing-required"],
+                ["--full-chat"],
+                ["--config-template", "/nonexistent/config"],
+            ):
+                self.assertEqual(main([
+                    "--checkout", "/nonexistent", "--revision", "a" * 40,
+                    "--expect-explicit-approval-revocation", *extra,
+                ]), 2)
+            spawn.assert_not_called()
 
     def test_pairing_requires_exact_human_selected_id_in_disposable_state(self):
         class Terminal:
