@@ -16,6 +16,7 @@ from run_hermetic_development_gateway import (
     disposable_gateway_state,
     approve_one_isolated_pairing,
     isolated_environment,
+    native_keychain_probe_environment,
     main,
     retire_owned_process,
     safe_probe_phase,
@@ -377,6 +378,40 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                     "--expect-grant-reconnect", *extra,
                 ]), 2)
                 spawn.assert_not_called()
+
+    def test_native_keychain_swift_only_uses_host_home_on_hosted_macos(self):
+        with tempfile.TemporaryDirectory() as directory:
+            host = {
+                "GITHUB_ACTIONS": "true", "RUNNER_OS": "macOS",
+                "CI": "true", "HOME": directory
+            }
+            isolated = {
+                "HOME": "/tmp/awl-real-dev-gateway-private/home",
+                "OPENCLAW_STATE_DIR": "/tmp/awl-real-dev-gateway-private/state",
+                "AWL_DEV_GATEWAY_NATIVE_KEYCHAIN": "1",
+                "AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION": "1",
+            }
+            restored = native_keychain_probe_environment(isolated, host)
+            self.assertEqual(restored["HOME"], directory)
+            self.assertEqual(restored["OPENCLAW_STATE_DIR"],
+                             isolated["OPENCLAW_STATE_DIR"])
+            self.assertEqual(isolated["HOME"],
+                             "/tmp/awl-real-dev-gateway-private/home")
+            for key, value in (("GITHUB_ACTIONS", "false"),
+                               ("RUNNER_OS", "Linux"),
+                               ("CI", "false")):
+                with self.assertRaises(ValueError):
+                    native_keychain_probe_environment(
+                        isolated, {**host, key: value}
+                    )
+            with self.assertRaises(ValueError):
+                native_keychain_probe_environment(
+                    {**isolated, "AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION": "0"},
+                    host,
+                )
+            ordinary = {**isolated, "AWL_DEV_GATEWAY_NATIVE_KEYCHAIN": "0"}
+            self.assertIs(native_keychain_probe_environment(ordinary, {}),
+                          ordinary)
 
     def test_native_keychain_mode_requires_ci_opt_in_and_exclusive_contract(self):
         args = ["--checkout", "/nonexistent", "--revision", "a" * 40,
