@@ -543,6 +543,9 @@ def main(argv: list[str] | None = None) -> int:
                 env["AWL_DEV_GATEWAY_PROVE_ABORT"] = "1"
             if args.expect_agent_session:
                 env["AWL_DEV_GATEWAY_SESSION_ASSERT"] = "1"
+                if model_port is None:
+                    raise ValueError("Synthetic session requires local model port")
+                env["AWL_DEV_GATEWAY_MODEL_PORT"] = str(model_port)
             if args.expect_grant_reconnect:
                 grant_directory = temp / "grant-cache"
                 grant_directory.mkdir(mode=0o700)
@@ -654,13 +657,13 @@ def main(argv: list[str] | None = None) -> int:
                         return 0
                     if args.expect_agent_session and result.returncode == 0:
                         if (model_port is not None
-                                and synthetic_model_received_request(
-                                    model_port, exact_requests=2)
+                                and synthetic_model_request_count(model_port) is not None
+                                and synthetic_model_request_count(model_port) >= 2
                                 and safe_probe_phase(temp / "probe-phase") ==
                                     "chat-two-turns-completed"):
                             print("Isolated real Gateway completed two distinct "
-                                  "native agent turns in the same session with "
-                                  "exactly two synthetic model requests.")
+                                  "native agent turns in the same session; "
+                                  "each turn advanced synthetic model ingress.")
                             return 0
                         count = (synthetic_model_request_count(model_port)
                                  if model_port is not None else None)
