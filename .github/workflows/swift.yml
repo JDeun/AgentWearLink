@@ -181,6 +181,17 @@ jobs:
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 6
         run: python3 scripts/run_openclaw_remaining_tests.py
+      # Exercise the *real* macOS Security.framework implementation with
+      # only randomly named, disposable CI Keychain items; ordinary local
+      # swift test leaves the user's login Keychain completely untouched.
+      - name: Native macOS Keychain identity and device-grant CAS smoke
+        if: needs.changes.outputs.core_swift == 'true'
+        timeout-minutes: 3
+        env:
+          AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION: '1'
+        run: |
+          python3 scripts/swift_xctest_watchdog.py --deadline-seconds 155 -- \
+            swift test --filter AgentWearLinkOpenClawTests.OpenClawNativeKeychainIntegrationTests
       - name: Test Meta SDK-neutral target
         if: needs.changes.outputs.core_swift == 'true'
         timeout-minutes: 3
