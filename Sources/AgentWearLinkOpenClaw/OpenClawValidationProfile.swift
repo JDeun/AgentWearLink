@@ -253,6 +253,9 @@ public enum OpenClawDevelopmentAgentSessionPolicy {
               environment["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == nil,
               environment["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == nil,
               environment["AWL_DEV_GATEWAY_ABORT_ASSERT"] == nil,
+              let rawPort = environment["AWL_DEV_GATEWAY_MODEL_PORT"],
+              let port = Int(rawPort), (1...65535).contains(port),
+              String(port) == rawPort,
               let session = environment["AWL_OPENCLAW_SESSION_KEY"],
               session.range(
                   of: #"^agent:[A-Za-z0-9_-]+:awl-dev-[A-Za-z0-9_-]+$"#,
@@ -261,6 +264,7 @@ public enum OpenClawDevelopmentAgentSessionPolicy {
         var scoped = environment
         scoped.removeValue(forKey: "AWL_DEV_GATEWAY_EXPECT_AGENT_SESSION")
         scoped.removeValue(forKey: "AWL_DEV_GATEWAY_SESSION_ASSERT")
+        scoped.removeValue(forKey: "AWL_DEV_GATEWAY_MODEL_PORT")
         scoped["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] = "1"
         return OpenClawDevelopmentAgentStreamPolicy.permits(
             environment: scoped, isLoopback: isLoopback, profile: profile
