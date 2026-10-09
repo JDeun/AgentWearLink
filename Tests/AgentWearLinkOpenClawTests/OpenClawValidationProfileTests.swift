@@ -254,6 +254,7 @@ final class OpenClawValidationProfileTests: XCTestCase {
         let valid: [String: String] = [
             "AWL_DEV_GATEWAY_EXPECT_AGENT_SESSION": "1",
             "AWL_DEV_GATEWAY_SESSION_ASSERT": "1",
+            "AWL_DEV_GATEWAY_MODEL_PORT": "19092",
             "AWL_ALLOW_DEV_GATEWAY_TEST": "1",
             "AWL_ALLOW_MUTATING_PROBE": "1",
             "AWL_DEV_GATEWAY_ASSERT": "1",
@@ -284,6 +285,9 @@ final class OpenClawValidationProfileTests: XCTestCase {
             ("AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM", "1"),
             ("AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT", "1"),
             ("AWL_DEV_GATEWAY_SESSION_ASSERT", "0"),
+            ("AWL_DEV_GATEWAY_MODEL_PORT", "0"),
+            ("AWL_DEV_GATEWAY_MODEL_PORT", "65536"),
+            ("AWL_DEV_GATEWAY_MODEL_PORT", "not-a-port"),
             ("AWL_DEV_GATEWAY_ABORT_ASSERT", "1"),
             ("AWL_DEV_GATEWAY_PROVE_ABORT", "1"),
             ("AWL_OPENCLAW_SESSION_KEY", "agent:main:personal"),
