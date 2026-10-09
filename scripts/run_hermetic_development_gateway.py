@@ -731,7 +731,8 @@ def main(argv: list[str] | None = None) -> int:
             marker = ("AWL_DEV_GATEWAY_EXPECT_PAIRING" if args.expect_pairing_required
                       else "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"
                       if (args.expect_grant_reconnect or
-                          args.expect_native_keychain_grant_reconnect)
+                          args.expect_native_keychain_grant_reconnect
+                          or args.expect_explicit_approval_revocation)
                       else "AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"
                       if args.expect_agent_stream
                       else "AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"
