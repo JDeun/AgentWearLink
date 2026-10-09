@@ -6,7 +6,7 @@
 
 AgentWearLink (AWL) normalizes wearable input/capture capabilities—speech, audio, camera snapshots, and invocation—behind replaceable adapters, connects them to an existing AI agent runtime, and composes host output such as native TTS through a separate output sink.
 
-> **Status:** pre-alpha. Core and OpenClaw foundations are implemented and tested. Meta DAT registration/device-session lifecycle, Speech, and bounded camera snapshots are production-wired; Voice Invocation and remaining live-capability/foreground-background composition are still tracked under #230. Physical Ray-Ban Meta + iPhone validation is still in progress.
+> **Status:** pre-alpha. Core and OpenClaw foundations are implemented and tested. Meta DAT registration/device-session lifecycle, Speech, and bounded camera snapshots are production-wired; Voice Invocation, live-capability and foreground/background composition are implemented and covered by deterministic and vendor-backed mock tests; physical acceptance remains open. Physical Ray-Ban Meta + iPhone validation is still in progress.
 
 ## Why
 
@@ -45,12 +45,12 @@ Meta DAT, OpenClaw, Tailscale, Telegram, and Apple TTS are reference integration
 - OpenClaw device identity, challenge proof, pairing, RPC dispatch, streaming agent runs, cancellation, and reconnect supervision
 - read-only OpenClaw health probe
 - explicit mutating OpenClaw text E2E probe
-- pinned Meta DAT 1.0.0 integration with production-wired registration/device-session lifecycle; camera, Speech, Voice Invocation, live-capability, and foreground/background policy slices are implemented and deterministically tested as helpers but are not yet all reachable through the concrete production session path (#230)
+- pinned Meta DAT 1.0.0 integration with production-wired registration/device-session lifecycle; camera, Speech, Voice Invocation, live-capability and foreground/background policies are composed in the production reference host and verified with pinned vendor MockDeviceKit integration; physical behavior remains unverified
 - bounded explicit vision contracts with pre-capture agent capability checks
 - typed host `InteractionOutputSink` composition plus Apple native `AVSpeechSynthesizer` output
 - deterministic reliability regression suite
 
-MockDeviceKit app-hosted integration is being CI-gated separately. Real Bluetooth, camera sensor timing/photo transfer, wearable audio routing, locked/pocketed invocation, mobile Tailnet transitions, and live vision remain physical/deployment gates.
+MockDeviceKit app-hosted integration is CI-gated with the Core and vendor adapter tests. Real Bluetooth, camera sensor timing/photo transfer, wearable audio routing, locked/pocketed invocation, mobile Tailnet transitions, and live vision remain physical/deployment gates.
 
 ## Packages
 
