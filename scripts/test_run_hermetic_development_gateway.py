@@ -17,10 +17,29 @@ from run_hermetic_development_gateway import (
     safe_probe_phase,
     safe_probe_result,
     negative_pairing_gateway_config,
+    may_retry_negative_gateway_startup,
 )
 
 
 class HermeticRealGatewayRunnerTests(unittest.TestCase):
+    def test_retries_only_structured_startup_sidecars_before_budget_limit(self):
+        good = {
+            "phase": "gateway-startup-pending",
+            "exit_code": 1, "attempt": 0, "max_attempts": 6
+        }
+        self.assertTrue(may_retry_negative_gateway_startup(**good))
+        for changes in (
+            {"phase": "gateway-unavailable"},
+            {"phase": "response-received"},
+            {"phase": "gateway-auth-denied"},
+            {"exit_code": 0}, {"exit_code": 3}, {"exit_code": 124},
+            {"attempt": 5}, {"attempt": 6}, {"attempt": -1},
+            {"max_attempts": 0},
+        ):
+            self.assertFalse(may_retry_negative_gateway_startup(
+                **(good | changes)
+            ))
+
     def test_negative_gateway_disables_upstream_default_auto_pairing(self):
         config = negative_pairing_gateway_config()
         pairing = config["gateway"]["nodes"]["pairing"]

@@ -15,6 +15,7 @@ public enum OpenClawHandshakeProgress: String, Sendable {
     case gatewaySharedAuthRejected = "gateway-shared-auth-rejected"
     case gatewayInvalidRequest = "gateway-invalid-request"
     case gatewayUnavailable = "gateway-unavailable"
+    case gatewayStartupPending = "gateway-startup-pending"
     case gatewayProfileUnavailable = "gateway-profile-unavailable"
     case gatewayAuthDenied = "gateway-auth-denied"
     case gatewayUnrecognized = "gateway-unrecognized"
@@ -314,6 +315,17 @@ public actor OpenClawGatewayConnection {
                   case let .string(code)? = details["code"] else { return nil }
             return code
         }()
+
+        // Pinned upstream startup-unavailable.ts provides a precise retry
+        // discriminator; generic UNAVAILABLE may indicate a real policy error
+        // and must never be retried or accepted as pairing evidence.
+        if error.code == "UNAVAILABLE",
+           error.retryable == true,
+           case let .object(details)? = error.details,
+           case let .string(reason)? = details["reason"],
+           reason == "startup-sidecars" {
+            return .gatewayStartupPending
+        }
 
         switch detailCode {
         case "AUTH_VERIFIED_USER_REQUIRED":

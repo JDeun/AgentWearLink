@@ -103,14 +103,21 @@ private final class HandshakeProgressRecorder: @unchecked Sendable {
 
 final class OpenClawGatewayConnectionTests: XCTestCase {
     func testGatewayRejectionMilestonesUseAllowlistedCategoriesOnly() {
-        func error(_ code: String, detail: String? = nil)
-            -> OpenClawResponseEnvelope.GatewayError {
-            OpenClawResponseEnvelope.GatewayError(
+        func error(
+            _ code: String,
+            detail: String? = nil,
+            reason: String? = nil,
+            retryable: Bool = false
+        ) -> OpenClawResponseEnvelope.GatewayError {
+            var fields: [String: JSONValue] = [:]
+            if let detail { fields["code"] = .string(detail) }
+            if let reason { fields["reason"] = .string(reason) }
+            return OpenClawResponseEnvelope.GatewayError(
                 code: code,
                 message: "sensitive diagnostic must not escape",
-                retryable: false,
+                retryable: retryable,
                 retryAfterMs: nil,
-                details: detail.map { .object(["code": .string($0)]) }
+                details: fields.isEmpty ? nil : .object(fields)
             )
         }
         let cases: [(OpenClawResponseEnvelope.GatewayError, OpenClawHandshakeProgress)] = [
@@ -122,6 +129,12 @@ final class OpenClawGatewayConnectionTests: XCTestCase {
             (error("AUTH_FAILED", detail: "AUTH_TOKEN_MISMATCH"),
              .gatewaySharedAuthRejected),
             (error("UNAVAILABLE"), .gatewayUnavailable),
+            (error("UNAVAILABLE", reason: "startup-sidecars", retryable: true),
+             .gatewayStartupPending),
+            (error("UNAVAILABLE", reason: "startup-sidecars", retryable: false),
+             .gatewayUnavailable),
+            (error("UNAVAILABLE", reason: "untrusted-other", retryable: true),
+             .gatewayUnavailable),
             (error("UNAVAILABLE", detail: "AUTHENTICATED_PROFILE_UNAVAILABLE"),
              .gatewayProfileUnavailable),
             (error("INVALID_REQUEST"), .gatewayInvalidRequest),

@@ -35,7 +35,8 @@ _SAFE_PROBE_PHASES = frozenset({
     "response-received", "gateway-not-paired-unstructured",
     "gateway-verified-user-required", "gateway-device-proof-rejected",
     "gateway-shared-auth-rejected", "gateway-invalid-request",
-    "gateway-unavailable", "gateway-profile-unavailable",
+    "gateway-unavailable", "gateway-startup-pending",
+    "gateway-profile-unavailable",
     "gateway-auth-denied", "gateway-unrecognized", "authenticated",
     "health-accepted", "pairing-required", "probe-error",
 })
@@ -67,6 +68,23 @@ def safe_probe_phase(path: Path) -> str:
         return "unobserved"
     return phase if phase in _SAFE_PROBE_PHASES else "unobserved"
 
+
+
+def may_retry_negative_gateway_startup(
+    *, phase: str, exit_code: int, attempt: int, max_attempts: int
+) -> bool:
+    """Only pinned upstream's structured startup-pending response is retryable.
+
+    A refusal is never counted as passed without an actual pairing-required
+    error. Invalid requests, credential denials, missing diagnostics, and
+    arbitrary UNAVAILABLE conditions fail closed.
+    """
+    return (
+        phase == "gateway-startup-pending"
+        and exit_code == 1
+        and max_attempts > 0
+        and 0 <= attempt < max_attempts - 1
+    )
 
 
 def negative_pairing_gateway_config() -> dict[str, object]:
@@ -386,7 +404,12 @@ def main(argv: list[str] | None = None) -> int:
             # Only the exact request ID explicitly entered by a human can
             # enable local pairing. Read-only and write-probe identities
             # require independent approvals, never implicit privilege reuse.
-            for approval_attempt in range(3):
+            attempt_limit = 6 if args.expect_pairing_required else 3
+            for approval_attempt in range(attempt_limit):
+                if args.expect_pairing_required:
+                    # A failed attempt cannot lend stale evidence to the next.
+                    (temp / "probe-phase").unlink(missing_ok=True)
+                    (temp / "probe-result").unlink(missing_ok=True)
                 try:
                     remaining = max(1, int(deadline - time.monotonic()))
                     result = subprocess.run(
@@ -413,6 +436,18 @@ def main(argv: list[str] | None = None) -> int:
                     category = categories.get(result.returncode, "unexpected-exit")
                     phase = safe_probe_phase(temp / "probe-phase")
                     failure = safe_probe_result(temp / "probe-result")
+                    if (gateway.poll() is None
+                            and may_retry_negative_gateway_startup(
+                                phase=phase, exit_code=result.returncode,
+                                attempt=approval_attempt,
+                                max_attempts=attempt_limit,
+                            )
+                            and time.monotonic() + 1 < deadline):
+                        print("Isolated Gateway startup sidecars not ready; "
+                              "retrying bounded negative contract probe.",
+                              file=sys.stderr)
+                        time.sleep(1)
+                        continue
                     print("Isolated real Gateway negative-contract failed: "
                           + category + " (last-phase=" + phase
                           + ", failure-class=" + failure + ")",
