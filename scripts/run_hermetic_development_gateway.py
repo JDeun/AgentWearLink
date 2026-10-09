@@ -447,6 +447,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expect-grant-reconnect", action="store_true",
                         help="Verify two separate Swift processes and an issued "
                              "read-only grant without shared token in the second")
+    parser.add_argument("--expect-native-keychain-grant-reconnect", action="store_true",
+                        help="CI-only real Gateway grant reuse through native macOS Keychain")
     parser.add_argument("--expect-agent-stream", action="store_true",
                         help="Run production native agent against pinned real "
                              "Gateway with a synthetic local Responses model")
@@ -457,7 +459,9 @@ def main(argv: list[str] | None = None) -> int:
                              "Gateway session without duplicate model execution")
     args = parser.parse_args(argv)
     contract_count = sum((args.expect_pairing_required, args.expect_health_ok,
-                          args.expect_grant_reconnect, args.expect_agent_stream,
+                          args.expect_grant_reconnect,
+                          args.expect_native_keychain_grant_reconnect,
+                          args.expect_agent_stream,
                           args.expect_agent_abort, args.expect_agent_session))
     contract = contract_count == 1
     if (contract_count > 1 or contract and
@@ -465,6 +469,13 @@ def main(argv: list[str] | None = None) -> int:
              or args.prove_abort or args.config_template)):
         print("Isolated Gateway runner: synthetic contract modes must be "
               "exclusive, read-only and without external config.",
+              file=sys.stderr)
+        return 2
+
+    if args.expect_native_keychain_grant_reconnect and (
+            os.environ.get("CI") != "true"
+            or os.environ.get("AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION") != "1"):
+        print("Native Keychain contract requires explicit disposable macOS CI opt-in.",
               file=sys.stderr)
         return 2
 
@@ -526,10 +537,11 @@ def main(argv: list[str] | None = None) -> int:
             prove_abort=args.prove_abort,
         )
         if contract:
-            # An isolated, pre-built read-only Swift probe; no Keychain use.
+            # Exactly one private, prebuilt real-Gateway CI contract.
             marker = ("AWL_DEV_GATEWAY_EXPECT_PAIRING" if args.expect_pairing_required
                       else "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"
-                      if args.expect_grant_reconnect
+                      if (args.expect_grant_reconnect or
+                          args.expect_native_keychain_grant_reconnect)
                       else "AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"
                       if args.expect_agent_stream
                       else "AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"
@@ -546,6 +558,10 @@ def main(argv: list[str] | None = None) -> int:
                 if model_port is None:
                     raise ValueError("Synthetic session requires local model port")
                 env["AWL_DEV_GATEWAY_MODEL_PORT"] = str(model_port)
+            if args.expect_native_keychain_grant_reconnect:
+                env["CI"] = "true"
+                env["AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION"] = "1"
+                env["AWL_DEV_GATEWAY_NATIVE_KEYCHAIN"] = "1"
             if args.expect_grant_reconnect:
                 grant_directory = temp / "grant-cache"
                 grant_directory.mkdir(mode=0o700)
@@ -697,7 +713,8 @@ def main(argv: list[str] | None = None) -> int:
                         print("Isolated real Gateway agent stream: synthetic "
                               "model request was not observed.", file=sys.stderr)
                         return 1
-                    if args.expect_grant_reconnect and result.returncode == 0:
+                    if (args.expect_grant_reconnect or
+                            args.expect_native_keychain_grant_reconnect) and result.returncode == 0:
                         # The second Swift process must not receive *either*
                         # the AWL shared Gateway bearer or the upstream token.
                         # It only loads the device grant the real Gateway
@@ -723,8 +740,13 @@ def main(argv: list[str] | None = None) -> int:
                                   file=sys.stderr)
                             return 1
                         if reconnect.returncode == 0:
-                            print("Isolated real Gateway issued read-only grant "
-                                  "and second Swift process connected without shared token.")
+                            if args.expect_native_keychain_grant_reconnect:
+                                print("Isolated real Gateway-issued read-only grant "
+                                      "persisted in native macOS Keychain; a second "
+                                      "Swift process connected without shared token.")
+                            else:
+                                print("Isolated real Gateway issued read-only grant "
+                                      "and second Swift process connected without shared token.")
                             return 0
                         print("Isolated real Gateway second-process grant-only "
                               "reconnect failed (last-phase="
@@ -755,6 +777,7 @@ def main(argv: list[str] | None = None) -> int:
                         time.sleep(1)
                         continue
                     mode = ("negative-contract" if args.expect_pairing_required
+                            else "native-keychain-grant-contract" if args.expect_native_keychain_grant_reconnect
                             else "disposable-grant-contract" if args.expect_grant_reconnect
                             else "agent-stream-contract" if args.expect_agent_stream
                             else "active-agent-abort-contract" if args.expect_agent_abort
@@ -788,6 +811,31 @@ def main(argv: list[str] | None = None) -> int:
             retire_owned_process(gateway)
             if model_process is not None:
                 retire_owned_process(model_process)
+            if args.expect_native_keychain_grant_reconnect:
+                # Always clean ONLY the randomized CI service, including after
+                # connection or grant-reuse failure. No private item is touched.
+                cleanup_env = dict(env)
+                cleanup_env.pop("AWL_OPENCLAW_TOKEN", None)
+                cleanup_env.pop("OPENCLAW_GATEWAY_TOKEN", None)
+                cleanup_env.pop("AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY", None)
+                cleanup_env["AWL_DEV_GATEWAY_NATIVE_KEYCHAIN_CLEANUP"] = "1"
+                try:
+                    cleanup = subprocess.run(
+                        [sys.executable, str(ROOT / "scripts" /
+                                             "dev_gateway_probe_runner.py"),
+                         "awl-openclaw-probe"],
+                        cwd=ROOT, env=cleanup_env, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        timeout=30, check=False,
+                    )
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    raise RuntimeError(
+                        "Disposable native Keychain cleanup did not finish"
+                    ) from exc
+                if cleanup.returncode != 0:
+                    raise RuntimeError(
+                        "Disposable native Keychain cleanup was unsuccessful"
+                    )
 
 
 if __name__ == "__main__":
