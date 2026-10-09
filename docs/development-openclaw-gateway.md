@@ -448,8 +448,14 @@ second receives no shared Gateway bearer or bootstrap token, loads the
 persisted identity and endpoint-scoped grant from native Keychain, and
 must pass authenticated `health`.
 
-This path requires both `CI=true` and
-`AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION=1`, rejects personal/Tailnet endpoints,
+This path is restricted to a GitHub-hosted macOS runner
+(`GITHUB_ACTIONS=true`, `RUNNER_OS=macOS`), and requires both
+`CI=true` and
+`AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION=1`. Because a synthetic HOME
+can detach `Security.framework` from the runner's unlocked login Keychain,
+**only the Swift native-Keychain probe processes** use the fresh runner's
+original HOME; the real OpenClaw Gateway and local synthetic model keep their
+private disposable HOME and config/state. The contract rejects personal/Tailnet endpoints,
 uses a random nonce-isolated Keychain service on the temporary CI runner
 and executes narrowly scoped cleanup even when the Gateway probe fails.
 Cleanup failure makes the job fail rather than silently leave synthetic
