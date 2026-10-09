@@ -497,8 +497,18 @@ def prove_isolated_explicit_pairing_revocation(
         (temp / "probe-phase").unlink(missing_ok=True)
         (temp / "probe-result").unlink(missing_ok=True)
         try:
+            # The first, bearer-authenticated probe follows shell preflight.
+            # Grant-only reconnect intentionally has NO shared Gateway token,
+            # so it must invoke the already-built production Swift probe
+            # directly, exactly like the established two-process CI contract.
+            command = (
+                [sys.executable, str(ROOT / "scripts" / "dev_gateway_probe_runner.py"),
+                 "awl-openclaw-probe"]
+                if e.get("AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY") == "1"
+                else ["bash", str(ROOT / "scripts" / "run-openclaw-development-gateway.sh")]
+            )
             run = subprocess.run(
-                ["bash", str(ROOT / "scripts" / "run-openclaw-development-gateway.sh")],
+                command,
                 cwd=ROOT, env=e, stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=max(1, min(90, int(deadline - time.monotonic()))),
