@@ -44,6 +44,7 @@ _SAFE_PROBE_PHASES = frozenset({
     "health-accepted", "pairing-required", "probe-error",
     "chat-started", "chat-authenticated", "chat-delta", "chat-terminal",
     "chat-provider-ingress", "chat-abort-confirmed",
+    "chat-two-turns-completed",
 })
 _SAFE_PROBE_RESULTS = frozenset({
     "challenge-timeout", "hello-timeout", "unexpected-connect-response",
@@ -55,6 +56,7 @@ _SAFE_PROBE_RESULTS = frozenset({
     "gateway-state-error", "frame-invalid", "decoding-failed", "other-error",
     "chat-no-delta", "chat-no-terminal", "chat-session-mismatch", "chat-other-error",
     "chat-provider-not-executing",
+    "chat-duplicate-interaction", "chat-interaction-mismatch",
 })
 
 
@@ -156,7 +158,7 @@ def synthetic_agent_gateway_config(model_port: int, workspace: Path) -> dict[str
     }
 
 
-def synthetic_model_received_request(port: int) -> bool:
+def synthetic_model_received_request(port: int, *, exact_requests: int | None = None) -> bool:
     """Read only allowlisted counters from a generated loopback mock server."""
     if not (1 <= port <= 65535):
         return False
@@ -169,9 +171,12 @@ def synthetic_model_received_request(port: int) -> bool:
             if response.status != 200:
                 return False
             data = json.loads(response.read(8192))
-        return (isinstance(data, dict)
-                and isinstance(data.get("requests"), dict)
-                and data["requests"].get("ingress", {}).get("responses", 0) >= 1)
+        count = (data.get("requests", {}).get("ingress", {}).get("responses")
+                 if isinstance(data, dict) and isinstance(data.get("requests"), dict)
+                 else None)
+        return (isinstance(count, int) and not isinstance(count, bool)
+                and count >= 1
+                and (exact_requests is None or count == exact_requests))
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         return False
 
@@ -442,10 +447,13 @@ def main(argv: list[str] | None = None) -> int:
                              "Gateway with a synthetic local Responses model")
     parser.add_argument("--expect-agent-abort", action="store_true",
                         help="Require confirmed real chat.abort after synthetic provider ingress")
+    parser.add_argument("--expect-agent-session", action="store_true",
+                        help="Prove exactly two native agent requests reuse one real "
+                             "Gateway session without duplicate model execution")
     args = parser.parse_args(argv)
     contract_count = sum((args.expect_pairing_required, args.expect_health_ok,
                           args.expect_grant_reconnect, args.expect_agent_stream,
-                          args.expect_agent_abort))
+                          args.expect_agent_abort, args.expect_agent_session))
     contract = contract_count == 1
     if (contract_count > 1 or contract and
             (args.approve_isolated_pairing or args.full_chat
@@ -487,7 +495,8 @@ def main(argv: list[str] | None = None) -> int:
             (temp / "state" / "openclaw.json").chmod(0o600)
 
         port = local_port()
-        synthetic_agent = args.expect_agent_stream or args.expect_agent_abort
+        synthetic_agent = (args.expect_agent_stream or args.expect_agent_abort
+                           or args.expect_agent_session)
         model_port = local_port() if synthetic_agent else None
         if model_port == port:
             model_port = local_port()
@@ -520,11 +529,15 @@ def main(argv: list[str] | None = None) -> int:
                       if args.expect_agent_stream
                       else "AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"
                       if args.expect_agent_abort
+                      else "AWL_DEV_GATEWAY_EXPECT_AGENT_SESSION"
+                      if args.expect_agent_session
                       else "AWL_DEV_GATEWAY_EXPECT_HEALTH_OK")
             env[marker] = "1"
             if args.expect_agent_abort and model_port is not None:
                 env["AWL_DEV_GATEWAY_MODEL_PORT"] = str(model_port)
                 env["AWL_DEV_GATEWAY_PROVE_ABORT"] = "1"
+            if args.expect_agent_session:
+                env["AWL_DEV_GATEWAY_SESSION_ASSERT"] = "1"
             if args.expect_grant_reconnect:
                 grant_directory = temp / "grant-cache"
                 grant_directory.mkdir(mode=0o700)
@@ -634,6 +647,20 @@ def main(argv: list[str] | None = None) -> int:
                     if args.expect_health_ok and result.returncode == 0:
                         print("Isolated real Gateway authenticated read-only health accepted.")
                         return 0
+                    if args.expect_agent_session and result.returncode == 0:
+                        if (model_port is not None
+                                and synthetic_model_received_request(
+                                    model_port, exact_requests=2)
+                                and safe_probe_phase(temp / "probe-phase") ==
+                                    "chat-two-turns-completed"):
+                            print("Isolated real Gateway completed two distinct "
+                                  "native agent turns in the same session with "
+                                  "exactly two synthetic model requests.")
+                            return 0
+                        print("Isolated real Gateway same-session contract "
+                              "did not prove exactly two model requests.",
+                              file=sys.stderr)
+                        return 1
                     if args.expect_agent_abort and result.returncode == 0:
                         if (model_port is not None
                                 and synthetic_model_received_request(model_port)
@@ -716,6 +743,7 @@ def main(argv: list[str] | None = None) -> int:
                             else "disposable-grant-contract" if args.expect_grant_reconnect
                             else "agent-stream-contract" if args.expect_agent_stream
                             else "active-agent-abort-contract" if args.expect_agent_abort
+                            else "agent-session-contract" if args.expect_agent_session
                             else "positive-health-contract")
                     print("Isolated real Gateway " + mode + " failed: "
                           + category + " (last-phase=" + phase

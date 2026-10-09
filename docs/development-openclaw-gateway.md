@@ -380,3 +380,30 @@ at teardown. This proves real upstream **accepted, actively executing
 run → confirmed cancellation**, not correct rollback of arbitrary tools,
 model/provider quality, real credential Keychain permissions, operator
 approval or physical iPhone/Meta/Tailnet recovery.
+
+## Real Gateway same-session two-turn smoke
+
+Run the existing pinned, disposable real Gateway against its own local
+synthetic OpenAI Responses server (no real model, tokens or network):
+
+```bash
+python3 scripts/run_hermetic_development_gateway.py \
+  --checkout .awl-hermetic-upstream \
+  --revision YOUR_EXACT_40_CHARACTER_COMMIT \
+  --expect-agent-session
+```
+
+The exact **production native agent adapter** stays connected to the **same
+explicit `agent:main:awl-dev-hermetic` session** and submits two sequential
+harmless requests, each with a fresh `InteractionID`. For *each* request the
+real Gateway must yield at least one nonempty text delta followed by exactly
+one terminal completion, all carrying the corresponding interaction ID.
+The owned local model's aggregate ingress counter must be **exactly two**:
+a duplicated inference or a dropped request fails the contract.
+
+This is a controlled same-session protocol / output attribution and
+double-submit smoke test, not evidence that a real model correctly
+remembers prior turns, retains tools, or works across network reconnect.
+Physical device/Tailnet and real personal session/memory validation stay
+open under #118/#97/#56. State, credentials and localhost mock process
+are deleted when the test ends.

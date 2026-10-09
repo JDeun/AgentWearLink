@@ -175,6 +175,9 @@ public enum OpenClawDevelopmentAgentStreamPolicy {
               environment["AWL_DEV_GATEWAY_EXPECT_PAIRING"] == nil,
               environment["AWL_DEV_GATEWAY_EXPECT_HEALTH_OK"] == nil,
               environment["AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"] == nil,
+              environment["AWL_DEV_GATEWAY_EXPECT_AGENT_SESSION"] == nil,
+              environment["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == nil,
+              environment["AWL_DEV_GATEWAY_SESSION_ASSERT"] == nil,
               environment["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] == nil,
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_ALLOW_MUTATING_PROBE"] == "1",
@@ -231,6 +234,34 @@ public enum OpenClawDevelopmentAgentAbortPolicy {
         scoped.removeValue(forKey: "AWL_DEV_GATEWAY_MODEL_PORT")
         scoped["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] = "1"
         scoped["AWL_DEV_GATEWAY_PROVE_ABORT"] = "0"
+        return OpenClawDevelopmentAgentStreamPolicy.permits(
+            environment: scoped, isLoopback: isLoopback, profile: profile
+        )
+    }
+}
+
+/// Only two sequential, distinct interaction IDs through the production
+/// native agent adapter, bound to the same disposable real Gateway session.
+public enum OpenClawDevelopmentAgentSessionPolicy {
+    public static func permits(
+        environment: [String: String],
+        isLoopback: Bool,
+        profile: OpenClawValidationProfile
+    ) -> Bool {
+        guard environment["AWL_DEV_GATEWAY_EXPECT_AGENT_SESSION"] == "1",
+              environment["AWL_DEV_GATEWAY_SESSION_ASSERT"] == "1",
+              environment["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == nil,
+              environment["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == nil,
+              environment["AWL_DEV_GATEWAY_ABORT_ASSERT"] == nil,
+              let session = environment["AWL_OPENCLAW_SESSION_KEY"],
+              session.range(
+                  of: #"^agent:[A-Za-z0-9_-]+:awl-dev-[A-Za-z0-9_-]+$"#,
+                  options: .regularExpression
+              ) != nil else { return false }
+        var scoped = environment
+        scoped.removeValue(forKey: "AWL_DEV_GATEWAY_EXPECT_AGENT_SESSION")
+        scoped.removeValue(forKey: "AWL_DEV_GATEWAY_SESSION_ASSERT")
+        scoped["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] = "1"
         return OpenClawDevelopmentAgentStreamPolicy.permits(
             environment: scoped, isLoopback: isLoopback, profile: profile
         )

@@ -58,6 +58,16 @@ struct AgentWearLinkOpenClawChatProbe {
 
         let syntheticAgentStream = env["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == "1"
         let syntheticAgentAbort = env["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == "1"
+        let syntheticAgentSession = env["AWL_DEV_GATEWAY_EXPECT_AGENT_SESSION"] == "1"
+        if syntheticAgentSession {
+            guard OpenClawDevelopmentAgentSessionPolicy.permits(
+                environment: env,
+                isLoopback: endpoint.exposure == .loopback,
+                profile: profile
+            ) else {
+                fail("Synthetic session test requires isolated two-turn profile.", code: 2)
+            }
+        }
         if syntheticAgentAbort {
             guard OpenClawDevelopmentAgentAbortPolicy.permits(
                 environment: env, isLoopback: endpoint.exposure == .loopback,
@@ -75,7 +85,8 @@ struct AgentWearLinkOpenClawChatProbe {
                 fail("Synthetic agent stream requires isolated local mutating profile.", code: 2)
             }
         }
-        let syntheticContract = syntheticAgentStream || syntheticAgentAbort
+        let syntheticContract =
+            syntheticAgentStream || syntheticAgentAbort || syntheticAgentSession
         let identityStore: any OpenClawDeviceIdentityStore =
             syntheticContract ? InMemoryOpenClawDeviceIdentityStore()
                 : KeychainOpenClawDeviceIdentityStore(service: keychainService)
@@ -117,7 +128,6 @@ struct AgentWearLinkOpenClawChatProbe {
             runClient: client,
             sessionKey: nonEmpty(env["AWL_OPENCLAW_SESSION_KEY"])
         )
-        let id = InteractionID()
         let requireDevelopmentEvidence = env["AWL_DEV_GATEWAY_ASSERT"] == "1"
 
         do {
@@ -164,31 +174,48 @@ struct AgentWearLinkOpenClawChatProbe {
                 return
             }
 
-            let responses = await adapter.responses(for: AgentRequest(interactionID: id, text: message))
-            var deltaCount = 0
-            var terminalCount = 0
-            for try await response in responses {
-                switch response {
-                case let .textDelta(_, text):
-                    deltaCount += 1
-                    recordStreamPhase("chat-delta", environment: env)
-                    print(text, terminator: "")
-                    fflush(stdout)
-                case .completed:
-                    terminalCount += 1
-                    recordStreamPhase("chat-terminal", environment: env)
-                    print("")
-                case let .failed(_, error):
-                    throw error
+            // Two sequential runs target the SAME real Gateway session.
+            // Distinct IDs ensure one turn cannot borrow the other's events.
+            var observedIDs = Set<UUID>()
+            for _ in 0..<(syntheticAgentSession ? 2 : 1) {
+                let interactionID = InteractionID()
+                guard observedIDs.insert(interactionID.rawValue).inserted else {
+                    throw DevelopmentGatewayProbeError.duplicateInteractionID
+                }
+                let responses = await adapter.responses(
+                    for: AgentRequest(interactionID: interactionID, text: message)
+                )
+                var deltaCount = 0
+                var terminalCount = 0
+                for try await response in responses {
+                    guard response.interactionID == interactionID else {
+                        throw DevelopmentGatewayProbeError.unexpectedInteractionID
+                    }
+                    switch response {
+                    case let .textDelta(_, text):
+                        if !text.isEmpty { deltaCount += 1 }
+                        recordStreamPhase("chat-delta", environment: env)
+                        print(text, terminator: "")
+                        fflush(stdout)
+                    case .completed:
+                        terminalCount += 1
+                        recordStreamPhase("chat-terminal", environment: env)
+                        print("")
+                    case let .failed(_, error):
+                        throw error
+                    }
+                }
+                if requireDevelopmentEvidence {
+                    guard deltaCount > 0 else {
+                        throw DevelopmentGatewayProbeError.missingIncrementalOutput
+                    }
+                    guard terminalCount == 1 else {
+                        throw DevelopmentGatewayProbeError.missingTerminalCompletion
+                    }
                 }
             }
-            if requireDevelopmentEvidence {
-                guard deltaCount > 0 else {
-                    throw DevelopmentGatewayProbeError.missingIncrementalOutput
-                }
-                guard terminalCount == 1 else {
-                    throw DevelopmentGatewayProbeError.missingTerminalCompletion
-                }
+            if syntheticAgentSession {
+                recordStreamPhase("chat-two-turns-completed", environment: env)
             }
             await adapter.disconnect()
         } catch let OpenClawHandshakeError.pairingRequired(pairing) {
@@ -229,6 +256,8 @@ struct AgentWearLinkOpenClawChatProbe {
             case .missingTerminalCompletion: category = "chat-no-terminal"
             case .unexpectedAcceptedSession: category = "chat-session-mismatch"
             case .missingSyntheticProviderIngress: category = "chat-provider-not-executing"
+            case .duplicateInteractionID: category = "chat-duplicate-interaction"
+            case .unexpectedInteractionID: category = "chat-interaction-mismatch"
             }
         } else {
             category = "chat-other-error"
@@ -242,7 +271,8 @@ struct AgentWearLinkOpenClawChatProbe {
         key: String, name: String
     ) {
         guard environment["AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"] == "1"
-                || environment["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == "1",
+                || environment["AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"] == "1"
+                || environment["AWL_DEV_GATEWAY_EXPECT_AGENT_SESSION"] == "1",
               environment["AWL_ALLOW_DEV_GATEWAY_TEST"] == "1",
               environment["AWL_OPENCLAW_EXPOSURE"] == "loopback",
               let state = environment["OPENCLAW_STATE_DIR"],
@@ -338,4 +368,6 @@ private enum DevelopmentGatewayProbeError: Error {
     case missingTerminalCompletion
     case unexpectedAcceptedSession
     case missingSyntheticProviderIngress
+    case duplicateInteractionID
+    case unexpectedInteractionID
 }
