@@ -23,7 +23,7 @@ flowchart TB
         N <--> K
         G <-->|"Local agent model request"| L
     end
-    X["Personal OpenClaw, Tailscale, iPhone, glasses"] -. "Never contacted" .- CI
+    X["Out of scope: personal Gateway, Tailnet, iPhone, glasses"]
 ```
 
 The harness selects a fresh loopback port, synthetic auth token, isolated HOME/state and workspace, and owned process groups. No inherited personal Gateway credentials, provider keys, Tailnet settings, private conversations or media are loaded. Cleanup is bounded and restricted to owned resources.
