@@ -2,17 +2,11 @@
 
 AWL separates **agent semantics** from **wire transport**.
 
-```text
-AWL Core
-   │ AgentRequest / AgentResponse
-   ▼
-AgentAdapter
-   │ runtime mapping
-   ▼
-AgentTransport
-   │ HTTP / SSE / WebSocket / local IPC
-   ▼
-Agent endpoint
+```mermaid
+flowchart TD
+    C["AWL Core"] <-->|"AgentRequest / AgentResponse"| A["AgentAdapter"]
+    A <-->|"Runtime-specific mapping"| T["AgentTransport"]
+    T <-->|"HTTP, SSE, WebSocket; future IPC"| E["Agent endpoint"]
 ```
 
 ## Why this boundary exists
