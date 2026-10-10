@@ -475,6 +475,28 @@ def select_isolated_pending_readonly(document: object) -> tuple[str, str] | None
     return request_id, device_id
 
 
+def confirmed_isolated_operator_revocation(document: object, device_id: str) -> bool:
+    """Require upstream redacted inventory to prove this role was revoked."""
+    if not isinstance(document, dict):
+        return False
+    paired = document.get("paired")
+    if not isinstance(paired, list) or len(paired) != 1:
+        return False
+    entry = paired[0]
+    if not isinstance(entry, dict) or entry.get("deviceId") != device_id:
+        return False
+    tokens = entry.get("tokens")
+    if not isinstance(tokens, list):
+        return False
+    operator = [token for token in tokens
+                if isinstance(token, dict) and token.get("role") == "operator"]
+    if len(operator) != 1:
+        return False
+    token = operator[0]
+    timestamp = token.get("revokedAtMs")
+    return token.get("scopes") == ["operator.read"] and type(timestamp) is int and timestamp > 0
+
+
 def prove_isolated_explicit_pairing_revocation(
     *, node: str, checkout: Path, env: dict[str, str],
     probe_env: dict[str, str], temp: Path, deadline: float,
@@ -588,12 +610,22 @@ def prove_isolated_explicit_pairing_revocation(
         if cli(["revoke", "--device", device_id, "--role", "operator"]).returncode:
             print("Explicit approval failed at token revocation CLI.", file=sys.stderr)
             return 1
+        # An RPC/CLI success alone is not proof that the target read-only token
+        # actually lost authority. Verify the real Gateway's redacted inventory.
+        post_revoke = cli(["list", "--json"], read=True)
+        if post_revoke.returncode or len(post_revoke.stdout) > 128_000:
+            print("Explicit approval failed at post-revocation inventory.", file=sys.stderr)
+            return 1
+        if not confirmed_isolated_operator_revocation(
+                json.loads(post_revoke.stdout.decode("utf-8")), device_id):
+            print("Explicit approval failed: token not recorded as revoked.", file=sys.stderr)
+            return 1
         rejected = probe(second)
         phase = safe_probe_phase(temp / "probe-phase")
         result = safe_probe_result(temp / "probe-result")
         if rejected not in (1, 2, 3) or (
             phase not in ("pairing-required", "gateway-auth-denied",
-                          "gateway-device-proof-rejected",
+                          "gateway-device-proof-rejected", "gateway-invalid-request",
                           "gateway-shared-auth-rejected")
             and result not in ("gateway-device-token-rejected",
                                "gateway-auth-denied", "gateway-pairing-code")
