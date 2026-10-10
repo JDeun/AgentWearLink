@@ -106,8 +106,10 @@ A real agent deployment is exercised without treating the wearable hardware as p
 
 The reference P0-B topology is:
 
-```text
-iPhone / AWL → Tailscale → Mac mini → OpenClaw Gateway
+```mermaid
+flowchart LR
+    I["iPhone / AWL"] -->|"Private Tailnet"| T["Tailscale"]
+    T --> M["Mac / OpenClaw Gateway"]
 ```
 
 Required evidence includes authentication/pairing, persistent credential reuse, one real agent turn, incremental output, existing-session semantics, and no silent replay after uncertain delivery.
