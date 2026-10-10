@@ -1,5 +1,7 @@
 # AgentWearLink
 
+[![Swift Core CI](https://github.com/JDeun/AgentWearLink/actions/workflows/swift.yml/badge.svg)](https://github.com/JDeun/AgentWearLink/actions/workflows/swift.yml) [![Docs CI](https://github.com/JDeun/AgentWearLink/actions/workflows/docs.yml/badge.svg)](https://github.com/JDeun/AgentWearLink/actions/workflows/docs.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 **웨어러블 디바이스와 기존 AI 에이전트 런타임을 벤더·모델에 종속되지 않는 인터페이스로 연결합니다.**
 
 [English](README.md) · [빠른 시작](docs/getting-started.md) · [아키텍처](docs/architecture.md) · [전체 문서](docs/README.md) · [기여 가이드](CONTRIBUTING.md)
