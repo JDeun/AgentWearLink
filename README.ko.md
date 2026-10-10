@@ -99,6 +99,19 @@ Meta DAT 실제 연동 패키지의 의존성을 해석하려면 별도로 **Swi
 - **데이터 최소화:** 개인 미디어를 기본적으로 보존하지 않고, 비밀키는 플랫폼 안전 저장소에 둡니다.
 - **검증 수준 구분:** 시뮬레이터·격리 통합·배포·실기기 검증을 혼동하지 않습니다.
 
+## 로드맵
+
+아래는 **검증 목표**이며, 실기기 테스트가 이미 통과됐다는 뜻이 아닙니다.
+
+| 단계 | 검증 목표 | 이슈 |
+| --- | --- | --- |
+| P0-A | Ray-Ban Meta + iPhone DAT 실기기 기본 연결 | [#1](https://github.com/JDeun/AgentWearLink/issues/1) |
+| P0-B | 실제 iPhone → Tailnet → OpenClaw 텍스트 왕복 | [#56](https://github.com/JDeun/AgentWearLink/issues/56) |
+| P0-C / P0-D | 웨어러블 음성 출력 및 핸즈프리 호출 | [#5](https://github.com/JDeun/AgentWearLink/issues/5), [#6](https://github.com/JDeun/AgentWearLink/issues/6) |
+| P1 | 실기기 카메라 스냅샷 → 비전 에이전트 | [#58](https://github.com/JDeun/AgentWearLink/issues/58) |
+| P2 | 안정성·개인정보·복구 실기기 검증 | [#59](https://github.com/JDeun/AgentWearLink/issues/59) |
+| 이후 | 실제 수요가 검증된 디바이스·런타임 어댑터 확대 | [Issues](https://github.com/JDeun/AgentWearLink/issues) |
+
 ## 문서 · 기여 · 보안
 
 [전체 문서](docs/README.md), [아키텍처](docs/architecture.md), [OpenClaw 연동](docs/openclaw.md), [Meta DAT 연동](Adapters/MetaDAT/README.md), [PRD](docs/PRD.md)를 참고하세요.
