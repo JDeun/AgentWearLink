@@ -1,5 +1,7 @@
 # AgentWearLink
 
+[![Swift Core CI](https://github.com/JDeun/AgentWearLink/actions/workflows/swift.yml/badge.svg)](https://github.com/JDeun/AgentWearLink/actions/workflows/swift.yml) [![Docs CI](https://github.com/JDeun/AgentWearLink/actions/workflows/docs.yml/badge.svg)](https://github.com/JDeun/AgentWearLink/actions/workflows/docs.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 **Connect wearable devices to existing AI agent runtimes—without coupling your application to a device vendor or model provider.**
 
 [한국어](README.ko.md) · [Get started](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
