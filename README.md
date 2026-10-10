@@ -99,6 +99,19 @@ The real Gateway checks use a disposable localhost Gateway and a **synthetic loc
 - **Data minimization:** No private media retention by default; secrets stay in platform secure storage.
 - **Evidence-based claims:** Simulator, isolated integration, deployment, and physical acceptance remain distinct.
 
+## Roadmap
+
+This is an **acceptance roadmap**, not a promise that hardware gates are already passed.
+
+| Phase | Acceptance target | Tracking |
+| --- | --- | --- |
+| P0-A | Real Ray-Ban Meta + iPhone DAT baseline | [#1](https://github.com/JDeun/AgentWearLink/issues/1) |
+| P0-B | Actual iPhone → Tailnet → OpenClaw text round-trip | [#56](https://github.com/JDeun/AgentWearLink/issues/56) |
+| P0-C / P0-D | Wearable audio output and hands-free voice invocation | [#5](https://github.com/JDeun/AgentWearLink/issues/5), [#6](https://github.com/JDeun/AgentWearLink/issues/6) |
+| P1 | Explicit photo → vision agent on physical devices | [#58](https://github.com/JDeun/AgentWearLink/issues/58) |
+| P2 | Hardware reliability, privacy and recovery matrix | [#59](https://github.com/JDeun/AgentWearLink/issues/59) |
+| Later | Additional SDK/runtime adapters driven by demonstrated need | [Issues](https://github.com/JDeun/AgentWearLink/issues) |
+
 ## Documentation and support
 
 Start with the [documentation index](docs/README.md) or the [getting-started guide](docs/getting-started.md). The [architecture](docs/architecture.md), [OpenClaw integration](docs/openclaw.md), [Meta DAT integration](Adapters/MetaDAT/README.md), and [product requirements](docs/PRD.md) describe the contracts in more depth.
