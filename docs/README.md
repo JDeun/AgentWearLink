@@ -1,55 +1,79 @@
-# Documentation
+# AgentWearLink documentation
 
-This directory is the implementation and validation documentation for AgentWearLink.
+**Developer guide and reference documentation for the pre-alpha wearable/agent interoperability layer.**
+
+[Project overview](../README.md) · [한국어 README](../README.ko.md) · [Report an issue](https://github.com/JDeun/AgentWearLink/issues)
+
+> [!NOTE]
+> This repository documents **implemented code and evidence**, not a verified consumer hardware product. Every validation claim distinguishes deterministic tests, simulator/vendor integration, isolated real Gateway smoke, actual deployment, and physical-device acceptance.
 
 ## Start here
 
-| Document | Purpose |
+| I want to… | Read |
 | --- | --- |
-| [PRD.md](PRD.md) | Canonical product and implementation requirements |
-| [architecture.md](architecture.md) | Package boundaries and system architecture |
-| [testing.md](testing.md) | Test strategy, CI gates, simulator evidence, and physical validation layers |
-| [reliability-matrix.md](reliability-matrix.md) | Deterministic vs physical reliability checks |
+| Build and run the first tests | **[Getting started](getting-started.md)** |
+| Understand the overall design | **[Architecture](architecture.md)** and [transport contracts](transports.md) |
+| Understand readiness and run CI | **[Testing and validation](testing.md)** |
+| Work on the wearable integration | **[Meta DAT iOS adapter](meta-dat-ios.md)** |
+| Connect an existing agent | **[OpenClaw reference adapter](openclaw.md)** |
+| Follow the private network topology | **[Tailscale deployment](tailscale.md)** |
+| Work through requirements | **[PRD](PRD.md)** |
+| Submit a change | **[Contributing](../CONTRIBUTING.md)** |
 
-## Device integration
+## Integration reference
 
-- [meta-dat-ios.md](meta-dat-ios.md) — Meta DAT iOS integration
-- [meta-dat-known-issues.md](meta-dat-known-issues.md) — known DAT constraints and validation notes
-- [meta-dat-validation.md](meta-dat-validation.md) — P0-A physical DAT validation runbook
-- [meta-mock-device-kit.md](meta-mock-device-kit.md) — pinned MockDeviceKit app-host/client contract, capabilities, evidence boundary, and AWL test architecture
-- [meta-dat-bridge.md](meta-dat-bridge.md) — official DAT session/camera API patterns mapped to the concrete AWL host bridge
-- [meta-dat-audit.md](meta-dat-audit.md) — cross-audit findings against Meta CameraAccess, DisplayAccess, and BirdSpotter
-- [meta-dat-capabilities.md](meta-dat-capabilities.md) — verified speech, raw-audio, voice-invocation, camera, registration, and device-selection contract
+### Wearables and iOS
 
-## OpenClaw integration
+| Topic | Document |
+| --- | --- |
+| API boundaries and concrete host bridge | [Meta DAT bridge](meta-dat-bridge.md) |
+| SDK capability and permission contracts | [Meta DAT capabilities](meta-dat-capabilities.md) |
+| Simulator and vendor mock evidence | [MockDeviceKit guide](meta-mock-device-kit.md) |
+| Physical-device checklist (P0-A) | [Meta DAT validation](meta-dat-validation.md) |
+| Vendor code cross-audit | [Meta DAT audit](meta-dat-audit.md) |
+| Known upstream and physical limits | [Meta DAT known issues](meta-dat-known-issues.md) |
+| Concrete vendor package | [Adapters/MetaDAT](../Adapters/MetaDAT/README.md) |
 
-- [openclaw.md](openclaw.md) — OpenClaw architecture and protocol integration
-- [openclaw-probe.md](openclaw-probe.md) — read-only Gateway/authentication probe
-- [openclaw-chat-probe.md](openclaw-chat-probe.md) — explicit mutating text E2E probe
-- [p0b-openclaw-validation.md](p0b-openclaw-validation.md) — full iPhone/Tailnet/OpenClaw P0-B validation runbook
+### OpenClaw and networking
 
-## Networking and transports
+| Topic | Document |
+| --- | --- |
+| Gateway protocol / identity / session semantics | [OpenClaw integration](openclaw.md) |
+| Pinned upstream protocol version | [Gateway protocol contract](openclaw-protocol-contract.md) |
+| Local disposable Gateway acceptance | [Development Gateway tests](development-openclaw-gateway.md) |
+| Read-only auth/pairing test | [OpenClaw probe](openclaw-probe.md) |
+| Opt-in mutating agent turn | [OpenClaw chat probe](openclaw-chat-probe.md) |
+| Actual iPhone/Tailnet/Mac acceptance | [P0-B runbook](p0b-openclaw-validation.md) |
+| Reachability and TLS | [Tailscale deployment](tailscale.md) |
+| Transport responsibilities and budgets | [Transport contracts](transports.md) |
 
-- [tailscale.md](tailscale.md) — reference private-network deployment
-- [transports.md](transports.md) — transport boundaries and semantics
+### Quality and design decisions
 
-## Architecture decisions
+| Topic | Document |
+| --- | --- |
+| CI layers and test commands | [Testing](testing.md) |
+| Failure-mode regression matrix | [Reliability](reliability-matrix.md) |
+| Redacted diagnostics | [Diagnostics](diagnostics.md) |
+| Dependency boundaries | [ADR-0001](adr/0001-core-boundaries.md) |
+| Runtime owns intelligence | [ADR-0002](adr/0002-agent-runtime-owns-intelligence.md) |
 
-- [ADR-0001](adr/0001-core-boundaries.md) — Core boundaries
-- [ADR-0002](adr/0002-agent-runtime-owns-intelligence.md) — agent runtime owns intelligence
+## Validation evidence hierarchy
 
-## Source of truth
+```mermaid
+flowchart LR
+    T["Deterministic tests"] --> V["Vendor simulator / compile"]
+    V --> G["Disposable real Gateway"]
+    G --> D["Real private deployment"]
+    D --> H["Physical wearable + phone"]
+```
 
-When documents disagree, [PRD.md](PRD.md) is the implementation source of truth. Code and tests determine current implemented behavior; GitHub issues track validation work that remains open.
+Each step provides **different** evidence; an earlier green gate cannot substitute for a later one. The disposable Gateway CI intentionally uses a **synthetic model** and does not validate human approval, live tool/memory semantics, real Tailscale or physical wearables.
 
-## Evidence vocabulary
+## Sources of truth
 
-Documentation uses these terms deliberately:
+- **Requirements and intended acceptance criteria:** [PRD](PRD.md).
+- **Current behavior:** versioned code and tests in this repository.
+- **Unfinished acceptance:** [open GitHub issues](https://github.com/JDeun/AgentWearLink/issues).
+- **Security and private media:** [SECURITY.md](../SECURITY.md).
 
-- **deterministic** — no live vendor service, network, or physical hardware is required;
-- **compile-gated** — the concrete vendor/runtime integration is compiled against its pinned dependency;
-- **simulator/vendor integration proof** — the real vendor SDK runs through its supported simulator/mock harness;
-- **deployment E2E** — the real network/runtime topology is exercised;
-- **physical validation** — a physical wearable and phone exercise hardware-dependent behavior.
-
-A lower layer must never be presented as proof of a higher layer.
+If a document conflicts with tested behavior, correct the document and link the exact issue/CI evidence rather than upgrading the claim.

@@ -1,69 +1,63 @@
 # AgentWearLink
 
-**An open interoperability layer between wearable devices and AI agent runtimes.**
+[![Swift Core CI](https://github.com/JDeun/AgentWearLink/actions/workflows/swift.yml/badge.svg)](https://github.com/JDeun/AgentWearLink/actions/workflows/swift.yml) [![Docs CI](https://github.com/JDeun/AgentWearLink/actions/workflows/docs.yml/badge.svg)](https://github.com/JDeun/AgentWearLink/actions/workflows/docs.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[한국어](README.ko.md) · [Architecture](docs/architecture.md) · [PRD](docs/PRD.md) · [Testing](docs/testing.md)
+**Connect wearable devices to existing AI agent runtimes—without coupling your application to a device vendor or model provider.**
 
-AgentWearLink (AWL) normalizes wearable input/capture capabilities—speech, audio, camera snapshots, and invocation—behind replaceable adapters, connects them to an existing AI agent runtime, and composes host output such as native TTS through a separate output sink.
+[한국어](README.ko.md) · [Get started](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
-> **Status:** pre-alpha. Core and OpenClaw foundations are implemented and tested. Meta DAT registration/device-session lifecycle, Speech, and bounded camera snapshots are production-wired; Voice Invocation, live-capability and foreground/background composition are implemented and covered by deterministic and vendor-backed mock tests; physical acceptance remains open. Physical Ray-Ban Meta + iPhone validation is still in progress.
+> [!IMPORTANT]
+> **Pre-alpha / integration preview.** The Swift packages, vendor-backed simulator tests, and isolated real OpenClaw Gateway contracts are implemented and CI-tested. **The reference Ray-Ban Meta + iPhone + Mac/Tailnet deployment has not been physically validated.** This is not a production-readiness or hardware-compatibility claim.
 
-## Why
+## Overview
 
-Wearable integrations are often coupled to one device vendor, model provider, or chat surface. AWL separates the layers:
+AgentWearLink (AWL) is a Swift interoperability layer for wearable input, agent execution, and host-owned output. It translates device capabilities and events into vendor-neutral contracts, delegates intelligence to an **existing agent runtime**, and routes responses to a replaceable output sink.
 
-```text
-Wearable SDK          AgentWearLink Core          Agent runtime
-─────────────          ──────────────────          ─────────────
-Meta DAT      ──────▶  normalized events  ──────▶ OpenClaw
-future SDKs            capabilities               future runtimes
-custom devices         lifecycle/streaming        local/custom agents
+```mermaid
+flowchart LR
+    subgraph Device["Device integrations"]
+        M["Meta Wearables DAT"]
+        F["Future wearable SDKs"]
+    end
+    subgraph AWL["AgentWearLink"]
+        D["DeviceAdapter"]
+        C["Core: capabilities, events, lifecycle"]
+        A["AgentAdapter"]
+        O["InteractionOutputSink"]
+    end
+    subgraph Runtime["External agent runtimes"]
+        G["OpenClaw Gateway"]
+        R["Future runtime adapters"]
+    end
+    M --> D
+    F -.-> D
+    D --> C
+    C --> A
+    A --> G
+    A -.-> R
+    A --> C
+    C --> O
+    O --> S["Host output: iOS TTS / UI"]
 ```
 
-The agent runtime continues to own models, memory, tools, RAG, MCP, routing, and orchestration.
+**AWL does not replace an agent framework.** Models, memory, tools, RAG, MCP, orchestration, and sessions remain the responsibility of the connected runtime.
 
-## Reference implementation
+## Reference stack
 
-The first end-to-end target is:
-
-- **Wearable:** Ray-Ban Meta
-- **Phone:** iPhone + Meta Wearables Device Access Toolkit (DAT)
-- **Agent:** OpenClaw on a Mac mini
-- **Private network:** Tailscale
-- **Output:** native Apple TTS via `AVSpeechSynthesizer`
-- **Vision:** explicit, event-driven snapshots only
-
-Meta DAT, OpenClaw, Tailscale, Telegram, and Apple TTS are reference integrations—not Core dependencies.
-
-## What is implemented
-
-- vendor-neutral capability and interaction contracts
-- deterministic interaction/runtime lifecycle
-- bounded async streaming and SSE parsing
-- HTTP transport primitives
-- native OpenClaw Gateway WebSocket transport
-- OpenClaw device identity, challenge proof, pairing, RPC dispatch, streaming agent runs, cancellation, and reconnect supervision
-- read-only OpenClaw health probe
-- explicit mutating OpenClaw text E2E probe
-- pinned Meta DAT 1.0.0 integration with production-wired registration/device-session lifecycle; camera, Speech, Voice Invocation, live-capability and foreground/background policies are composed in the production reference host and verified with pinned vendor MockDeviceKit integration; physical behavior remains unverified
-- bounded explicit vision contracts with pre-capture agent capability checks
-- typed host `InteractionOutputSink` composition plus Apple native `AVSpeechSynthesizer` output
-- deterministic reliability regression suite
-
-MockDeviceKit app-hosted integration is CI-gated with the Core and vendor adapter tests. Real Bluetooth, camera sensor timing/photo transfer, wearable audio routing, locked/pocketed invocation, mobile Tailnet transitions, and live vision remain physical/deployment gates.
-
-## Packages
-
-| Package | Responsibility |
+| Layer | Current reference |
 | --- | --- |
-| `AgentWearLinkCore` | Vendor-neutral capabilities, events, lifecycle, streaming, vision contracts |
-| `AgentWearLinkOpenClaw` | OpenClaw Gateway/auth/RPC/agent integration |
-| `AgentWearLinkMetaDAT` | Meta DAT adapter boundary |
-| `AgentWearLinkAppleOutput` | Apple-host speech output lifecycle and native TTS bridge |
+| Wearable | Ray-Ban Meta via Meta Wearables Device Access Toolkit (DAT) |
+| Host | iPhone, iOS 17.2+ reference integration |
+| Connectivity | Private Tailscale deployment |
+| Agent | OpenClaw Gateway on a Mac (reference: Mac mini) |
+| Output | Host-owned Apple speech synthesis via `AVSpeechSynthesizer` |
+| Vision | Explicit, bounded, event-driven camera snapshots |
+
+These are **replaceable reference integrations**, not dependencies of `AgentWearLinkCore`. Wearable PCM capture and unattended background camera access are **not** implied by DAT speech or invocation support.
 
 ## Quick start
 
-The vendor-neutral root package supports Swift 5.10+ and macOS 14+. The concrete `Adapters/MetaDAT` integration requires a Swift 6.0+ toolchain because the pinned Meta DAT 1.0.0 dependency uses a Swift 6 package manifest; the AWL integration sources are intentionally kept in Swift 5 language mode during migration. Its reference iOS host targets iOS 17.2+.
+For the vendor-neutral Swift package, use **Swift 5.10+** and **macOS 14+**:
 
 ```bash
 git clone https://github.com/JDeun/AgentWearLink.git
@@ -71,53 +65,57 @@ cd AgentWearLink
 swift test
 ```
 
-For Meta DAT integration work, verify a Swift 6-capable toolchain before resolving or building the adapter. The toolchain requirement does not imply that AWL's Meta sources have already migrated to Swift 6 language mode:
+The concrete Meta DAT adapter has a separate **Swift 6.0+ toolchain** requirement to resolve the pinned vendor SDK; its integration sources currently use Swift 5 language mode. See the [installation and verification guide](docs/getting-started.md) for the iOS simulator and OpenClaw pathways.
 
-```bash
-swift --version
-cd Adapters/MetaDAT
-swift package resolve
-```
+## Packages
 
-For a live OpenClaw deployment, first use the read-only probe documented in [docs/openclaw-probe.md](docs/openclaw-probe.md). The mutating P0-B text validation is documented in [docs/openclaw-chat-probe.md](docs/openclaw-chat-probe.md).
+| Product | Purpose |
+| --- | --- |
+| `AgentWearLinkCore` | Vendor-neutral events, capabilities, interaction lifecycle, bounded streaming and vision contracts |
+| `AgentWearLinkMetaDAT` | Device adapter boundary; concrete vendor integration is in `Adapters/MetaDAT` |
+| `AgentWearLinkOpenClaw` | Gateway WebSocket, device identity, pairing, streaming, cancellation and reconnect |
+| `AgentWearLinkAppleOutput` | Optional host output sink and Apple TTS |
+| `awl-openclaw-probe` | Explicit read-only Gateway connectivity probe |
+| `awl-openclaw-chat-probe` | Explicit, potentially mutating agent turn probe |
 
-## Design invariants
+## Validation status
 
-1. Vendor SDK types do not leak into Core.
-2. AWL does not reimplement agent intelligence.
-3. Unsupported capabilities are not advertised.
-4. Camera capture is explicit; continuous vision is not the default.
-5. Media and stream queues are bounded.
-6. Reconnect restores transport availability but never silently replays an uncertain mutating request.
-7. Credentials and device private keys stay outside source control.
-8. New abstractions require a real integration need rather than speculative generality.
+| Evidence level | Status | What it establishes |
+| --- | --- | --- |
+| Swift Core and adapter tests | **CI passing** | Deterministic contracts and error handling |
+| Meta DAT compile / MockDeviceKit | **CI covered** | Pinned SDK and simulator-hosted integration; **not** physical hardware |
+| Real pinned OpenClaw Gateway | **CI passing** | Isolated Gateway auth, exact-ID approval, grant reuse/revocation, streaming, abort, and two-turn session smoke |
+| iPhone ↔ Tailscale ↔ actual Mac | **Not yet accepted** | Requires private deployment testing |
+| Physical Ray-Ban Meta camera/audio/voice | **Not yet accepted** | Requires wearable, iPhone and permissioned DAT app |
+
+The real Gateway checks use a disposable localhost Gateway and a **synthetic local model**. They do not validate personal sessions, real-model memory/tool behavior, a human approval ceremony, iOS Keychain entitlements, or wearable hardware. See [evidence and CI gates](docs/testing.md), [open acceptance work](https://github.com/JDeun/AgentWearLink/issues), and the [validation matrix](docs/reliability-matrix.md).
+
+## Engineering principles
+
+- **Portable Core:** Vendor SDK types and agent-specific protocols stay outside Core.
+- **Least capability:** Advertise only supported, currently available device actions.
+- **Explicit capture:** Camera snapshots are opt-in and bounded; continuous video is not the default.
+- **Safe delivery:** Cancellation is idempotent; reconnect must never silently replay an uncertain mutating request.
+- **Data minimization:** No private media retention by default; secrets stay in platform secure storage.
+- **Evidence-based claims:** Simulator, isolated integration, deployment, and physical acceptance remain distinct.
 
 ## Roadmap
 
-| Gate | Target |
-| --- | --- |
-| P0-A | Physical Meta DAT validation |
-| P0-B | iPhone → Tailnet → OpenClaw text E2E |
-| P0-C | Wearable audio → agent → native TTS/audio |
-| P0-D | Hands-free DAT voice invocation |
-| P1 | Physical event-driven vision E2E |
-| P2 | Physical reliability, privacy, and recovery matrix |
-| P3 | Additional device/agent adapters driven by real integrations |
+This is an **acceptance roadmap**, not a promise that hardware gates are already passed.
 
-See [docs/PRD.md](docs/PRD.md) for the canonical implementation requirements.
+| Phase | Acceptance target | Tracking |
+| --- | --- | --- |
+| P0-A | Real Ray-Ban Meta + iPhone DAT baseline | [#1](https://github.com/JDeun/AgentWearLink/issues/1) |
+| P0-B | Actual iPhone → Tailnet → OpenClaw text round-trip | [#56](https://github.com/JDeun/AgentWearLink/issues/56) |
+| P0-C / P0-D | Wearable audio output and hands-free voice invocation | [#5](https://github.com/JDeun/AgentWearLink/issues/5), [#6](https://github.com/JDeun/AgentWearLink/issues/6) |
+| P1 | Explicit photo → vision agent on physical devices | [#58](https://github.com/JDeun/AgentWearLink/issues/58) |
+| P2 | Hardware reliability, privacy and recovery matrix | [#59](https://github.com/JDeun/AgentWearLink/issues/59) |
+| Later | Additional SDK/runtime adapters driven by demonstrated need | [Issues](https://github.com/JDeun/AgentWearLink/issues) |
 
-## Documentation
+## Documentation and support
 
-Start at [docs/README.md](docs/README.md) for the documentation map. Architecture decisions are recorded under [docs/adr](docs/adr).
+Start with the [documentation index](docs/README.md) or the [getting-started guide](docs/getting-started.md). The [architecture](docs/architecture.md), [OpenClaw integration](docs/openclaw.md), [Meta DAT integration](Adapters/MetaDAT/README.md), and [product requirements](docs/PRD.md) describe the contracts in more depth.
 
-## Contributing
+Bug reports and proposals are welcome through [GitHub Issues](https://github.com/JDeun/AgentWearLink/issues). Before contributing, read [CONTRIBUTING.md](CONTRIBUTING.md); report sensitive issues according to [SECURITY.md](SECURITY.md).
 
-AgentWearLink is pre-alpha, so changes should preserve package boundaries and include deterministic tests where possible. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
-
-## Security
-
-Do not report credentials, private device keys, or private media in a public issue. See [SECURITY.md](SECURITY.md).
-
-## License
-
-Licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+**License:** [Apache-2.0](LICENSE).

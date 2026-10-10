@@ -4,21 +4,11 @@ Tailscale is a deployment option, not an AgentWearLink core dependency.
 
 ## Recommended personal topology
 
-```text
-Ray-Ban Meta
-    │
-    ▼
-iPhone / AgentWearLink
-    │
-    │ Tailscale tailnet
-    ▼
-Tailscale Serve (HTTPS/WSS)
-    │
-    ▼
-Mac mini loopback
-    │
-    ▼
-OpenClaw Gateway :18789
+```mermaid
+flowchart TD
+    M["Ray-Ban Meta"] --> I["iPhone / AgentWearLink"]
+    I -->|"Private Tailscale tailnet"| S["Tailscale Serve / HTTPS-WSS"]
+    S -->|"Mac mini loopback"| G["OpenClaw Gateway, port 18789"]
 ```
 
 ## Preferred profile: Tailscale Serve

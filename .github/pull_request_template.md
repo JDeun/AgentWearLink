@@ -12,8 +12,10 @@ Describe the concrete problem and the boundary changed.
 
 ## Validation
 
-- [ ] `swift test`
-- [ ] Deterministic regression coverage added/updated
+- [ ] `swift test` (for code changes; explain when not applicable)
+- [ ] Deterministic regression coverage added/updated (when applicable)
+- [ ] `python3 scripts/check_docs.py` (for documentation changes)
+- [ ] Mermaid diagrams reviewed in rendered Markdown (when applicable)
 - [ ] Hardware/deployment validation separated and documented where required
 
 ## Remaining physical/deployment work

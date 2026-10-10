@@ -19,12 +19,12 @@ It does **not** submit an agent run, invoke tools, mutate sessions, or write sec
 
 For the owner's reference deployment, prefer:
 
-```text
-client
-  -> Tailscale
-  -> wss://<Mac-mini-MagicDNS>.ts.net
-  -> Tailscale Serve
-  -> OpenClaw bound to loopback :18789
+```mermaid
+flowchart TD
+    C["iPhone / test client"] --> T["Private Tailscale network"]
+    T --> W["WSS: Mac MagicDNS endpoint"]
+    W --> S["Tailscale Serve"]
+    S --> G["OpenClaw Gateway: loopback port 18789"]
 ```
 
 Direct private-tailnet `ws://100.x.y.z:18789` can be useful for diagnostics, but WSS through Tailscale Serve is the preferred reference path.

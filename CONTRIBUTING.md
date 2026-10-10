@@ -24,6 +24,18 @@ For Meta DAT integration work, verify `swift --version`, then resolve/build the 
 
 New deterministic behavior should include regression coverage. Hardware-only behavior should include reproducible validation steps and the device/OS/SDK/runtime versions used.
 
+## Documentation changes
+
+Keep examples executable, links relative to the repository, and diagrams in fenced `mermaid` blocks (not ASCII art). When a claim refers to an implemented feature, cite the implementation and the correct evidence level. Update the English and Korean README together when user-facing capabilities or readiness change.
+
+Run the lightweight documentation gate after changing Markdown:
+
+```bash
+python3 scripts/check_docs.py
+```
+
+This checks local links, code fences and Mermaid block structure; GitHub's Markdown preview is still needed to visually inspect diagrams. A green docs gate is not proof of physical device behavior.
+
 ## Pull requests
 
 Keep each PR focused. Explain the invariant being changed, failure mode addressed, and what remains hardware- or deployment-dependent.

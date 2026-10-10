@@ -1,67 +1,63 @@
 # AgentWearLink
 
-**웨어러블 디바이스와 AI 에이전트 런타임을 연결하는 오픈 상호운용성 레이어입니다.**
+[![Swift Core CI](https://github.com/JDeun/AgentWearLink/actions/workflows/swift.yml/badge.svg)](https://github.com/JDeun/AgentWearLink/actions/workflows/swift.yml) [![Docs CI](https://github.com/JDeun/AgentWearLink/actions/workflows/docs.yml/badge.svg)](https://github.com/JDeun/AgentWearLink/actions/workflows/docs.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[English](README.md) · [아키텍처](docs/architecture.md) · [PRD](docs/PRD.md) · [테스트](docs/testing.md)
+**웨어러블 디바이스와 기존 AI 에이전트 런타임을 벤더·모델에 종속되지 않는 인터페이스로 연결합니다.**
 
-AgentWearLink(AWL)는 음성, 오디오, 카메라 스냅샷, 호출 같은 웨어러블 입력·캡처 기능을 교체 가능한 어댑터 뒤에서 정규화하고 기존 AI 에이전트 런타임에 연결합니다. iPhone TTS 같은 호스트 출력은 별도의 output sink로 합성하며, AWL 자체가 모델·메모리·도구·RAG 같은 에이전트의 지능을 대신 구현하지 않습니다.
+[English](README.md) · [빠른 시작](docs/getting-started.md) · [아키텍처](docs/architecture.md) · [전체 문서](docs/README.md) · [기여 가이드](CONTRIBUTING.md)
 
-> **상태:** pre-alpha. Core와 OpenClaw 기반 구현 및 자동화 테스트는 진행되었으며, Ray-Ban Meta + iPhone 실기기 검증은 아직 진행 중입니다.
+> [!IMPORTANT]
+> **Pre-alpha / 통합 프리뷰** 단계입니다. Swift 패키지, 벤더 SDK 기반 시뮬레이터 테스트, 격리된 실제 OpenClaw Gateway 통합 계약은 구현 및 CI 검증을 마쳤습니다. **Ray-Ban Meta + iPhone + 실제 Mac/Tailnet 조합은 아직 실기기 검증되지 않았습니다.** 상용 배포 준비 완료 또는 실기기 호환성 확정으로 해석해서는 안 됩니다.
 
-## 왜 AgentWearLink인가
+## 프로젝트 소개
 
-웨어러블 연동은 흔히 특정 디바이스 SDK, 모델 제공자 또는 채팅 서비스에 강하게 결합됩니다. AWL은 이를 다음처럼 분리합니다.
+AgentWearLink(AWL)는 웨어러블 입력, 기존 에이전트 실행, 호스트 출력을 연결하는 Swift 상호운용성 레이어입니다. 디바이스 이벤트와 기능을 공통 계약으로 변환하고, 에이전트 로직은 기존 런타임에 위임하며, 결과를 별도 출력 어댑터로 전달합니다.
 
-```text
-웨어러블 SDK          AgentWearLink Core          에이전트 런타임
-────────────          ──────────────────          ───────────────
-Meta DAT      ─────▶  정규화된 이벤트    ─────▶ OpenClaw
-향후 SDK               capability                 향후 런타임
-커스텀 디바이스         lifecycle/streaming        로컬/커스텀 에이전트
+```mermaid
+flowchart LR
+    subgraph Device["웨어러블 연동"]
+        M["Meta Wearables DAT"]
+        F["향후 디바이스 SDK"]
+    end
+    subgraph AWL["AgentWearLink"]
+        D["DeviceAdapter"]
+        C["Core: 기능, 이벤트, 수명주기"]
+        A["AgentAdapter"]
+        O["InteractionOutputSink"]
+    end
+    subgraph Runtime["외부 에이전트 런타임"]
+        G["OpenClaw Gateway"]
+        R["향후 런타임"]
+    end
+    M --> D
+    F -.-> D
+    D --> C
+    C --> A
+    A --> G
+    A -.-> R
+    A --> C
+    C --> O
+    O --> S["호스트 출력: iOS TTS / UI"]
 ```
 
-모델 선택, 메모리, 도구, RAG, MCP, 라우팅, 오케스트레이션은 연결된 에이전트 런타임이 계속 담당합니다.
+**AWL은 에이전트 프레임워크를 대체하지 않습니다.** 모델·메모리·도구·RAG·MCP·오케스트레이션·세션은 연결된 에이전트 런타임이 담당합니다.
 
-## 첫 번째 레퍼런스 구성
+## 레퍼런스 구성
 
-- **웨어러블:** Ray-Ban Meta
-- **휴대폰:** iPhone + Meta Wearables Device Access Toolkit(DAT)
-- **에이전트:** Mac mini에서 실행되는 OpenClaw
-- **사설 네트워크:** Tailscale
-- **음성 출력:** `AVSpeechSynthesizer` 기반 iOS 기본 TTS
-- **비전:** 사용자가 명시적으로 요청한 event-driven snapshot만 허용
-
-Meta DAT, OpenClaw, Tailscale, Telegram, Apple TTS는 레퍼런스 통합이며 Core의 필수 의존성이 아닙니다.
-
-## 현재 구현된 기능
-
-- vendor-neutral capability / interaction contract
-- deterministic interaction/runtime lifecycle
-- bounded async streaming 및 SSE parser
-- HTTP transport primitive
-- OpenClaw native Gateway WebSocket transport
-- OpenClaw device identity, challenge proof, pairing, RPC dispatch, streaming agent run, cancellation, reconnect supervision
-- 읽기 전용 OpenClaw health probe
-- 명시적 opt-in 방식의 실제 OpenClaw text E2E probe
-- Meta DAT 1.0.0 고정 통합: registration/device lifecycle, camera, Speech, Voice Invocation, live capability 및 lifecycle 정책
-- 크기 제한 및 agent capability 선검사를 포함한 명시적 vision contract
-- typed `InteractionOutputSink` 기반 host output composition 및 `AVSpeechSynthesizer` bridge
-- deterministic reliability regression test
-
-MockDeviceKit app-hosted 통합은 별도 CI gate로 검증 중입니다. 실제 Bluetooth, 카메라 센서 wake/shutter 및 사진 전송, 웨어러블 오디오 라우팅, 잠금/주머니 상태 invocation, 모바일 Tailnet 전환, 실제 vision E2E는 실기기·배포 검증이 남아 있습니다.
-
-## 패키지 구조
-
-| 패키지 | 역할 |
+| 계층 | 현재 레퍼런스 |
 | --- | --- |
-| `AgentWearLinkCore` | capability, event, lifecycle, streaming, vision 등 공통 계약 |
-| `AgentWearLinkOpenClaw` | OpenClaw Gateway/auth/RPC/agent 연동 |
-| `AgentWearLinkMetaDAT` | Meta DAT adapter 경계 |
-| `AgentWearLinkAppleOutput` | Apple host 음성 출력 lifecycle 및 기본 TTS bridge |
+| 웨어러블 | Ray-Ban Meta + Meta Wearables Device Access Toolkit(DAT) |
+| 호스트 | iPhone, iOS 17.2+ |
+| 네트워크 | Tailscale 사설 네트워크 |
+| 에이전트 | Mac에서 실행하는 OpenClaw Gateway (예: Mac mini) |
+| 출력 | 호스트에서 실행하는 `AVSpeechSynthesizer` 기반 Apple TTS |
+| 비전 | 명시적 요청에서만 실행하는 크기 제한형 스냅샷 |
+
+이 통합들은 **교체 가능한 레퍼런스 구현**이며 `AgentWearLinkCore`의 필수 의존성이 아닙니다. DAT Speech/Voice Invocation 지원이 곧 웨어러블 원시 PCM 접근이나 잠금 상태의 카메라 자동 실행을 의미하지는 않습니다.
 
 ## 빠른 시작
 
-vendor-neutral 루트 패키지는 Swift 5.10+, macOS 14+를 지원합니다. 구체적인 `Adapters/MetaDAT` 통합은 고정된 Meta DAT 1.0.0 의존성이 Swift 6 package manifest를 사용하므로 **Swift 6.0+ 툴체인**이 필요합니다. 다만 AWL Meta 통합 소스는 마이그레이션 동안 의도적으로 Swift 5 language mode를 유지하며, 레퍼런스 iOS host는 iOS 17.2+를 대상으로 합니다.
+벤더 중립 Swift 패키지는 **Swift 5.10+ / macOS 14+**를 대상으로 합니다.
 
 ```bash
 git clone https://github.com/JDeun/AgentWearLink.git
@@ -69,53 +65,57 @@ cd AgentWearLink
 swift test
 ```
 
-Meta DAT 통합을 개발할 때는 adapter를 resolve/build하기 전에 Swift 6 툴체인인지 확인합니다. 이는 툴체인/manifest 요구사항이며 AWL Meta 소스가 이미 Swift 6 language mode로 전환되었다는 뜻은 아닙니다.
+Meta DAT 실제 연동 패키지의 의존성을 해석하려면 별도로 **Swift 6.0+ 툴체인**이 필요하며, AWL 통합 소스는 현재 Swift 5 언어 모드를 사용합니다. 자세한 iOS 시뮬레이터·OpenClaw 검증 절차는 [빠른 시작 가이드](docs/getting-started.md)를 참고하세요.
 
-```bash
-swift --version
-cd Adapters/MetaDAT
-swift package resolve
-```
+## 패키지
 
-실제 OpenClaw 연결은 먼저 [읽기 전용 probe](docs/openclaw-probe.md)로 연결·인증·pairing을 확인하고, 실제 agent run을 발생시키는 P0-B 검증은 [mutating text probe](docs/openclaw-chat-probe.md)를 사용합니다.
+| 제품 | 역할 |
+| --- | --- |
+| `AgentWearLinkCore` | 공통 이벤트·capability·interaction 수명주기·스트리밍·비전 계약 |
+| `AgentWearLinkMetaDAT` | 웨어러블 어댑터 경계; 벤더 연결은 `Adapters/MetaDAT` |
+| `AgentWearLinkOpenClaw` | Gateway WebSocket·인증·페어링·스트리밍·취소·재연결 |
+| `AgentWearLinkAppleOutput` | 선택 가능한 호스트 출력 sink와 Apple TTS |
+| `awl-openclaw-probe` | 명시적 읽기 전용 Gateway 연결 검사 |
+| `awl-openclaw-chat-probe` | 명시적으로 활성화하는 에이전트 실행 검사(변경 작업 가능) |
 
-## 핵심 설계 원칙
+## 검증 현황
 
-1. Vendor SDK 타입을 Core로 유출하지 않습니다.
-2. AWL이 에이전트의 지능을 재구현하지 않습니다.
-3. 지원하지 않는 capability를 광고하지 않습니다.
-4. 카메라는 명시적 요청에서만 촬영하며 continuous vision을 기본값으로 사용하지 않습니다.
-5. media/stream queue는 항상 bounded 상태를 유지합니다.
-6. reconnect는 transport만 복구하며 결과가 불확실한 mutating request를 자동 재전송하지 않습니다.
-7. credential과 device private key를 source control에 저장하지 않습니다.
-8. 실제 두 번째 구현 필요성이 확인되기 전에는 추상화를 불필요하게 확대하지 않습니다.
+| 검증 범위 | 상태 | 검증된 내용 |
+| --- | --- | --- |
+| Swift Core 및 어댑터 테스트 | **CI 통과** | 결정적 계약과 오류 처리 |
+| Meta DAT 컴파일·MockDeviceKit | **CI 검증 범위** | 고정 SDK와 시뮬레이터 호스트 연동, 실기기 아님 |
+| 고정 버전의 실제 OpenClaw Gateway | **CI 통과** | 격리 Gateway의 인증·명시적 승인·Grant 재사용/폐기·스트리밍·취소·2턴 세션 |
+| iPhone ↔ Tailscale ↔ 실제 Mac | **미검증** | 사설 배포 환경 테스트 필요 |
+| Ray-Ban Meta 카메라·오디오·음성 | **미검증** | 실기기·권한 설정 필요 |
+
+실제 Gateway CI도 격리된 localhost Gateway와 **합성 로컬 모델**을 사용합니다. 개인 세션, 실제 모델의 메모리·도구 실행, 사람의 수동 승인, iOS Keychain 권한 또는 웨어러블 하드웨어까지 검증했다는 뜻은 아닙니다. [테스트와 CI](docs/testing.md), [미해결 이슈](https://github.com/JDeun/AgentWearLink/issues), [안정성 검증표](docs/reliability-matrix.md)를 참고하세요.
+
+## 설계 원칙
+
+- **공통 Core:** 디바이스 SDK와 에이전트별 프로토콜을 Core에 유출하지 않습니다.
+- **최소 기능 원칙:** 실제 사용 가능한 capability만 광고합니다.
+- **명시적 촬영:** 카메라 스냅샷은 사용자가 요청할 때만 실행하며 버퍼를 제한합니다.
+- **안전한 전송:** 취소는 멱등적이며, 결과가 불확실한 변경 요청을 재연결 후 자동 재전송하지 않습니다.
+- **데이터 최소화:** 개인 미디어를 기본적으로 보존하지 않고, 비밀키는 플랫폼 안전 저장소에 둡니다.
+- **검증 수준 구분:** 시뮬레이터·격리 통합·배포·실기기 검증을 혼동하지 않습니다.
 
 ## 로드맵
 
-| 단계 | 목표 |
-| --- | --- |
-| P0-A | Meta DAT 실기기 검증 |
-| P0-B | iPhone → Tailnet → OpenClaw text E2E |
-| P0-C | 웨어러블 오디오 → agent → iOS TTS/audio |
-| P0-D | DAT hands-free voice invocation |
-| P1 | event-driven vision 실기기 E2E |
-| P2 | reliability/privacy/recovery 실기기 검증 |
-| P3 | 실제 수요에 기반한 추가 device/agent adapter |
+아래는 **검증 목표**이며, 실기기 테스트가 이미 통과됐다는 뜻이 아닙니다.
 
-구현 요구사항의 정본은 [docs/PRD.md](docs/PRD.md)입니다.
+| 단계 | 검증 목표 | 이슈 |
+| --- | --- | --- |
+| P0-A | Ray-Ban Meta + iPhone DAT 실기기 기본 연결 | [#1](https://github.com/JDeun/AgentWearLink/issues/1) |
+| P0-B | 실제 iPhone → Tailnet → OpenClaw 텍스트 왕복 | [#56](https://github.com/JDeun/AgentWearLink/issues/56) |
+| P0-C / P0-D | 웨어러블 음성 출력 및 핸즈프리 호출 | [#5](https://github.com/JDeun/AgentWearLink/issues/5), [#6](https://github.com/JDeun/AgentWearLink/issues/6) |
+| P1 | 실기기 카메라 스냅샷 → 비전 에이전트 | [#58](https://github.com/JDeun/AgentWearLink/issues/58) |
+| P2 | 안정성·개인정보·복구 실기기 검증 | [#59](https://github.com/JDeun/AgentWearLink/issues/59) |
+| 이후 | 실제 수요가 검증된 디바이스·런타임 어댑터 확대 | [Issues](https://github.com/JDeun/AgentWearLink/issues) |
 
-## 문서
+## 문서 · 기여 · 보안
 
-전체 문서 구조는 [docs/README.md](docs/README.md)에서 확인할 수 있습니다. 주요 설계 결정은 [docs/adr](docs/adr)에 기록합니다.
+[전체 문서](docs/README.md), [아키텍처](docs/architecture.md), [OpenClaw 연동](docs/openclaw.md), [Meta DAT 연동](Adapters/MetaDAT/README.md), [PRD](docs/PRD.md)를 참고하세요.
 
-## 기여
+버그 및 기능 제안은 [GitHub Issues](https://github.com/JDeun/AgentWearLink/issues)에서 받습니다. 변경 제안 전에는 [CONTRIBUTING.md](CONTRIBUTING.md), 보안 제보 전에는 [SECURITY.md](SECURITY.md)를 확인하세요.
 
-현재 pre-alpha 단계이므로 package boundary를 보존하고 가능한 변경에는 deterministic test를 포함해야 합니다. 자세한 내용은 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하십시오.
-
-## 보안
-
-credential, private device key, 사적인 media를 public issue에 첨부하지 마십시오. 보안 관련 안내는 [SECURITY.md](SECURITY.md)를 참고하십시오.
-
-## 라이선스
-
-Apache License 2.0을 적용합니다. 자세한 내용은 [LICENSE](LICENSE)를 참고하십시오.
+**라이선스:** [Apache-2.0](LICENSE).

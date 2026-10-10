@@ -51,29 +51,25 @@ Meta's CameraAccess sample includes Debug-only MockDeviceKit integration. A usef
 
 This proves that the SDK generation and host configuration are coherent before AWL's concrete bridge is introduced.
 
-## AWL integration plan
+## AWL integration architecture
 
-The concrete iOS host bridge should adapt the normal DAT session API to `MetaDATSession`; MockDeviceKit should enter **below** that bridge through DAT's own device/session discovery. Do not create a MockDevice-specific path in AgentWearLinkCore.
+The app-hosted test bridge adapts the normal DAT session API to `MetaDATSession`; MockDeviceKit enters **below** that bridge through DAT's own device/session discovery. The production Core has no MockDevice-specific path.
 
 That gives the desired test shape:
 
-```text
-MockDeviceKit
-    ↓
-Meta DAT normal session/device APIs
-    ↓
-concrete iOS MetaDATSession bridge
-    ↓
-AgentWearLinkMetaDAT.MetaDATAdapter
-    ↓
-AgentWearLinkCore
+```mermaid
+flowchart TD
+    M["Meta MockDeviceKit"] --> S["DAT device and session APIs"]
+    S --> B["Concrete iOS MetaDATSession bridge"]
+    B --> A["AgentWearLinkMetaDAT adapter"]
+    A --> C["AgentWearLinkCore"]
 ```
 
-The same bridge can then be used with physical Ray-Ban Meta without changing Core.
+The same architecture is intended for physical Ray-Ban Meta without Core changes; the actual hardware path still needs separate acceptance.
 
-## Recommended deterministic cases
+## Deterministic regression checklist
 
-Once the concrete bridge exists, automate at least:
+The following scenarios belong in vendor simulator and production-composition regression coverage. Consult [testing](testing.md) for which gates actually run each scenario:
 
 - device becomes available after mock state transition
 - session start/end maps once

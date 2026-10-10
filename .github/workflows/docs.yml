@@ -1,0 +1,36 @@
+name: Documentation integrity
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - 'scripts/check_docs.py'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - 'scripts/check_docs.py'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  markdown-links-mermaid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate Markdown links, fences and Mermaid structure
+        run: |
+          python3 -m py_compile scripts/check_docs.py
+          python3 scripts/check_docs.py

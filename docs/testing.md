@@ -13,7 +13,7 @@ Use these terms literally in issues, PRs, and documentation:
 - **deployment validated** — the real network/runtime deployment executes successfully
 - **physical validated** — the target wearable + physical iPhone path executes successfully
 
-A feature may occupy several of these states at once. For example, current Meta camera/Speech/Voice helper slices are implemented and deterministically tested, but full production composition remains tracked by #230.
+A feature may occupy several of these states at once. Meta camera, Speech, and Voice Invocation paths are production-wired and deterministically or simulator-tested. Their physical behavior remains unverified; code composition (#230) and hardware acceptance (#1/#3/#5/#6) are separate milestones.
 
 ## 1. Deterministic Core/runtime tests
 
@@ -76,7 +76,7 @@ xcodebuild \
 
 CI separates the compatibility compile gate from the simulator behavioral gate. Any Core/package change that can affect the Meta adapter still resolves the pinned SDK, verifies its immutable revision, lists schemes, and compiles the concrete integration. Simulator boot and the deterministic package-hosted Meta integration/helper XCTest target run only when Meta adapter/test paths or the workflow itself change.
 
-The behavioral XCTest target covers lifecycle, readiness, camera-ignition, listener-generation, and mock-host contract regressions. Where a Meta feature is still a helper slice rather than a production-composed session feature, this proves the helper contract only; #230 owns production-path composition. The MockDeviceKit test that requires a linked-app Keychain context is intentionally skipped here and remains part of the app-hosted XCUITest layer below.
+The behavioral XCTest target covers lifecycle, readiness, camera-ignition, listener-generation, and mock-host contract regressions. These assertions exercise the vendor-linked integration and production-composed paths when supplied by the test host; simulator behavior must never be treated as hardware or private deployment proof. The MockDeviceKit test that requires a linked-app Keychain context is intentionally skipped here and remains part of the app-hosted XCUITest layer below.
 
 This preserves SDK/API compatibility coverage for Core-only changes without paying the simulator behavioral-test cost on every Core PR. Meta implementation changes still receive the full deterministic behavioral gate, while `build-for-testing` / `test-without-building` avoids compiling that test bundle twice. Neither path proves physical wearable behavior.
 
@@ -106,8 +106,10 @@ A real agent deployment is exercised without treating the wearable hardware as p
 
 The reference P0-B topology is:
 
-```text
-iPhone / AWL → Tailscale → Mac mini → OpenClaw Gateway
+```mermaid
+flowchart LR
+    I["iPhone / AWL"] -->|"Private Tailnet"| T["Tailscale"]
+    T --> M["Mac / OpenClaw Gateway"]
 ```
 
 Required evidence includes authentication/pairing, persistent credential reuse, one real agent turn, incremental output, existing-session semantics, and no silent replay after uncertain delivery.
