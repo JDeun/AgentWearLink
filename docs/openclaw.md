@@ -64,8 +64,12 @@ The compatibility adapter requests streaming responses, bounds individual SSE ev
 
 The intended personal reference topology is:
 
-```text
-Ray-Ban Meta → iPhone/AWL → Tailscale → Mac mini → OpenClaw Gateway
+```mermaid
+flowchart LR
+    M["Ray-Ban Meta"] --> I["iPhone / AWL"]
+    I -->|"Private Tailnet"| T["Tailscale"]
+    T --> G["OpenClaw Gateway on Mac"]
+    G --> A["Existing agent runtime and session"]
 ```
 
 Tailscale is an exposure profile, not an AWL dependency. Prefer a private authenticated WSS endpoint such as Tailscale Serve where practical. See [tailscale.md](tailscale.md).
