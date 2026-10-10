@@ -57,16 +57,12 @@ The concrete iOS host bridge should adapt the normal DAT session API to `MetaDAT
 
 That gives the desired test shape:
 
-```text
-MockDeviceKit
-    ↓
-Meta DAT normal session/device APIs
-    ↓
-concrete iOS MetaDATSession bridge
-    ↓
-AgentWearLinkMetaDAT.MetaDATAdapter
-    ↓
-AgentWearLinkCore
+```mermaid
+flowchart TD
+    M["Meta MockDeviceKit"] --> S["DAT device and session APIs"]
+    S --> B["Concrete iOS MetaDATSession bridge"]
+    B --> A["AgentWearLinkMetaDAT adapter"]
+    A --> C["AgentWearLinkCore"]
 ```
 
 The same bridge can then be used with physical Ray-Ban Meta without changing Core.
