@@ -16,6 +16,7 @@ from run_hermetic_development_gateway import (
     disposable_gateway_state,
     approve_one_isolated_pairing,
     select_isolated_pending_readonly,
+    confirmed_isolated_operator_revocation,
     isolated_environment,
     native_keychain_probe_environment,
     main,
@@ -292,6 +293,33 @@ class HermeticRealGatewayRunnerTests(unittest.TestCase):
                 call(9001, signal.SIGTERM),
                 call(9001, signal.SIGKILL),
             ])
+
+    def test_confirmed_revocation_requires_exact_readonly_role_and_server_timestamp(self):
+        device_id = "a" * 64
+        token = {"role": "operator", "scopes": ["operator.read"],
+                 "revokedAtMs": 1890000000000}
+        document = {"pending": [], "paired": [
+            {"deviceId": device_id, "tokens": [token]}
+        ]}
+        self.assertTrue(confirmed_isolated_operator_revocation(document, device_id))
+        for changed in (
+            {"revokedAtMs": None}, {"revokedAtMs": 0},
+            {"revokedAtMs": True}, {"scopes": ["operator.write"]},
+            {"scopes": ["operator.read", "operator.write"]},
+            {"role": "node"},
+        ):
+            self.assertFalse(confirmed_isolated_operator_revocation(
+                {"paired": [{"deviceId": device_id,
+                             "tokens": [token | changed]}]}, device_id
+            ))
+        self.assertFalse(confirmed_isolated_operator_revocation(document, "b" * 64))
+        self.assertFalse(confirmed_isolated_operator_revocation(
+            {"paired": document["paired"] * 2}, device_id
+        ))
+        self.assertFalse(confirmed_isolated_operator_revocation(
+            {"paired": [{"deviceId": device_id, "tokens": [token, token]}]},
+            device_id
+        ))
 
     def test_automated_approval_selector_refuses_write_scope_and_ambiguity(self):
         entry = {
