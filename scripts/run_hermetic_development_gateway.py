@@ -407,7 +407,8 @@ def approve_one_isolated_pairing(
     try:
         listed = subprocess.run(
             [node, str(checkout / "dist" / "entry.js"),
-             "devices", "list", "--json", "--url", gateway_url],
+             "devices", "list", "--json", "--url", gateway_url,
+              "--token", token],
             cwd=checkout, env=env,
             stdin=subprocess.DEVNULL, capture_output=True,
             timeout=20, check=False,
@@ -440,7 +441,8 @@ def approve_one_isolated_pairing(
             return False
         approved = subprocess.run(
             [node, str(checkout / "dist" / "entry.js"),
-             "devices", "approve", selected, "--url", gateway_url],
+             "devices", "approve", selected, "--url", gateway_url,
+              "--token", token],
             cwd=checkout, env=env,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, timeout=20, check=False,
@@ -448,6 +450,197 @@ def approve_one_isolated_pairing(
         return approved.returncode == 0
     except (OSError, ValueError, TypeError, subprocess.SubprocessError):
         return False
+
+
+
+def select_isolated_pending_readonly(document: object) -> tuple[str, str] | None:
+    """Never approve an ambiguous request or one with write/admin privileges."""
+    if not isinstance(document, dict):
+        return None
+    pending = document.get("pending")
+    if document.get("paired") != [] or not isinstance(pending, list) or len(pending) != 1:
+        return None
+    item = pending[0]
+    if not isinstance(item, dict):
+        return None
+    request_id, device_id = item.get("requestId"), item.get("deviceId")
+    if (not isinstance(request_id, str) or not _REQUEST_ID.fullmatch(request_id)
+            or not isinstance(device_id, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", device_id)
+            or item.get("scopes") != ["operator.read"]
+            or item.get("role") not in (None, "operator")
+            or item.get("roles") not in (None, ["operator"])
+            or (item.get("role") != "operator" and item.get("roles") != ["operator"])):
+        return None
+    return request_id, device_id
+
+
+def confirmed_isolated_operator_revocation(document: object, device_id: str) -> bool:
+    """Require upstream redacted inventory to prove this role was revoked."""
+    if not isinstance(document, dict):
+        return False
+    paired = document.get("paired")
+    if not isinstance(paired, list) or len(paired) != 1:
+        return False
+    entry = paired[0]
+    if not isinstance(entry, dict) or entry.get("deviceId") != device_id:
+        return False
+    tokens = entry.get("tokens")
+    if not isinstance(tokens, list):
+        return False
+    operator = [token for token in tokens
+                if isinstance(token, dict) and token.get("role") == "operator"]
+    if len(operator) != 1:
+        return False
+    token = operator[0]
+    timestamp = token.get("revokedAtMs")
+    return token.get("scopes") == ["operator.read"] and type(timestamp) is int and timestamp > 0
+
+
+def prove_isolated_explicit_pairing_revocation(
+    *, node: str, checkout: Path, env: dict[str, str],
+    probe_env: dict[str, str], temp: Path, deadline: float,
+) -> int:
+    """Automated exact-ID approval via real local CLI, NOT approval by a human."""
+    state = Path(env.get("OPENCLAW_STATE_DIR", ""))
+    url, token = env.get("AWL_OPENCLAW_URL", ""), env.get("AWL_OPENCLAW_TOKEN", "")
+    if (env.get("AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT") != "1"
+            or env.get("AWL_OPENCLAW_EXPOSURE") != "loopback"
+            or not re.fullmatch(r"ws://127\.0\.0\.1:[0-9]{1,5}", url)
+            or state.name != "state" or temp != state.parent
+            or not temp.name.startswith("awl-real-dev-gateway-")
+            or env.get("HOME") != str(temp / "home")
+            or not token or env.get("OPENCLAW_GATEWAY_TOKEN") != token
+            or env.get("AWL_DEV_GATEWAY_GRANT_STORE") != str(temp / "grant-cache")
+            or os.environ.get("AWL_RUN_EXPLICIT_APPROVAL_INTEGRATION") != "1"):
+        return 1
+
+    def probe(e: dict[str, str]) -> int:
+        (temp / "probe-phase").unlink(missing_ok=True)
+        (temp / "probe-result").unlink(missing_ok=True)
+        try:
+            # The first, bearer-authenticated probe follows shell preflight.
+            # Grant-only reconnect intentionally has NO shared Gateway token,
+            # so it must invoke the already-built production Swift probe
+            # directly, exactly like the established two-process CI contract.
+            command = (
+                [sys.executable, str(ROOT / "scripts" / "dev_gateway_probe_runner.py"),
+                 "awl-openclaw-probe"]
+                if e.get("AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY") == "1"
+                else ["bash", str(ROOT / "scripts" / "run-openclaw-development-gateway.sh")]
+            )
+            run = subprocess.run(
+                command,
+                cwd=ROOT, env=e, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=max(1, min(90, int(deadline - time.monotonic()))),
+                check=False)
+            return run.returncode
+        except (OSError, subprocess.TimeoutExpired):
+            return 124
+
+    def cli(args: list[str], *, read: bool = False) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [node, str(checkout / "dist" / "entry.js"), "devices", *args,
+             "--url", url, "--token", token],
+            cwd=checkout, env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE if read else subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=30, check=False)
+
+    for attempt in range(4):
+        code = probe(probe_env)
+        phase = safe_probe_phase(temp / "probe-phase")
+        if code == 3 and phase == "pairing-required":
+            break
+        if (not may_retry_negative_gateway_startup(
+                phase=phase, exit_code=code, attempt=attempt, max_attempts=4)
+                or time.monotonic() + 1 >= deadline):
+            print("Explicit approval precondition failed: phase="
+                  + phase + ", class=" + safe_probe_result(temp / "probe-result")
+                  + ", code-class=" + ("timeout" if code == 124 else "rejected"),
+                  file=sys.stderr)
+            return 1
+        time.sleep(1)
+    else:
+        return 1
+
+    try:
+        listing = cli(["list", "--json"], read=True)
+        if listing.returncode != 0 or len(listing.stdout) > 128_000:
+            print("Explicit approval failed at pending-list CLI.", file=sys.stderr)
+            return 1
+        selected = select_isolated_pending_readonly(json.loads(listing.stdout.decode("utf-8")))
+        if selected is None:
+            print("Explicit approval failed: missing or ambiguous read-only pending request.",
+                  file=sys.stderr)
+            return 1
+        request_id, device_id = selected
+        if cli(["approve", request_id]).returncode:
+            print("Explicit approval failed at exact-request approval CLI.", file=sys.stderr)
+            return 1
+        listed = cli(["list", "--json"], read=True)
+        if listed.returncode or len(listed.stdout) > 128_000:
+            print("Explicit approval failed at post-approval list CLI.", file=sys.stderr)
+            return 1
+        data = json.loads(listed.stdout.decode("utf-8"))
+        paired = data.get("paired")
+        if (not isinstance(paired, list) or len(paired) != 1
+                or not isinstance(paired[0], dict)
+                or paired[0].get("deviceId") != device_id
+                or data.get("pending") != []):
+            print("Explicit approval failed: paired identity not uniquely confirmed.",
+                  file=sys.stderr)
+            return 1
+
+        if probe(probe_env) != 0:
+            print("Explicit approval failed at approved read-only health: phase="
+                  + safe_probe_phase(temp / "probe-phase"),
+                  file=sys.stderr)
+            return 1
+        second = dict(probe_env)
+        second.pop("AWL_OPENCLAW_TOKEN", None)
+        second.pop("OPENCLAW_GATEWAY_TOKEN", None)
+        second["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] = "1"
+        if probe(second) != 0:
+            print("Explicit approval failed at tokenless grant reuse: phase="
+                  + safe_probe_phase(temp / "probe-phase"),
+                  file=sys.stderr)
+            return 1
+
+        if cli(["revoke", "--device", device_id, "--role", "operator"]).returncode:
+            print("Explicit approval failed at token revocation CLI.", file=sys.stderr)
+            return 1
+        # An RPC/CLI success alone is not proof that the target read-only token
+        # actually lost authority. Verify the real Gateway's redacted inventory.
+        post_revoke = cli(["list", "--json"], read=True)
+        if post_revoke.returncode or len(post_revoke.stdout) > 128_000:
+            print("Explicit approval failed at post-revocation inventory.", file=sys.stderr)
+            return 1
+        if not confirmed_isolated_operator_revocation(
+                json.loads(post_revoke.stdout.decode("utf-8")), device_id):
+            print("Explicit approval failed: token not recorded as revoked.", file=sys.stderr)
+            return 1
+        rejected = probe(second)
+        phase = safe_probe_phase(temp / "probe-phase")
+        result = safe_probe_result(temp / "probe-result")
+        if rejected not in (1, 2, 3) or (
+            phase not in ("pairing-required", "gateway-auth-denied",
+                          "gateway-device-proof-rejected", "gateway-invalid-request",
+                          "gateway-shared-auth-rejected")
+            and result not in ("gateway-device-token-rejected",
+                               "gateway-auth-denied", "gateway-pairing-code")
+        ):
+            print("Explicit approval failed at post-revocation refusal: phase="
+                  + phase + ", class=" + result, file=sys.stderr)
+            return 1
+        print("Isolated Gateway explicit exact-ID approval, tokenless grant reuse "
+              "and revocation denial verified (automated, NOT human).")
+        return 0
+    except (OSError, ValueError, TypeError, AttributeError,
+            subprocess.SubprocessError, UnicodeError):
+        print("Explicit approval failed with isolated CLI/probe exception.",
+              file=sys.stderr)
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -472,6 +665,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expect-grant-reconnect", action="store_true",
                         help="Verify two separate Swift processes and an issued "
                              "read-only grant without shared token in the second")
+    parser.add_argument("--expect-explicit-approval-revocation", action="store_true",
+                        help="CI-only exact-request operator approve/grant/revoke proof")
     parser.add_argument("--expect-native-keychain-grant-reconnect", action="store_true",
                         help="CI-only real Gateway grant reuse through native macOS Keychain")
     parser.add_argument("--expect-agent-stream", action="store_true",
@@ -485,6 +680,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     contract_count = sum((args.expect_pairing_required, args.expect_health_ok,
                           args.expect_grant_reconnect,
+                          args.expect_explicit_approval_revocation,
                           args.expect_native_keychain_grant_reconnect,
                           args.expect_agent_stream,
                           args.expect_agent_abort, args.expect_agent_session))
@@ -506,6 +702,14 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
+    if args.expect_explicit_approval_revocation and any(
+            os.environ.get(k) != v for k, v in (
+                ("CI", "true"), ("GITHUB_ACTIONS", "true"),
+                ("RUNNER_OS", "macOS"),
+                ("AWL_RUN_EXPLICIT_APPROVAL_INTEGRATION", "1"))):
+        print("Explicit approval CI contract requires hosted macOS opt-in.",
+              file=sys.stderr)
+        return 2
     checkout = Path(args.checkout).expanduser().resolve()
     if not checkout_revision(checkout, args.revision):
         print("Isolated Gateway runner: revision, source cleanliness or built CLI mismatch.",
@@ -548,7 +752,8 @@ def main(argv: list[str] | None = None) -> int:
             # These configs exist solely inside the disposable loopback state.
             configuration = temp / "state" / "openclaw.json"
             config_data = (
-                negative_pairing_gateway_config() if args.expect_pairing_required
+                negative_pairing_gateway_config()
+                if (args.expect_pairing_required or args.expect_explicit_approval_revocation)
                 else synthetic_agent_gateway_config(model_port, temp / "workspace")
                 if synthetic_agent and model_port is not None
                 else positive_health_gateway_config()
@@ -568,7 +773,8 @@ def main(argv: list[str] | None = None) -> int:
             marker = ("AWL_DEV_GATEWAY_EXPECT_PAIRING" if args.expect_pairing_required
                       else "AWL_DEV_GATEWAY_EXPECT_GRANT_RECONNECT"
                       if (args.expect_grant_reconnect or
-                          args.expect_native_keychain_grant_reconnect)
+                          args.expect_native_keychain_grant_reconnect
+                          or args.expect_explicit_approval_revocation)
                       else "AWL_DEV_GATEWAY_EXPECT_AGENT_STREAM"
                       if args.expect_agent_stream
                       else "AWL_DEV_GATEWAY_EXPECT_AGENT_ABORT"
@@ -589,7 +795,7 @@ def main(argv: list[str] | None = None) -> int:
                 env["CI"] = "true"
                 env["AWL_RUN_NATIVE_KEYCHAIN_INTEGRATION"] = "1"
                 env["AWL_DEV_GATEWAY_NATIVE_KEYCHAIN"] = "1"
-            if args.expect_grant_reconnect:
+            if args.expect_grant_reconnect or args.expect_explicit_approval_revocation:
                 grant_directory = temp / "grant-cache"
                 grant_directory.mkdir(mode=0o700)
                 env["AWL_DEV_GATEWAY_GRANT_STORE"] = str(grant_directory)
@@ -675,6 +881,10 @@ def main(argv: list[str] | None = None) -> int:
             # Only the exact request ID explicitly entered by a human can
             # enable local pairing. Read-only and write-probe identities
             # require independent approvals, never implicit privilege reuse.
+            if args.expect_explicit_approval_revocation:
+                return prove_isolated_explicit_pairing_revocation(
+                    node=node, checkout=checkout, env=env, probe_env=probe_env,
+                    temp=temp, deadline=deadline)
             attempt_limit = 6 if contract else 3
             for approval_attempt in range(attempt_limit):
                 if contract:
@@ -744,7 +954,8 @@ def main(argv: list[str] | None = None) -> int:
                               "model request was not observed.", file=sys.stderr)
                         return 1
                     if (args.expect_grant_reconnect or
-                            args.expect_native_keychain_grant_reconnect) and result.returncode == 0:
+                            args.expect_native_keychain_grant_reconnect
+                           or args.expect_explicit_approval_revocation) and result.returncode == 0:
                         # The second Swift process must not receive *either*
                         # the AWL shared Gateway bearer or the upstream token.
                         # It only loads the device grant the real Gateway
