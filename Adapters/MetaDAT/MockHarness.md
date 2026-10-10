@@ -8,7 +8,7 @@ process** because Meta's test server is hosted by `MockDeviceKit.shared` in the
 application, while an XCUITest process drives it through
 `MWDATMockDeviceTestClient`.
 
-Package-hosted `xcodebuild test` is intentionally not a behavioral gate: with the pinned SDK it can abort before test execution because `MWDATCore` expects linked-app runtime context. The package integration library remains a compile gate, but there is no SwiftPM behavioral host; behavioral CI belongs exclusively to the `TestApp/` app-hosted XCUITest target tracked by #122.
+Package-hosted `xcodebuild test` is intentionally not a behavioral gate: with the pinned SDK it can abort before test execution because `MWDATCore` expects linked-app runtime context. The package integration library remains a compile gate, but there is no SwiftPM behavioral host; behavioral CI runs through the generated `TestApp/` app-hosted XCUITest target; it is not a package-only test.
 
 ## Host contract
 
@@ -28,17 +28,22 @@ the device and remove the temporary port file during teardown.
 
 ## Minimum fixture sequence
 
-```text
-launch host --ui-testing
-  -> waitForServer
-  -> registration flow
-  -> pairDevice()
-  -> setCameraFeed(...)
-  -> setCapturedImage(...)
-  -> start AWL Meta DAT session
-  -> exercise normalized event/snapshot path
-  -> unpairDevice(...)
-  -> terminate host
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Test as XCUITest
+    participant Host as iOS app host
+    participant Mock as MockDeviceKit
+    participant AWL as AWL Meta DAT adapter
+    Test->>Host: Launch UI testing mode
+    Host->>Mock: Start mock server
+    Test->>Mock: Wait for server and register
+    Test->>Mock: Pair simulated device
+    Test->>Mock: Install camera and photo fixtures
+    Test->>AWL: Start session and exercise snapshot/events
+    AWL-->>Test: Normalized test assertions
+    Test->>Mock: Unpair simulated device
+    Test->>Host: Terminate host
 ```
 
 The initial camera fixture should use repository-owned small deterministic
