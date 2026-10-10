@@ -44,7 +44,8 @@ def check(path):
                     ends = sum(x == "end" for x in meaningful)
                     if groups != ends:
                         errors.append(f"{path.relative_to(ROOT)}:{lineno}: subgraph/end mismatch")
-            if active[1] == "text" and ASCII.search("\n".join(source)):
+            if active[1] == "text" and (ASCII.search("\n".join(source))
+                    or sum(item.lstrip().startswith(("->", "=>", "→")) for item in source) >= 2):
                 errors.append(f"{path.relative_to(ROOT)}:{lineno}: ASCII diagram should be Mermaid")
             active = None
         elif active:
