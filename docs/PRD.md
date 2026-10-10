@@ -46,20 +46,13 @@ That coupling makes either side difficult to replace. AWL defines stable boundar
 
 ## 4. Architecture invariants
 
-```text
-Wearable
-   │
-DeviceAdapter
-   │
-AgentWearLinkCore
-   │
-AgentAdapter
-   │
-runtime-specific adapter
-   │
-transport
-   │
-AI agent runtime
+```mermaid
+flowchart TD
+    W["Wearable SDK"] --> D["DeviceAdapter"]
+    D --> C["AgentWearLinkCore"]
+    C <--> A["AgentAdapter"]
+    A <--> T["Runtime-specific transport"]
+    T <--> R["External AI agent runtime"]
 ```
 
 The following are invariants:
@@ -121,16 +114,10 @@ Tailscale is an endpoint/security profile, not an SDK dependency.
 
 Preferred owner topology:
 
-```text
-iPhone / AWL
-    │
-Tailscale tailnet
-    │
-WSS / Tailscale Serve
-    │
-Mac mini loopback
-    │
-OpenClaw Gateway :18789
+```mermaid
+flowchart TD
+    I["iPhone / AgentWearLink"] -->|"Private Tailscale tailnet"| S["Tailscale Serve / WSS"]
+    S -->|"Mac local loopback"| G["OpenClaw Gateway, port 18789"]
 ```
 
 AWL must tolerate Wi-Fi/cellular transitions, Tailnet re-establishment, Gateway restart, and Mac sleep/restart.
