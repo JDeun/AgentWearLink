@@ -1,8 +1,8 @@
 # AgentWearLink Product Requirements Document
 
-**Version:** 0.3  
-**Status:** Implementation source of truth  
-**Date:** 2026-10-08  
+**Version:** 0.4  
+**Status:** Implementation requirements and acceptance criteria  
+**Updated:** 2026-10-10  
 **Repository:** AgentWearLink
 
 > This document is the canonical product/scope handoff for continuing work in a new session. Read it together with `docs/architecture.md`, ADRs, open GitHub issues, and the current code before changing architecture.
@@ -264,7 +264,7 @@ When resuming work in another session:
 7. Continue the earliest unblocked delivery gate.
 8. Record material architectural changes in this PRD and/or a new ADR.
 
-## 14. Implementation snapshot and pre-hardware exit criteria — 2026-10-08
+## 14. Historical implementation checkpoint — 2026-10-08
 
 ### Merged code-side foundation
 
@@ -274,7 +274,7 @@ When resuming work in another session:
 - App-hosted MockDeviceKit exercises production camera capture, denied permission, opt-in experimental Photo success/failure, and Voice Invocation → Speech → Core mock agent. Full iOS reference-host compilation and phone-owned TTS are CI-gated.
 - PR #587 isolated macOS XCTest suites and preserved full coverage; PR #591 fixed cleanup of orphan XCTest children after their SwiftPM parent exits. Neither independently proves the root cause of #542 permanently fixed.
 
-### Strict pre-hardware exit gates
+### Pre-hardware exit gates at the time of this checkpoint
 
 1. **CI lifetime (#542):** repeat independent macOS Core/XCTest runs and investigate any pre-test worker stalls. Do not accept a single green run or suppress failing cases.
 2. **Isolated real development Gateway (#331):** execute the production native adapter against an actual revision-recorded independent OpenClaw process. Capture authenticated health, harmless accepted agent run, incremental/terminal response, abort, pairing/reconnect grant reuse and bounded cleanup. Self-authored fixtures or a merely implemented launch script do not satisfy this gate.
@@ -289,3 +289,15 @@ When resuming work in another session:
 - Verify actual microphone/speaker routing versus phone-owned Apple TTS; locked/pocketed voice activation, explicit vision-agent one-shot snapshot, memory/leak profiles and all privacy/recovery matrix rows (#5/#6/#58/#59/#303).
 
 **Evidence rule:** compilation and MockDeviceKit do not establish real Bluetooth, Tailnet, live Gateway or background privileges. A runnable harness is not proof the harness passed. Keep code/physical issues open until their distinct acceptance is recorded.
+
+
+## 15. Current evidence and remaining acceptance — 2026-10-10
+
+The pre-hardware milestone described in `14 is **historical**. By 2026-10-10, the previously open composition work (#230/#95), Core CI stability work, and isolated real Gateway contract have been implemented and accepted at their respective **code/simulator/CI** evidence levels.
+
+- The pinned real Gateway Layer-2 CI now verifies unapproved rejection, explicit automated exact-ID read-only approval, server-issued grant persisted through two Swift processes, native macOS Keychain grant reuse, server-recorded revocation and rejected reuse, agent streaming, active-run abort, and two same-session turns backed by a **synthetic local model**.
+- All three required workflows passed against merged `main` commit `2120981585df9f9f1b6a05f470952e85ef9c581f`: Swift Core, development harness, and pinned real Gateway.
+- Completed CI does **not** prove human review of device pairing, actual Mac/OpenClaw/Tailnet deployment, physical iPhone Keychain entitlement behavior, a live model's memory or tool semantics, or Meta wearable camera/voice/audio performance.
+- The remaining [open issues](https://github.com/JDeun/AgentWearLink/issues) are retained for private deployment/physical acceptance, upstream Meta SDK constraints, and any subsequently discovered defects.
+
+Use [testing.md](testing.md), the [isolated real Gateway contract](development-openclaw-gateway.md), and open issues for the current evidence. Do **not** re-interpret earlier ``14 gates as still-unimplemented code tasks or close physical acceptance based on code-only CI.
