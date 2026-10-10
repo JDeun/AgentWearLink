@@ -143,11 +143,10 @@ remain capacity-bounded, typed and in memory.
 The project's `Info.plist` still contains test-only placeholder Meta App ID
 and client token, and the host is a test bundle; replace those values in a
 properly provisioned app build before a live Meta registration attempt.
-Normal runtime startup still requires Meta DeviceSession, and independent
-Voice Invocation does not yet wake an unconnected Core runtime. That separate
-hands-free cold-start gap remains on #95/#115/#230/#6. Tailscale connectivity,
-pairing authorization, actual headset capture and TTS routing must still be
-verified physically.
+The reference host has additional opt-in, foreground voice-wake composition,
+including post-ack Speech handoff. This does not establish unattended locked-phone
+or background startup. Tailscale, actual headset capture, voice delivery and TTS
+routing must still be verified with the physical stack (#6/#5/#1).
 
 ## Explicit photo -> OpenClaw vision path
 
@@ -181,8 +180,8 @@ This is code-side composition only. No independent microphone PCM or Meta
 speaker output is claimed. Unsupported invocation action subclasses currently
 produce no Core event because the pinned public abstraction does not expose
 an independently verified response-handle contract for all action types.
-Vendor MockDeviceKit launch simulation and physical locked/pocketed behavior
-remain open on #95/#115/#6.
+Vendor MockDeviceKit launch simulation is covered by simulator tests; physical
+locked/pocketed behavior remains open under the hands-free acceptance gate #6.
 
 ## Explicit sanitized diagnostic export
 
@@ -207,7 +206,8 @@ the runtime. An unsuccessful startup rolls both owners back. The voice stream
 itself is not allocated by `DeviceSession` and does not require camera or
 microphone readiness, but this reference host currently starts the stream
 *after* successful Gateway/media connect; fully disconnected or locked-phone
-cold activation remains outside this slice (#95/#6). A LaunchApp invocation
+cold activation remains outside this specific connected-runtime path; see the
+separate opt-in foreground composition and physical gate #6. A LaunchApp invocation
 with no phrase is only an acknowledgement/event until a separate final Speech
 transcript is received; it is **not** counted as an agent turn.
 
