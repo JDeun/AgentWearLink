@@ -72,12 +72,12 @@ MockDeviceKit should feed the same normal DAT session/camera APIs. Do not create
 
 Expected test path:
 
-```text
-MWDATMockDevice fixture
-  → Wearables/DeviceSession/Camera
-  → concrete MetaDATSession host bridge
-  → MetaDATAdapter
-  → Core tests/assertions
+```mermaid
+flowchart TD
+    M["MWDATMockDevice fixture"] --> D["DAT Wearables / DeviceSession / Camera"]
+    D --> B["Concrete MetaDATSession host bridge"]
+    B --> A["MetaDATAdapter"]
+    A --> C["Core test assertions"]
 ```
 
 ## Compile gate
@@ -123,11 +123,12 @@ Foreground never replays work or automatically resurrects retired media.
 
 `TestApp/App/AWLReferenceRuntimeHost.swift` now explicitly composes:
 
-```text
-MetaDATDeviceAdapter(applicationLifecycle:, diagnostics:)
-  -> AgentWearLinkRuntime(device:agent:outputSink:)
-  -> OpenClawNativeAgentAdapter / private Tailnet Serve Gateway
-  -> AppleSpeechOutput / AVSpeechSynthesizerBridge
+```mermaid
+flowchart TD
+    D["MetaDATDeviceAdapter"] --> R["AgentWearLinkRuntime"]
+    R --> A["OpenClawNativeAgentAdapter"]
+    A --> G["Private Tailnet Serve / OpenClaw Gateway"]
+    R --> S["AppleSpeechOutput / AVSpeechSynthesizerBridge"]
 ```
 
 The iOS test host exposes a manual host/token/session-key screen, Meta AI
