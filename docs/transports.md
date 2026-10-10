@@ -39,11 +39,13 @@ The baseline HTTP transport uses `maximumRequestBytes` as both a pre-encoding te
 
 The response is still semantically buffered: it is emitted only after the HTTP body completes. Its receive memory bound is enforced incrementally while downloading. `maximumResponseBytes` is therefore a hard response-body accumulation ceiling rather than a post-download validation limit. Known oversized `Content-Length` values are rejected before body consumption, and chunked/unknown-length responses are cancelled as soon as the next byte would exceed the configured ceiling.
 
-## Planned transports
+## Transport availability
 
-- buffered HTTP: baseline/simple compatibility with incrementally enforced response bounds
-- SSE: when the target runtime exposes server-sent streaming
-- WebSocket: bidirectional low-latency sessions
-- local transport: future same-device/runtime integration
+| Transport | Implemented scope |
+| --- | --- |
+| Buffered HTTP | Bounded request/response compatibility primitive; not incremental response streaming |
+| SSE | Bounded parser and OpenAI-compatible chat streaming path where the runtime exposes it |
+| WebSocket | Concrete OpenClaw Gateway transport with authenticated connection, RPC, streaming runs and reconnect |
+| Local IPC | Future possibility; not advertised as implemented |
 
-The concrete OpenClaw adapter will be implemented against the protocol actually exposed by the user's OpenClaw gateway rather than assumptions.
+The OpenClaw native adapter uses the pinned, audited real Gateway protocol described in [OpenClaw](openclaw.md) and the [protocol contract](openclaw-protocol-contract.md). The isolated Gateway CI validates that protocol without implying a verified physical deployment.
