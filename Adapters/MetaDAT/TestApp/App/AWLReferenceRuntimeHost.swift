@@ -131,12 +131,17 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         guard !configured else { return }
         // Fail before SDK initialization with test-only placeholder settings.
         // No client token or other registration detail is sent to diagnostics.
+        //
+        // TeamID and the callback scheme are always required. MetaAppID and
+        // ClientToken are only needed outside Meta AI Developer Mode: Meta's
+        // CameraAccess sample states "Developer Mode needs no credentials; for
+        // other release channels, set META_APP_ID and CLIENT_TOKEN". Empty values
+        // therefore mean Developer Mode registration; unexpanded build settings
+        // and the CI placeholder "0" are still rejected.
         guard let registration = Bundle.main.object(forInfoDictionaryKey: "MWDAT")
                 as? [String: Any],
-              let appID = registration["MetaAppID"] as? String,
-              !appID.isEmpty, appID != "0", !appID.contains("$("),
-              let clientToken = registration["ClientToken"] as? String,
-              !clientToken.isEmpty, !clientToken.contains("$("),
+              Self.isOptionalCredential(registration["MetaAppID"]),
+              Self.isOptionalCredential(registration["ClientToken"]),
               let teamID = registration["TeamID"] as? String,
               !teamID.isEmpty, !teamID.contains("$("),
               let link = registration["AppLinkURLScheme"] as? String,
@@ -152,6 +157,14 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             // configuration; never embed SDK errors in exported diagnostics.
             status = "meta-configuration-failed"
         }
+    }
+
+    /// Absent or empty: Developer Mode. Present: must be a real expanded value.
+    static func isOptionalCredential(_ value: Any?) -> Bool {
+        guard let value else { return true }
+        guard let string = value as? String else { return false }
+        if string.isEmpty { return true }
+        return string != "0" && !string.contains("$(")
     }
 
     func startRegistration() async {
