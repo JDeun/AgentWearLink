@@ -167,6 +167,31 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         return string != "0" && !string.contains("$(")
     }
 
+    /// Ask the wearer, through Meta AI, for a glasses permission. DAT Speech and
+    /// camera snapshots only check status; nothing in the reference host used to
+    /// request it, so on a real device Speech stayed silently unavailable
+    /// (2026-10-13). Meta's guidance: check silently first, and request only after an
+    /// explicit user action, because the request switches to the Meta AI app.
+    func requestGlassesPermission(_ permission: Permission) async {
+        guard configured else {
+            status = "meta-not-configured"
+            return
+        }
+        let name = permission == .microphone ? "microphone" : "camera"
+        do {
+            if try await Wearables.shared.checkPermissionStatus(permission) == .granted {
+                status = "meta-\(name)-permission-granted"
+                return
+            }
+            let result = try await Wearables.shared.requestPermission(permission)
+            status = result == .granted
+                ? "meta-\(name)-permission-granted"
+                : "meta-\(name)-permission-denied"
+        } catch {
+            status = "meta-\(name)-permission-request-failed"
+        }
+    }
+
     func startRegistration() async {
         guard configured else {
             status = "meta-not-configured"
@@ -398,7 +423,16 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 if voiceWake {
                     status = "voice-wake-runtime-started"
                 } else {
-                    status = voiceOnly ? "voice-only-runtime-started" : "connected"
+                    // DAT Speech is optional at startup (a missing microphone
+                    // permission must not block camera snapshots), so a bare
+                    // "connected" hid that nothing would ever hear the wearer.
+                    if voiceOnly {
+                        status = "voice-only-runtime-started"
+                    } else {
+                        status = concreteDevice.capabilities.contains(.speechInput)
+                            ? "connected"
+                            : "connected-without-speech"
+                    }
                 }
             } catch {
                 await concreteDevice.stopVoiceInvocationListening()
