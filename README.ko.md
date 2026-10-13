@@ -65,6 +65,8 @@ cd AgentWearLink
 swift test
 ```
 
+`swift test`에는 **Xcode**에 포함된 XCTest가 필요합니다. Command Line Tools만 있으면 `swift build`는 되지만 `swift test`는 `no such module 'XCTest'`로 멈춥니다.
+
 Meta DAT 실제 연동 패키지의 의존성을 해석하려면 별도로 **Swift 6.0+ 툴체인**이 필요하며, AWL 통합 소스는 현재 Swift 5 언어 모드를 사용합니다. 자세한 iOS 시뮬레이터·OpenClaw 검증 절차는 [빠른 시작 가이드](docs/getting-started.md)를 참고하세요.
 
 ## 패키지
