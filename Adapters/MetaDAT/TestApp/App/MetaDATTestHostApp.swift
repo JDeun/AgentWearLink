@@ -245,6 +245,14 @@ struct MetaDATTestHostApp: App {
                         Task { await referenceHost.startRegistration() }
                     }
                     .accessibilityIdentifier("awl-meta-register")
+                    Button("Allow glasses microphone (opens Meta AI)") {
+                        Task { await referenceHost.requestGlassesPermission(.microphone) }
+                    }
+                    .accessibilityIdentifier("awl-meta-microphone-permission")
+                    Button("Allow glasses camera (opens Meta AI)") {
+                        Task { await referenceHost.requestGlassesPermission(.camera) }
+                    }
+                    .accessibilityIdentifier("awl-meta-camera-permission")
                         }
                     }
                     .accessibilityIdentifier("awl-reference-controls-scroll")
