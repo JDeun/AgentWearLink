@@ -28,6 +28,9 @@ public struct ConnectionSignals: Equatable, Sendable {
     public var listenEnabled = true
     /// The voice runtime is running (DAT listener + Gateway session).
     public var listening = false
+    /// DAT Speech actually started on the glasses. A runtime can run without
+    /// it (e.g. microphone not granted), and then nothing hears the wearer.
+    public var speechReady = false
     public var network: Reachability = .unknown
     public var gateway: Gateway = .unknown
     public var agentFailing = false
@@ -59,6 +62,9 @@ public struct ConnectionSignals: Equatable, Sendable {
 
         if microphone == .denied {
             result[.phone] = .broken(.microphoneDenied)
+        } else if listenEnabled, glasses == .connected, !(listening && speechReady) {
+            // Glasses are here but nothing is listening yet (connecting, or
+            // Speech failed to start): do not claim the phone hop is fine.
         } else {
             // This code runs, so the app is alive on this iPhone.
             result[.phone] = .ok

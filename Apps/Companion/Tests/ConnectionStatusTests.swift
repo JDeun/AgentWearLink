@@ -10,6 +10,7 @@ final class ConnectionStatusTests: XCTestCase {
         signals.glassesBattery = 72
         signals.microphone = .granted
         signals.listening = true
+        signals.speechReady = true
         signals.network = .reachable
         signals.gateway = .ok
         signals.lastReplyAt = now
@@ -88,6 +89,24 @@ final class ConnectionStatusTests: XCTestCase {
         XCTAssertEqual(state.rows[4].state, .checking)
         // Glasses through gateway are verified, so the banner is still green.
         XCTAssertEqual(state.banner, .allConnected(checkedAt: now))
+    }
+
+    func testConnectedWithoutSpeechIsNotAllConnected() {
+        var signals = healthy()
+        signals.speechReady = false
+        let state = HomeViewState(signals: signals, telegramConfigured: false)
+        XCTAssertEqual(state.rows[1].state, .checking)
+        XCTAssertEqual(state.banner, .checking)
+    }
+
+    func testGlassesConnectedButRuntimeNotUpYetIsChecking() {
+        var signals = healthy()
+        signals.listening = false
+        signals.speechReady = false
+        XCTAssertNil(signals.observations[.phone])
+        // Waiting glasses never need a running runtime for the phone hop.
+        signals.glasses = .waiting
+        XCTAssertEqual(signals.observations[.phone], .ok)
     }
 
     func testListeningOffIsNeutral() {
