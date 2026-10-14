@@ -11,7 +11,7 @@ struct RepairView: View {
 
     var body: some View {
         let guide = RepairGuide(problem: problem)
-        ScrollView {
+        AnchoredScrollView(scrollsToBottom: true) {
             VStack(alignment: .leading, spacing: 16) {
                 Card(background: Theme.problemBackground, radius: 24) {
                     VStack(alignment: .leading, spacing: 6) {

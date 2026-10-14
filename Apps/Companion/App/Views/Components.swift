@@ -54,6 +54,7 @@ struct Card<Content: View>: View {
 }
 
 struct PrimaryButton: View {
+    @Environment(\.isEnabled) private var isEnabled
     let title: LocalizedStringKey
     var systemImage: String?
     var prominent = false
@@ -72,11 +73,22 @@ struct PrimaryButton: View {
             }
             .font(.body.weight(.semibold))
             .frame(maxWidth: .infinity, minHeight: 50)
-            .foregroundStyle(prominent ? Theme.background : Theme.accent)
-            .background(prominent ? Theme.accent : Theme.control, in: Capsule())
+            .foregroundStyle(foreground)
+            .background(background, in: Capsule())
         }
         .buttonStyle(.plain)
         .disabled(isLoading)
+    }
+
+    // Disabled buttons keep readable contrast instead of a washed-out accent.
+    private var foreground: Color {
+        guard isEnabled else { return Theme.tertiary }
+        return prominent ? Theme.background : Theme.accent
+    }
+
+    private var background: Color {
+        guard isEnabled else { return Theme.raised }
+        return prominent ? Theme.accent : Theme.control
     }
 }
 
@@ -268,4 +280,29 @@ struct ProblemHeadline: View {
         case .agent: Text("에이전트가 답하지 않아요")
         }
     }
+}
+
+/// A vertical ScrollView with a bottom anchor. DEBUG screenshot fixtures can
+/// ask it to render its lower part (`-AWLPreviewScroll bottom`).
+struct AnchoredScrollView<Content: View>: View {
+    var scrollsToBottom = false
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                content
+                Color.clear.frame(height: 1).id(Self.bottomID)
+            }
+            .task {
+                #if DEBUG
+                guard scrollsToBottom, CompanionPreviewFixture.scrollsToBottom else { return }
+                try? await Task.sleep(for: .milliseconds(600))
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                #endif
+            }
+        }
+    }
+
+    static var bottomID: String { "awl-bottom" }
 }

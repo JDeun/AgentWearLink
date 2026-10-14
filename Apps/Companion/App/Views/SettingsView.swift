@@ -13,7 +13,10 @@ struct SettingsView: View {
     @State private var chatIDDraft = ""
     @FocusState private var chatIDFocused: Bool
 
+    @State private var openDiagnostics = false
+
     var body: some View {
+        ScrollViewReader { proxy in
         Form {
             Section {
                 SettingToggle(
@@ -135,10 +138,21 @@ struct SettingsView: View {
                 } label: {
                     Text("승인만 다시 받기").frame(minHeight: 44)
                 }
+                .confirmationDialog(Text("승인만 다시 받기"), isPresented: $confirmReapprove, titleVisibility: .visible) {
+                    Button("승인 다시 받기") { Task { await runtime.reapprove() } }
+                } message: {
+                    Text("이 기기의 저장된 승인을 지우고 게이트웨이 연결 단계로 돌아갑니다. 다른 설정은 그대로입니다.")
+                }
                 Button(role: .destructive) {
                     confirmReset = true
                 } label: {
                     Text("모두 지우고 처음부터 설정").frame(minHeight: 44)
+                }
+                .id(Self.actionsID)
+                .confirmationDialog(Text("모두 지우고 처음부터"), isPresented: $confirmReset, titleVisibility: .visible) {
+                    Button("모두 지우기", role: .destructive) { Task { await runtime.resetEverything() } }
+                } message: {
+                    Text("승인, 기기 지문, 모든 설정을 지우고 처음 설정부터 다시 시작합니다.")
                 }
             }
 
@@ -159,8 +173,16 @@ struct SettingsView: View {
                         versionTaps += 1
                         if versionTaps >= 5 { showDiagnostics = true }
                     }
+                    .id(AnchoredScrollView<EmptyView>.bottomID)
             }
         }
+        .task {
+            #if DEBUG
+            await applyPreview(proxy)
+            #endif
+        }
+        }
+        .navigationDestination(isPresented: $openDiagnostics) { DiagnosticsView() }
         .scrollContentBackground(.hidden)
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(Text("설정"))
@@ -169,17 +191,34 @@ struct SettingsView: View {
             chatIDDraft = runtime.settings.telegramChatID
             phrasesText = runtime.settings.effectiveWakePhrases.joined(separator: ", ")
         }
-        .confirmationDialog(Text("승인만 다시 받기"), isPresented: $confirmReapprove, titleVisibility: .visible) {
-            Button("승인 다시 받기") { Task { await runtime.reapprove() } }
-        } message: {
-            Text("이 기기의 저장된 승인을 지우고 게이트웨이 연결 단계로 돌아갑니다. 다른 설정은 그대로입니다.")
-        }
-        .confirmationDialog(Text("모두 지우고 처음부터"), isPresented: $confirmReset, titleVisibility: .visible) {
-            Button("모두 지우기", role: .destructive) { Task { await runtime.resetEverything() } }
-        } message: {
-            Text("승인, 기기 지문, 모든 설정을 지우고 처음 설정부터 다시 시작합니다.")
-        }
     }
+
+    #if DEBUG
+    private func applyPreview(_ proxy: ScrollViewProxy) async {
+        guard CompanionPreviewFixture.opensSettings else { return }
+        showDiagnostics = CompanionPreviewFixture.showsDiagnosticsLink
+        showFullFingerprint = CompanionPreviewFixture.expandsFingerprint
+        try? await Task.sleep(for: .milliseconds(600))
+        if CompanionPreviewFixture.scrollsToBottom || CompanionPreviewFixture.expandsFingerprint
+            || CompanionPreviewFixture.settingsDialog != nil {
+            // The footer anchor exists only while its section has rows.
+            proxy.scrollTo(
+                showDiagnostics ? AnchoredScrollView<EmptyView>.bottomID : Self.actionsID,
+                anchor: .bottom
+            )
+            // Let the rows that present the dialogs appear first.
+            try? await Task.sleep(for: .milliseconds(700))
+        }
+        switch CompanionPreviewFixture.settingsDialog {
+        case .reset: confirmReset = true
+        case .reapprove: confirmReapprove = true
+        case .none: break
+        }
+        if CompanionPreviewFixture.opensDiagnostics { openDiagnostics = true }
+    }
+    #endif
+
+    private static let actionsID = "awl-settings-actions"
 
     /// Placeholder: the name derived from the paired host, else "게이트웨이".
     private var defaultGatewayName: String {

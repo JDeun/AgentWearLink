@@ -6,7 +6,7 @@ struct SetupFlowView: View {
     @EnvironmentObject private var runtime: CompanionRuntime
 
     var body: some View {
-        ScrollView {
+        AnchoredScrollView(scrollsToBottom: true) {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("처음 설정")
@@ -197,7 +197,6 @@ private struct MetaRegistrationStep: View {
                 Task { await runtime.registerWithMeta() }
             }
             .disabled(runtime.metaConfiguration != .configured)
-            .opacity(runtime.metaConfiguration == .configured ? 1 : 0.5)
         }
     }
 }
@@ -280,7 +279,7 @@ private struct GuideLine: View {
 private struct GatewayStep: View {
     @EnvironmentObject private var runtime: CompanionRuntime
     private enum Mode { case scan, paste, manual }
-    @State private var mode: Mode = .scan
+    @State private var mode: Mode = Self.initialMode
     @State private var code = ""
     @State private var address = ""
     @State private var token = ""
@@ -297,6 +296,18 @@ private struct GatewayStep: View {
                 entry
             }
         }
+    }
+
+    private static var initialMode: Mode {
+        #if DEBUG
+        switch CompanionPreviewFixture.gatewayMode {
+        case .paste: return .paste
+        case .manual: return .manual
+        case .scan, .none: return .scan
+        }
+        #else
+        return .scan
+        #endif
     }
 
     private var entry: some View {
@@ -332,6 +343,21 @@ private struct GatewayStep: View {
             Notice(text: cameraFailure == .denied
                    ? "카메라 권한이 없어요. 설정에서 허용하거나 코드를 붙여넣어 주세요."
                    : "이 기기에서 카메라를 쓸 수 없어요. 코드를 붙여넣거나 주소를 직접 입력해 주세요.")
+        } else if Self.usesScannerPlaceholder {
+            // Screenshot fixtures: no camera, no permission prompt.
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.black)
+                .frame(height: 260)
+                .overlay(
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.system(size: 64))
+                        .foregroundStyle(Theme.accent.opacity(0.7))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Theme.accent.opacity(0.6), lineWidth: 2)
+                )
+                .accessibilityLabel(Text("카메라 미리보기"))
         } else {
             QRScannerView(
                 onCode: { runtime.pair(setupCode: $0) },
@@ -345,6 +371,14 @@ private struct GatewayStep: View {
             )
             .accessibilityLabel(Text("카메라 미리보기"))
         }
+    }
+
+    private static var usesScannerPlaceholder: Bool {
+        #if DEBUG
+        return CompanionPreviewFixture.isActive
+        #else
+        return false
+        #endif
     }
 
     private var pasteForm: some View {
@@ -511,7 +545,6 @@ private struct PracticeStep: View {
 
             PrimaryButton(title: "완료", prominent: true) { runtime.finishSetup() }
                 .disabled(runtime.practice.matched != true)
-                .opacity(runtime.practice.matched == true ? 1 : 0.5)
             Button {
                 runtime.skipStep(.practice)
             } label: {

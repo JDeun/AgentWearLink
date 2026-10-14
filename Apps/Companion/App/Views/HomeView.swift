@@ -9,7 +9,7 @@ struct HomeView: View {
     var body: some View {
         let state = runtime.homeState
         TimelineView(.periodic(from: .now, by: 5)) { _ in
-            ScrollView {
+            AnchoredScrollView(scrollsToBottom: !showSettings && repairProblem == nil) {
                 VStack(spacing: 16) {
                     StatusBanner(
                         banner: state.banner,
@@ -69,6 +69,7 @@ struct HomeView: View {
         .onAppear {
             #if DEBUG
             if CompanionPreviewFixture.opensSettings { showSettings = true }
+            if CompanionPreviewFixture.opensRepair { repairProblem = runtime.signals.chain.firstProblem }
             #endif
         }
     }

@@ -48,7 +48,12 @@ final class CompanionRuntime: ObservableObject {
     @Published private(set) var lastCheckAt: Date?
     @Published private(set) var log = ActivityLog()
 
-    var isListening: Bool { runtime != nil }
+    var isListening: Bool {
+        #if DEBUG
+        if previewListening { return true }
+        #endif
+        return runtime != nil
+    }
     var homeState: HomeViewState {
         HomeViewState(signals: signals, telegramConfigured: settings.isTelegramDeliveryConfigured)
     }
@@ -873,15 +878,26 @@ final class CompanionRuntime: ObservableObject {
     // MARK: DEBUG fixtures
 
     #if DEBUG
-    func applyPreview(signals: ConnectionSignals, settings: CompanionSettings, setup: SetupProgress,
-                      metaConfiguration: WearablesLink.Configuration?, deviceID: String) {
+    /// Shown as listening by screenshot fixtures (no real runtime exists).
+    private var previewListening = false
+
+    func applyPreview(_ plan: CompanionPreviewFixture.Plan) {
         signalsFrozen = true
         started = true
-        self.settings = settings
-        self.signals = signals
-        self.setup = setup
-        self.metaConfiguration = metaConfiguration
-        self.deviceID = deviceID
+        settings = plan.settings
+        signals = plan.signals
+        setup = plan.setup
+        metaConfiguration = plan.metaConfiguration
+        deviceID = plan.deviceID
+        pairing = plan.pairing
+        practice = plan.practice
+        previewListening = plan.listening
+        var log = ActivityLog()
+        let base = Date().addingTimeInterval(-Double(plan.logLines.count) * 7)
+        for (index, line) in plan.logLines.enumerated() {
+            log.append(line, at: base.addingTimeInterval(Double(index) * 7))
+        }
+        self.log = log
         lastCheckAt = signals.checkedAt.values.max()
     }
     #endif
