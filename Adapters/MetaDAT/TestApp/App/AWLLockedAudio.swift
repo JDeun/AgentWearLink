@@ -1,5 +1,6 @@
 import AgentWearLinkAppleOutput
 import AVFoundation
+import CallKit
 import Foundation
 
 /// EXPERIMENT (locked-phone voice): keep-alive modelled on a measured
@@ -53,6 +54,19 @@ final class AWLSilentKeepAlive {
                 self.sessionActive = false
                 self.categoryConfigured = false
                 self.onEvent?(.mediaServicesReset)
+            }
+        })
+        observers.append(center.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main
+        ) { [weak self] note in
+            let changed = note.object as AnyObject?
+            MainActor.assumeIsolated {
+                guard let self, let engine = self.engine, changed === engine else { return }
+                // Engine only, never the session.
+                self.onLog?("keep-alive engine configuration changed — restarting engine")
+                self.engine?.stop()
+                self.engine = nil
+                if self.wanted { self.startEngine() }
             }
         })
         observers.append(center.addObserver(
@@ -266,5 +280,23 @@ final class AWLReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDe
             onLog?("reply end [\(duckingMode.rawValue)] otherAudio=\(AVAudioSession.sharedInstance().isOtherAudioPlaying)")
         }
         if duckingMode == .toggleDuckOthers { setDucking?(false) }
+    }
+}
+
+/// Any active call (phone, FaceTime, CallKit VoIP). Firmware declines DAT
+/// reconnects during a call (#332); recover when the last call ends.
+final class AWLCallMonitor: NSObject, CXCallObserverDelegate {
+    private let observer = CXCallObserver()
+    var onChange: ((Bool) -> Void)?
+
+    override init() {
+        super.init()
+        observer.setDelegate(self, queue: .main)
+    }
+
+    var isCallActive: Bool { observer.calls.contains { !$0.hasEnded } }
+
+    func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
+        onChange?(callObserver.calls.contains { !$0.hasEnded })
     }
 }

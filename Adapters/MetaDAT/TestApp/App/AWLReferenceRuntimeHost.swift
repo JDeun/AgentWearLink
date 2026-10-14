@@ -33,6 +33,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         didSet { speaker.duckingMode = experimentReplyDucking }
     }
     private var speechPowerTask: Task<Void, Never>?
+    private let calls = AWLCallMonitor()
+    private var callActive = false
     /// Silent self-recovery (no notifications): after an unexpected loss the
     /// host waits for the glasses to be available again and reconnects with
     /// the stored device grant, backing off on gateway failures.
@@ -52,7 +54,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     }
     private var device: MetaDATDeviceAdapter?
     private var visionAgent: OpenClawNativeAgentAdapter?
-    private var outputSink: AppleSpeechOutput?
+    private var outputSink: AWLStreamingSpeechOutput?
     private var visionTask: Task<Void, Never>?
     private var configured = false
     private var gatewayHealthInProgress = false
@@ -307,6 +309,10 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         keepAlive.onEvent = { [weak self] event in self?.handleAudioEvent(event) }
         speaker.onLog = { [weak self] line in self?.logExperiment(line) }
         speaker.setDucking = { [weak self] on in self?.keepAlive.setExperimentalDucking(on) }
+        callActive = calls.isCallActive
+        calls.onChange = { [weak self] active in
+            Task { @MainActor in self?.callsChanged(active) }
+        }
         keepAlive.isDATSessionLive = { [weak self] in
             guard let self else { return false }
             return self.runtime != nil || self.connectionFence.isStarting
@@ -469,7 +475,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             speaker.gate = wakeGate
             // Route guard, reply ducking and an echo window that ends on the
             // synthesizer's real didFinish (+ tail).
-            let sink = AppleSpeechOutput(synthesizer: speaker)
+            // Sentence-by-sentence as text streams in; control lines dropped.
+            let sink = AWLStreamingSpeechOutput(synthesizer: speaker)
             let log: @Sendable (String) -> Void = { [weak self] line in
                 Task { @MainActor in self?.logExperiment(line) }
             }
@@ -675,8 +682,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                     let connected = wearables.devices.contains {
                         wearables.deviceForIdentifier($0)?.linkState == .connected
                     }
-                    // Also worn, unfolded and not too hot (saves glasses battery).
-                    if connected, Self.speechPauseReason() == nil { break }
+                    // Speech pause/resume handles doff/fold; no reconnects
+                    // during a call (#332).
+                    if connected, !(self?.callActive ?? false) { break }
                     try? await Task.sleep(for: .seconds(2))
                 }
                 if Task.isCancelled { return }
@@ -712,22 +720,45 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         return nil
     }
 
-    /// Stops Speech (the DAT session) when the glasses are taken off,
-    /// folded or too hot; recovery restarts it once they are usable again.
+    /// Pauses DAT Speech when the glasses are taken off, folded or too hot
+    /// and resumes it when usable again, KEEPING the DAT session: a session
+    /// ended by a doff/fold can refuse new starts until a power cycle
+    /// (dat-ios #292). Only a real link drop / session stop tears down.
     private func startSpeechPowerWatch() {
         speechPowerTask?.cancel()
         speechPowerTask = Task { @MainActor [weak self] in
+            var paused = false
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
-                guard let self, !Task.isCancelled, self.runtime != nil else { return }
-                if let reason = Self.speechPauseReason() {
+                guard let self, self.runtime != nil, let device = self.device else { return }
+                let reason = Self.speechPauseReason()
+                if let reason, !paused {
+                    paused = true
                     self.logExperiment("speech paused: \(reason)")
-                    await self.disconnect()
-                    self.status = "speech-paused"
-                    self.scheduleRecoveryIfWanted(reason: reason)
-                    return
+                    await device.pauseSpeech()
+                } else if reason == nil, paused {
+                    paused = false
+                    self.logExperiment("speech resumed")
+                    await device.resumeSpeech()
                 }
+                try? await Task.sleep(for: .seconds(3))
             }
+        }
+    }
+
+    private func callsChanged(_ active: Bool) {
+        let wasActive = callActive
+        callActive = active
+        if active, !wasActive { logExperiment("call started: reconnects paused") }
+        guard !active, wasActive else { return }
+        logExperiment("last call ended: recovering")
+        guard autoRecover, lastConnectRequest != nil else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.recoveryTask?.cancel()
+            self.recoveryTask = nil
+            if self.runtime != nil { await self.disconnect() }
+            if self.experimentHoldAudioSession { self.keepAlive.start() }
+            self.scheduleRecoveryIfWanted(reason: "call ended")
         }
     }
 
@@ -856,6 +887,8 @@ actor AWLWakeGateBox {
     private let gate: AWLWakePhraseGate
     /// Echo window: everything is ignored until this time.
     private var echoUntil: Date?
+    private var speechEnd: Date?
+    private var pendingUtterances = 0
     static let secondsPerCharacter = 0.18
     static let echoTail: TimeInterval = 4
     static let maximumEstimate: TimeInterval = 120
@@ -870,14 +903,21 @@ actor AWLWakeGateBox {
     }
 
     /// Started with an estimate in case the finish callback never comes.
+    /// Queued sentences extend the estimated end one after another.
     func beganSpeaking(_ text: String) {
-        let estimate = min(Double(text.count) * Self.secondsPerCharacter, Self.maximumEstimate) + Self.echoTail
-        let end = Date().addingTimeInterval(estimate)
-        echoUntil = max(echoUntil ?? end, end)
+        let now = Date()
+        let estimate = min(Double(text.count) * Self.secondsPerCharacter, Self.maximumEstimate)
+        let start = max(speechEnd ?? now, now)
+        speechEnd = start.addingTimeInterval(estimate)
+        pendingUtterances += 1
+        echoUntil = speechEnd?.addingTimeInterval(Self.echoTail)
     }
 
     /// The synthesizer really finished: end at now + tail.
     func finishedSpeaking() {
+        pendingUtterances = max(0, pendingUtterances - 1)
+        guard pendingUtterances == 0 else { return }
+        speechEnd = nil
         echoUntil = Date().addingTimeInterval(Self.echoTail)
     }
 

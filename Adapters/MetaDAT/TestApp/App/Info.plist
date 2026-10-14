@@ -45,6 +45,12 @@
         <string>$(AWL_META_CLIENT_TOKEN)</string>
         <key>TeamID</key>
         <string>$(AWL_META_TEAM_ID)</string>
+        <!-- DAT SDK log level per Meta (dat-ios #301). -->
+        <key>Logging</key>
+        <dict>
+            <key>Level</key>
+            <string>warning</string>
+        </dict>
     </dict>
 
     <key>UIBackgroundModes</key>
