@@ -16,6 +16,7 @@ private actor ExistingSessionAdapterSocket: OpenClawWebSocket {
     private var receiveWaiter: CheckedContinuation<String, Error>?
 
     private(set) var submittedSessionKeys: [String?] = []
+    private(set) var submittedAgentParamsJSON: [String] = []
     private(set) var waitedRunIDs: [String] = []
     private(set) var abortedRunIDs: [String] = []
 
@@ -83,6 +84,12 @@ private actor ExistingSessionAdapterSocket: OpenClawWebSocket {
         submittedSessionKeys
     }
 
+    func submittedAgentParamsSnapshot() -> [[String: Any]] {
+        submittedAgentParamsJSON.compactMap {
+            try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }
+    }
+
     func waitedRunIDsSnapshot() -> [String] {
         waitedRunIDs
     }
@@ -118,6 +125,12 @@ private actor ExistingSessionAdapterSocket: OpenClawWebSocket {
 
         case "agent":
             submittedSessionKeys.append(params["sessionKey"] as? String)
+            submittedAgentParamsJSON.append(
+                String(
+                    decoding: try JSONSerialization.data(withJSONObject: params),
+                    as: UTF8.self
+                )
+            )
             enqueue(
                 #"{"type":"res","id":"\#(id)","ok":true,"payload":{"runId":"run-existing-session","acceptedAt":1737264000001,"status":"accepted","sessionKey":"agent:main:main","agentId":"main"}}"#
             )
@@ -265,8 +278,73 @@ final class OpenClawExistingSessionAdapterTests: XCTestCase {
         }
     }
 
+    func testDefaultTurnSendsNoDeliveryOrPromptFields() async throws {
+        let params = try await submitOneTurn(turnOptions: .init())
+
+        for key in [
+            "deliver", "channel", "to", "accountId", "extraSystemPrompt", "inputProvenance",
+        ] {
+            XCTAssertNil(params[key], "\(key) must stay off the wire by default")
+        }
+    }
+
+    func testTurnOptionsAskGatewayToDeliverReplyAndShapeVoiceAnswer() async throws {
+        let params = try await submitOneTurn(
+            turnOptions: OpenClawAgentTurnOptions(
+                replyDelivery: .init(
+                    channel: "telegram",
+                    to: "7621260501",
+                    accountId: "default"
+                ),
+                extraSystemPrompt: "Answer in two short spoken sentences.",
+                inputSourceChannel: "agentwearlink"
+            )
+        )
+
+        XCTAssertEqual(params["deliver"] as? Bool, true)
+        XCTAssertEqual(params["channel"] as? String, "telegram")
+        XCTAssertEqual(params["to"] as? String, "7621260501")
+        XCTAssertEqual(params["accountId"] as? String, "default")
+        XCTAssertEqual(
+            params["extraSystemPrompt"] as? String,
+            "Answer in two short spoken sentences."
+        )
+        let provenance = try XCTUnwrap(params["inputProvenance"] as? [String: Any])
+        XCTAssertEqual(provenance["kind"] as? String, "external_user")
+        XCTAssertEqual(provenance["sourceChannel"] as? String, "agentwearlink")
+        XCTAssertEqual(provenance.count, 2)
+        XCTAssertEqual(params["sessionKey"] as? String, "agent:main:main")
+    }
+
+    private func submitOneTurn(
+        turnOptions: OpenClawAgentTurnOptions
+    ) async throws -> [String: Any] {
+        let id = InteractionID(
+            rawValue: UUID(uuidString: "00000000-0000-0000-0000-000000000236")!
+        )
+        let socket = ExistingSessionAdapterSocket(terminalMode: .success)
+        let adapter = makeAdapter(socket: socket, turnOptions: turnOptions)
+
+        try await adapter.connect()
+        do {
+            let stream = await adapter.responses(
+                for: AgentRequest(interactionID: id, text: "what time is it")
+            )
+            for try await _ in stream {}
+            await adapter.disconnect()
+        } catch {
+            await adapter.disconnect()
+            throw error
+        }
+
+        let submitted = await socket.submittedAgentParamsSnapshot()
+        XCTAssertEqual(submitted.count, 1)
+        return try XCTUnwrap(submitted.first)
+    }
+
     private func makeAdapter(
-        socket: ExistingSessionAdapterSocket
+        socket: ExistingSessionAdapterSocket,
+        turnOptions: OpenClawAgentTurnOptions = .init()
     ) -> OpenClawNativeAgentAdapter {
         let state = OpenClawGatewayState()
         let assembler = OpenClawConnectAssembler(
@@ -301,7 +379,8 @@ final class OpenClawExistingSessionAdapterTests: XCTestCase {
             runClient: runClient,
             sessionKey: "agent:main:main",
             maximumTerminalWaitPolls: 2,
-            terminalPollTimeoutMilliseconds: 1_000
+            terminalPollTimeoutMilliseconds: 1_000,
+            turnOptions: turnOptions
         )
     }
 }

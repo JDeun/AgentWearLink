@@ -38,22 +38,85 @@ public struct OpenClawAgentAttachment: Encodable, Sendable, Equatable, CustomStr
     public var debugDescription: String { description }
 }
 
+/// Per-turn Gateway options a host applies to every submitted turn.
+/// The defaults leave the wire request unchanged.
+public struct OpenClawAgentTurnOptions: Sendable, Equatable {
+    /// Asks the Gateway to also deliver the final reply to a channel
+    /// conversation, so a voice turn leaves a record where the user
+    /// normally reads the agent (for example a Telegram DM).
+    public struct ReplyDelivery: Sendable, Equatable {
+        public let channel: String
+        public let to: String
+        public let accountId: String?
+
+        public init(channel: String, to: String, accountId: String? = nil) {
+            self.channel = channel
+            self.to = to
+            self.accountId = accountId
+        }
+    }
+
+    public let replyDelivery: ReplyDelivery?
+    /// Appended to the agent's system prompt for this turn only, e.g. to
+    /// keep a spoken answer short and free of markdown.
+    public let extraSystemPrompt: String?
+    /// Tags the turn as user input that arrived through this host, e.g.
+    /// "agentwearlink", so Gateway plugins can tell a spoken turn from a
+    /// typed one (sent as inputProvenance.sourceChannel).
+    public let inputSourceChannel: String?
+
+    public init(
+        replyDelivery: ReplyDelivery? = nil,
+        extraSystemPrompt: String? = nil,
+        inputSourceChannel: String? = nil
+    ) {
+        self.replyDelivery = replyDelivery
+        self.extraSystemPrompt = extraSystemPrompt
+        self.inputSourceChannel = inputSourceChannel
+    }
+}
+
+public struct OpenClawInputProvenance: Encodable, Sendable, Equatable {
+    public let kind: String
+    public let sourceChannel: String?
+
+    public static func externalUser(sourceChannel: String) -> Self {
+        Self(kind: "external_user", sourceChannel: sourceChannel)
+    }
+}
+
 public struct OpenClawAgentParams: Encodable, Sendable {
     public let message: String
     public let sessionKey: String?
     public let idempotencyKey: String
     public let attachments: [OpenClawAgentAttachment]?
+    public let deliver: Bool?
+    public let channel: String?
+    public let to: String?
+    public let accountId: String?
+    public let extraSystemPrompt: String?
+    public let inputProvenance: OpenClawInputProvenance?
 
     public init(
         message: String,
         sessionKey: String? = nil,
         idempotencyKey: String,
-        attachments: [OpenClawAgentAttachment]? = nil
+        attachments: [OpenClawAgentAttachment]? = nil,
+        turnOptions: OpenClawAgentTurnOptions = .init()
     ) {
         self.message = message
         self.sessionKey = sessionKey
         self.idempotencyKey = idempotencyKey
         self.attachments = attachments
+        let delivery = turnOptions.replyDelivery
+        self.deliver = delivery == nil ? nil : true
+        self.channel = delivery?.channel
+        self.to = delivery?.to
+        self.accountId = delivery?.accountId
+        self.extraSystemPrompt = turnOptions.extraSystemPrompt
+        self.inputProvenance = turnOptions.inputSourceChannel.map {
+            .externalUser(sourceChannel: $0)
+        }
     }
 }
 
