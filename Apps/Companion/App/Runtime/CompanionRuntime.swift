@@ -1109,15 +1109,17 @@ final class CompanionRuntime: ObservableObject {
 
     private func record(_ message: String) {
         log.append(message)
+        #if DEBUG
+        // Same lines as the diagnostics screen (never transcripts), so a
+        // connected Mac can follow them with `devicectl ... --console`.
+        print("[AWL] \(message)")
+        #endif
     }
 
     /// QR scanner lifecycle (authorization, running, interruptions) for the
     /// diagnostics log. Never carries the scanned payload.
     func noteCamera(_ event: String) {
         record("camera: \(event)")
-        #if DEBUG
-        print("[AWL] camera: \(event)")
-        #endif
     }
 
     // MARK: DEBUG fixtures

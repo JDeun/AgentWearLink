@@ -19,7 +19,7 @@ actor WakeGateBox {
 
     func evaluate(_ text: String) -> AWLWakePhraseGate.Decision {
         // The app's own reply echoing into the glasses microphone.
-        if echo.suppresses(at: Date()) { return .ignore }
+        if echo.suppresses(text, at: Date()) { return .ignore }
         return gate.evaluate(text)
     }
 

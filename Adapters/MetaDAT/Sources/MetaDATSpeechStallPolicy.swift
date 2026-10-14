@@ -9,8 +9,12 @@ import Foundation
 public enum MetaDATSpeechStallPolicy {
     /// No transcription event of any kind for this long: stalled.
     public static let noEventLimit: TimeInterval = 4
-    /// Only empty transcripts for this long: deaf.
-    public static let emptyOnlyLimit: TimeInterval = 20
+    /// Only empty transcripts for this long: deaf. Silence also yields only
+    /// empty transcripts, so this must be long: at 20 s a quiet room
+    /// restarted Speech every 20 s (2026-10-14 field log), cutting off the
+    /// start of the next utterance and costing battery. The no-event rule
+    /// above still catches a real stall within seconds.
+    public static let emptyOnlyLimit: TimeInterval = 180
     /// Pause between stop() and start() of a stall restart.
     public static let restartGap: Duration = .milliseconds(600)
     /// How often the adapter checks.

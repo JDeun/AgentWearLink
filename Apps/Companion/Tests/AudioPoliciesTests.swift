@@ -41,3 +41,35 @@ final class AudioPoliciesTests: XCTestCase {
         XCTAssertFalse(window.suppresses(at: start.addingTimeInterval(EchoWindow.maximumEstimate + EchoWindow.tail + 1)))
     }
 }
+
+final class EchoWindowContentTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1_000)
+
+    private func windowAfterReply(_ reply: String) -> EchoWindow {
+        var window = EchoWindow()
+        window.beganSpeaking(reply, at: start)
+        window.finishedSpeaking(at: start.addingTimeInterval(3))
+        return window
+    }
+
+    func testWhileSpeakingEverythingIsSuppressed() {
+        var window = EchoWindow()
+        window.beganSpeaking("지금 밤 10시 59분입니다, 주인님.", at: start)
+        XCTAssertTrue(window.suppresses("그럼 내일 날씨는", at: start.addingTimeInterval(1)))
+    }
+
+    func testTailDropsOnlyTheReplyEcho() {
+        let window = windowAfterReply("지금 밤 10시 59분입니다, 주인님.")
+        let inTail = start.addingTimeInterval(4)
+        XCTAssertTrue(window.suppresses("지금 밤 10시 59분입니다", at: inTail))
+        XCTAssertTrue(window.suppresses("59분입니다 주인님", at: inTail))
+        // The wearer's follow-up right after the reply must get through.
+        XCTAssertFalse(window.suppresses("그럼 내일 날씨는", at: inTail))
+        XCTAssertFalse(window.suppresses("알프레드 내일 일정 알려줘", at: inTail))
+    }
+
+    func testAfterTheTailNothingIsSuppressed() {
+        let window = windowAfterReply("지금 밤 10시 59분입니다, 주인님.")
+        XCTAssertFalse(window.suppresses("지금 밤 10시 59분입니다", at: start.addingTimeInterval(3 + EchoWindow.tail + 0.1)))
+    }
+}

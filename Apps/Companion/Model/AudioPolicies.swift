@@ -73,10 +73,15 @@ public struct EchoWindow: Equatable, Sendable {
     public private(set) var pendingUtterances = 0
     private var speechEnd: Date?
     private var until: Date?
+    /// What was spoken in the current window, to recognise its echo in the
+    /// tail without dropping the wearer's follow-up.
+    private var spoken = ""
 
     public init() {}
 
     public mutating func beganSpeaking(_ text: String, at now: Date) {
+        if let until, now >= until { spoken = "" }
+        spoken += Self.canonical(text)
         let estimate = min(Double(text.count) * Self.secondsPerCharacter, Self.maximumEstimate)
         let start = max(speechEnd ?? now, now)
         speechEnd = start.addingTimeInterval(estimate)
@@ -95,5 +100,35 @@ public struct EchoWindow: Equatable, Sendable {
     public func suppresses(at now: Date) -> Bool {
         guard let until else { return false }
         return now < until
+    }
+
+    /// While a reply is being spoken everything is dropped. In the tail only
+    /// a transcript that looks like the reply itself is: the wearer's
+    /// follow-up right after the reply must get through.
+    public func suppresses(_ transcript: String, at now: Date) -> Bool {
+        guard suppresses(at: now) else { return false }
+        if pendingUtterances > 0 { return true }
+        return Self.looksLikeEcho(transcript, of: spoken)
+    }
+
+    static func canonical(_ text: String) -> String {
+        String(text.lowercased().unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0)
+        }.map(Character.init))
+    }
+
+    /// Share of the transcript's character pairs that occur in the spoken
+    /// text; recognisers re-split and drop words, so whole-string equality
+    /// is too strict.
+    static func looksLikeEcho(_ transcript: String, of spoken: String) -> Bool {
+        let heard = Array(canonical(transcript))
+        guard heard.count >= 2 else { return true }
+        let source = Array(spoken)
+        guard source.count >= 2 else { return false }
+        var pairs = Set<String>()
+        for index in 0..<(source.count - 1) { pairs.insert(String(source[index...index + 1])) }
+        var hits = 0
+        for index in 0..<(heard.count - 1) where pairs.contains(String(heard[index...index + 1])) { hits += 1 }
+        return Double(hits) / Double(heard.count - 1) >= 0.6
     }
 }

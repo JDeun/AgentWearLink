@@ -14,6 +14,8 @@ final class MetaDATSpeechStallPolicyTests: XCTestCase {
 
     func testHealthyListeningDoesNothing() {
         XCTAssertEqual(action(any: 0.3, nonEmpty: 15), .none)
+        // A quiet room: empty transcripts for minutes are normal, not deaf.
+        XCTAssertEqual(action(any: 0.3, nonEmpty: 90), .none)
         XCTAssertEqual(action(any: nil, nonEmpty: nil), .none)
     }
 
@@ -22,9 +24,9 @@ final class MetaDATSpeechStallPolicyTests: XCTestCase {
         XCTAssertEqual(action(any: 4.0, nonEmpty: 4.0), .none)
     }
 
-    func testOnlyEmptyTranscriptsForTwentySecondsRestarts() {
-        XCTAssertEqual(action(any: 0.3, nonEmpty: 20.5), .restart(.emptyOnly))
-        XCTAssertEqual(action(any: 0.3, nonEmpty: 19.9), .none)
+    func testOnlyEmptyTranscriptsForThreeMinutesRestarts() {
+        XCTAssertEqual(action(any: 0.3, nonEmpty: 180.5), .restart(.emptyOnly))
+        XCTAssertEqual(action(any: 0.3, nonEmpty: 179.9), .none)
     }
 
     func testNeverFightsTheHostOrAPausedSession() {
@@ -41,6 +43,6 @@ final class MetaDATSpeechStallPolicyTests: XCTestCase {
 
     func testThresholds() {
         XCTAssertEqual(MetaDATSpeechStallPolicy.noEventLimit, 4)
-        XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit, 20)
+        XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit, 180)
     }
 }
