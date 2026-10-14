@@ -33,6 +33,11 @@ public actor OpenClawAgentRunClient {
         return try decodePayload(response, as: OpenClawAgentAccepted.self)
     }
 
+    /// Extra time the client allows beyond the server-side `agent.wait` hold, so
+    /// a reply sent exactly at the hold still arrives over a real network
+    /// (Tailnet/Serve added enough latency to lose a 30s-vs-30s race).
+    public static let agentWaitDeadlineGrace: Duration = .seconds(15)
+
     public func wait(
         runID: String,
         timeoutMilliseconds: Int? = nil
@@ -42,7 +47,10 @@ public actor OpenClawAgentRunClient {
             params: OpenClawAgentWaitParams(
                 runId: runID,
                 timeoutMs: timeoutMilliseconds
-            )
+            ),
+            timeout: timeoutMilliseconds.map {
+                .milliseconds($0) + Self.agentWaitDeadlineGrace
+            }
         )
         return try decodePayload(response, as: OpenClawAgentWaitResult.self)
     }
