@@ -59,3 +59,43 @@ final class AWLWakePhraseGateTests: XCTestCase {
         XCTAssertEqual(open.evaluate("지금 몇 시야"), .forward("지금 몇 시야"))
     }
 }
+
+final class AWLWakePhraseGateFuzzyHangulTests: XCTestCase {
+    private func gate() -> AWLWakePhraseGate {
+        AWLWakePhraseGate(wakePhrases: ["알프레드", "Alfred"])
+    }
+
+    func testCommonMisspellingsStillWake() {
+        XCTAssertEqual(gate().evaluate("알프래드 불 꺼 줘"), .forward("불 꺼 줘"))
+        XCTAssertEqual(gate().evaluate("알프레도, 날씨 어때"), .forward("날씨 어때"))
+        XCTAssertEqual(gate().evaluate("앨프레드 안녕"), .forward("안녕"))
+        XCTAssertEqual(gate().evaluate("알프레드야 오늘 일정"), .forward("오늘 일정"))
+        XCTAssertEqual(gate().evaluate("알프레드님 안녕"), .forward("안녕"))
+    }
+
+    func testBareNameWithPunctuationArms() {
+        XCTAssertEqual(gate().evaluate("알프레드 ,"), .armed)
+    }
+
+    func testDifferentWordsDoNotWake() {
+        XCTAssertEqual(gate().evaluate("알바 구하는 중"), .ignore)
+        XCTAssertEqual(gate().evaluate("아프리카 여행"), .ignore)
+        XCTAssertEqual(gate().evaluate("오늘 알프레드 봤어"), .ignore)
+    }
+
+    func testLatinKeepsTheWordBoundaryRule() {
+        XCTAssertEqual(gate().evaluate("Alfred, hello"), .forward("hello"))
+        XCTAssertEqual(gate().evaluate("Alfredo hello"), .ignore)
+    }
+
+    func testLongerNamesAllowTwoEdits() {
+        let gate = AWLWakePhraseGate(wakePhrases: ["크리스토퍼"])
+        XCTAssertEqual(gate.evaluate("크리스토파 안녕"), .forward("안녕"))
+        XCTAssertEqual(AWLHangulFuzzy.editDistance(AWLHangulFuzzy.jamo("노바"), AWLHangulFuzzy.jamo("노마"), limit: 1), 1)
+    }
+
+    func testMultiWordPhrase() {
+        let gate = AWLWakePhraseGate(wakePhrases: ["헤이 노바"])
+        XCTAssertEqual(gate.evaluate("헤이 노바야 안녕"), .forward("안녕"))
+    }
+}
