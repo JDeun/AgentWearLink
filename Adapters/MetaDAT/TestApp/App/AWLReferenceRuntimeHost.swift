@@ -26,6 +26,13 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     var experimentHoldAudioSession = false
     private var experimentHeartbeat: Task<Void, Never>?
     private var keepAliveEngine: AVAudioEngine?
+    /// Silent self-recovery (no notifications): after an unexpected loss the
+    /// host waits for the glasses to be available again and reconnects with
+    /// the stored device grant, backing off on gateway failures.
+    var autoRecover = false
+    private var lastConnectRequest: AWLConnectRequest?
+    private var recoveryTask: Task<Void, Never>?
+    static let recoveryBackoff: [Duration] = [.seconds(5), .seconds(10), .seconds(30), .seconds(60)]
     /// C: comma-separated wake phrases; empty forwards every final transcript.
     var experimentWakePhrases = ""
 
@@ -532,6 +539,15 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                     return
                 }
                 startLockedExperimentIfEnabled()
+                lastConnectRequest = AWLConnectRequest(
+                    hostname: hostname,
+                    sessionKey: sessionKey,
+                    enableVision: enableVision,
+                    experimentalStandalonePhoto: experimentalStandalonePhoto,
+                    voiceOnly: voiceOnly,
+                    voiceWake: voiceWake,
+                    turnOptions: turnOptions
+                )
                 // Channel registration may still be pending. This is not a
                 // claim that physical Hey Meta or locked-phone launch works.
                 if voiceWake {
@@ -577,6 +593,62 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         await disconnect()
         // A new connect cannot start while disconnectInProgress owns cleanup.
         status = "device-session-lost"
+        scheduleRecoveryIfWanted(reason: "device session lost")
+    }
+
+    /// The user's own Disconnect: stop and do not recover.
+    func userDisconnect() async {
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        lastConnectRequest = nil
+        await disconnect()
+    }
+
+    /// Reconnect with the last settings and the stored grant (no token).
+    func reconnectStored(reason: String) async {
+        guard runtime == nil, let request = lastConnectRequest ?? storedConnectRequest() else { return }
+        logExperiment("reconnect: \(reason)")
+        await connect(
+            hostname: request.hostname,
+            token: "",
+            sessionKey: request.sessionKey,
+            enableVision: request.enableVision,
+            experimentalStandalonePhoto: request.experimentalStandalonePhoto,
+            voiceOnly: request.voiceOnly,
+            voiceWake: request.voiceWake,
+            turnOptions: request.turnOptions
+        )
+    }
+
+    /// Launch-time / App Intent source of settings when nothing ran yet.
+    var storedConnectRequest: () -> AWLConnectRequest? = { nil }
+
+    private func scheduleRecoveryIfWanted(reason: String) {
+        guard autoRecover, lastConnectRequest != nil, recoveryTask == nil else { return }
+        logExperiment("recovery scheduled: \(reason)")
+        recoveryTask = Task { @MainActor [weak self] in
+            var attempt = 0
+            while !Task.isCancelled {
+                // Glasses folded, in the case or charging: wait quietly until
+                // DAT reports a device again (first value arrives at once).
+                for await identifiers in Wearables.shared.devicesStream() {
+                    if Task.isCancelled { return }
+                    if !identifiers.isEmpty { break }
+                }
+                // A new session too soon after a stop fails (dat-ios #231).
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                await self.reconnectStored(reason: "recovery attempt \(attempt + 1)")
+                if self.runtime != nil {
+                    self.logExperiment("recovered")
+                    self.recoveryTask = nil
+                    return
+                }
+                let delay = Self.recoveryBackoff[min(attempt, Self.recoveryBackoff.count - 1)]
+                attempt += 1
+                try? await Task.sleep(for: delay)
+            }
+        }
     }
 
     private func clearRuntimeReferences() {
@@ -739,4 +811,16 @@ struct AWLEchoGuardSynthesizer: SpeechSynthesizing {
     func stop() async {
         await inner.stop()
     }
+}
+
+/// Settings needed to rebuild the runtime without the user (token omitted:
+/// recovery always uses the stored, endpoint-scoped device grant).
+struct AWLConnectRequest {
+    let hostname: String
+    let sessionKey: String
+    let enableVision: Bool
+    let experimentalStandalonePhoto: Bool
+    let voiceOnly: Bool
+    let voiceWake: Bool
+    let turnOptions: OpenClawAgentTurnOptions
 }

@@ -33,6 +33,14 @@ struct MetaDATTestHostApp: App {
     private var experimentKeepSession = false
     @AppStorage("awl.experiment.holdAudioSession")
     private var experimentHoldAudio = false
+    /// Remembered after a successful manual connect; used for auto-connect on
+    /// launch, the Start Listening App Intent and silent recovery.
+    @AppStorage("awl.autoconnect.enabled")
+    private var autoConnectEnabled = false
+    @AppStorage("awl.autoconnect.hostname")
+    private var savedHostname = ""
+    @AppStorage("awl.autoconnect.session")
+    private var savedSessionKey = ""
     @AppStorage("awl.experiment.wakePhrases")
     private var experimentWakePhrases = "알프레드, 알프레도, 앨프레드, Alfred"
     @AppStorage("awl.reference.voiceStyleAnswers")
@@ -179,6 +187,8 @@ struct MetaDATTestHostApp: App {
                         .accessibilityIdentifier("awl-telegram-mirror-chat-id")
                     Toggle("Short spoken answers", isOn: $voiceStyleAnswers)
                         .accessibilityIdentifier("awl-voice-style-answers")
+                    Toggle("Auto-connect and self-recover (stored approval)", isOn: $autoConnectEnabled)
+                        .accessibilityIdentifier("awl-auto-connect")
                     Toggle("EXPERIMENT A: keep voice session when locked", isOn: $experimentKeepSession)
                         .accessibilityIdentifier("awl-experiment-keep-session")
                     Toggle("EXPERIMENT B: silent keep-alive audio", isOn: $experimentHoldAudio)
@@ -274,7 +284,7 @@ struct MetaDATTestHostApp: App {
                     }
                     .accessibilityIdentifier("awl-reference-photo")
                     Button("Disconnect reference runtime") {
-                        Task { await referenceHost.disconnect() }
+                        Task { await referenceHost.userDisconnect() }
                     }
                     .accessibilityIdentifier("awl-reference-disconnect")
                     Button("Copy sanitized diagnostics") {
@@ -308,6 +318,11 @@ struct MetaDATTestHostApp: App {
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: AWLStartListeningIntent.notification)) { _ in
+                guard state == "host-ready", !savedHostname.isEmpty else { return }
+                applyExperimentSettings()
+                Task { await referenceHost.reconnectStored(reason: "start listening intent") }
+            }
             .onOpenURL { url in
                 Task { await referenceHost.handleMetaCallback(url) }
             }
@@ -319,6 +334,10 @@ struct MetaDATTestHostApp: App {
                         state = "host-ready"
                         if scenePhase == .active {
                             await startOptedInForegroundVoiceWakeOnce()
+                        }
+                        if autoConnectEnabled, !savedHostname.isEmpty {
+                            applyExperimentSettings()
+                            await referenceHost.reconnectStored(reason: "app launch")
                         }
                         return
                     }
@@ -362,6 +381,22 @@ struct MetaDATTestHostApp: App {
 
     @MainActor
     private func applyExperimentSettings() {
+        if !gatewayHostname.isEmpty {
+            savedHostname = gatewayHostname
+            savedSessionKey = targetSessionKey
+        }
+        referenceHost.autoRecover = autoConnectEnabled
+        referenceHost.storedConnectRequest = { [savedHostname, savedSessionKey, turnOptions] in
+            savedHostname.isEmpty ? nil : AWLConnectRequest(
+                hostname: savedHostname,
+                sessionKey: savedSessionKey,
+                enableVision: false,
+                experimentalStandalonePhoto: false,
+                voiceOnly: false,
+                voiceWake: false,
+                turnOptions: turnOptions
+            )
+        }
         referenceHost.experimentKeepSessionInBackground = experimentKeepSession
         referenceHost.experimentHoldAudioSession = experimentHoldAudio
         referenceHost.experimentWakePhrases = experimentWakePhrases
