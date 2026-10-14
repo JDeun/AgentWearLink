@@ -60,13 +60,28 @@ public struct OpenClawAgentTurnOptions: Sendable, Equatable {
     /// Appended to the agent's system prompt for this turn only, e.g. to
     /// keep a spoken answer short and free of markdown.
     public let extraSystemPrompt: String?
+    /// Tags the turn as user input that arrived through this host, e.g.
+    /// "agentwearlink", so Gateway plugins can tell a spoken turn from a
+    /// typed one (sent as inputProvenance.sourceChannel).
+    public let inputSourceChannel: String?
 
     public init(
         replyDelivery: ReplyDelivery? = nil,
-        extraSystemPrompt: String? = nil
+        extraSystemPrompt: String? = nil,
+        inputSourceChannel: String? = nil
     ) {
         self.replyDelivery = replyDelivery
         self.extraSystemPrompt = extraSystemPrompt
+        self.inputSourceChannel = inputSourceChannel
+    }
+}
+
+public struct OpenClawInputProvenance: Encodable, Sendable, Equatable {
+    public let kind: String
+    public let sourceChannel: String?
+
+    public static func externalUser(sourceChannel: String) -> Self {
+        Self(kind: "external_user", sourceChannel: sourceChannel)
     }
 }
 
@@ -80,6 +95,7 @@ public struct OpenClawAgentParams: Encodable, Sendable {
     public let to: String?
     public let accountId: String?
     public let extraSystemPrompt: String?
+    public let inputProvenance: OpenClawInputProvenance?
 
     public init(
         message: String,
@@ -98,6 +114,9 @@ public struct OpenClawAgentParams: Encodable, Sendable {
         self.to = delivery?.to
         self.accountId = delivery?.accountId
         self.extraSystemPrompt = turnOptions.extraSystemPrompt
+        self.inputProvenance = turnOptions.inputSourceChannel.map {
+            .externalUser(sourceChannel: $0)
+        }
     }
 }
 

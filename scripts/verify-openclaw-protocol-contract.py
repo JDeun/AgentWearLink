@@ -26,6 +26,7 @@ PATHS = {
     "frames": "packages/gateway-protocol/src/schema/frames.ts",
     "client_info": "packages/gateway-protocol/src/client-info.ts",
     "agent": "packages/gateway-protocol/src/schema/agent.ts",
+    "primitives": "packages/gateway-protocol/src/schema/primitives.ts",
     "chat": "packages/gateway-protocol/src/schema/logs-chat.ts",
     "device_auth": "packages/gateway-client/src/device-auth.ts",
     "wait": "src/agents/run-wait.types.ts",
@@ -169,8 +170,19 @@ def verify() -> None:
         "to:",
         "accountId:",
         "extraSystemPrompt:",
+        "inputProvenance:",
     ]:
         require(agent_params, field, "agent request")
+
+    primitives = compact(sources["primitives"])
+    require(primitives, '"external_user"', "input provenance kinds")
+    provenance = section(
+        primitives,
+        "export const InputProvenanceSchema",
+        "});",
+    )
+    for field in ["kind:", "sourceChannel:"]:
+        require(provenance, field, "input provenance")
 
     wait_params = section(
         agent,
