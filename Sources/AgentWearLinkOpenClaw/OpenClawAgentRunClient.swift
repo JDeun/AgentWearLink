@@ -35,6 +35,18 @@ public actor OpenClawAgentRunClient {
         return try decodePayload(response, as: OpenClawAgentAccepted.self)
     }
 
+    /// Reads the agent's display identity. Needs only operator.read.
+    public func identity(
+        agentID: String? = nil,
+        sessionKey: String? = nil
+    ) async throws -> OpenClawAgentIdentity {
+        let response = try await dispatcher.request(
+            method: "agent.identity.get",
+            params: OpenClawAgentIdentityParams(agentId: agentID, sessionKey: sessionKey)
+        )
+        return try decodePayload(response, as: OpenClawAgentIdentity.self)
+    }
+
     /// Extra time the client allows beyond the server-side `agent.wait` hold, so
     /// a reply sent exactly at the hold still arrives over a real network
     /// (Tailnet/Serve added enough latency to lose a 30s-vs-30s race).

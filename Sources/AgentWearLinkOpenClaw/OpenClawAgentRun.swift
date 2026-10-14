@@ -128,6 +128,30 @@ public struct OpenClawAgentAccepted: Decodable, Sendable, Equatable {
     public let agentId: String?
 }
 
+public struct OpenClawAgentIdentityParams: Encodable, Sendable {
+    public let agentId: String?
+    public let sessionKey: String?
+
+    public init(agentId: String? = nil, sessionKey: String? = nil) {
+        self.agentId = agentId
+        self.sessionKey = sessionKey
+    }
+}
+
+/// The agent's public display identity (`agent.identity.get`). Hosts show
+/// this instead of hardcoding an agent name; OpenClaw resolves it from
+/// config or the workspace identity file.
+public struct OpenClawAgentIdentity: Decodable, Sendable, Equatable {
+    public let agentId: String
+    public let name: String?
+    public let avatar: String?
+
+    public var displayName: String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? agentId : trimmed
+    }
+}
+
 public struct OpenClawAgentWaitParams: Encodable, Sendable {
     public let runId: String
     public let timeoutMs: Int?

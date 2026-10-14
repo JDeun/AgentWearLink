@@ -76,6 +76,18 @@ private actor DispatcherSocket: OpenClawWebSocket {
         sentFrames.count
     }
 
+    func lastRequestObject() async throws -> [String: Any] {
+        try await sentSignal.wait(
+            until: 1,
+            label: "dispatcher socket sent frame"
+        )
+        guard let text = sentFrames.last,
+              let json = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+            throw OpenClawFrameError.malformedFrame
+        }
+        return json
+    }
+
     func lastRequestID() async throws -> String {
         try await sentSignal.wait(
             until: 1,
@@ -441,6 +453,43 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         XCTAssertEqual(sentCount, 0)
         await dispatcher.stop()
         await socket.close()
+    }
+
+    func testAgentIdentityReadsDisplayNameFromGateway() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(methods: ["health", "agent.identity.get"])
+        )
+        await dispatcher.start()
+        let client = OpenClawAgentRunClient(dispatcher: dispatcher)
+
+        let identityTask = Task {
+            try await client.identity(sessionKey: "agent:main:main")
+        }
+
+        let request = try await socket.lastRequestObject()
+        XCTAssertEqual(request["method"] as? String, "agent.identity.get")
+        let params = try XCTUnwrap(request["params"] as? [String: Any])
+        XCTAssertEqual(params["sessionKey"] as? String, "agent:main:main")
+        let id = try XCTUnwrap(request["id"] as? String)
+        await socket.push(
+            #"{"type":"res","id":"\#(id)","ok":true,"payload":{"agentId":"main","name":"Alfred","nameSource":"workspace","avatarStatus":"none"}}"#
+        )
+
+        let identity = try await identityTask.value
+        XCTAssertEqual(identity.agentId, "main")
+        XCTAssertEqual(identity.name, "Alfred")
+        XCTAssertEqual(identity.displayName, "Alfred")
+        await dispatcher.stop()
+    }
+
+    func testAgentIdentityFallsBackToAgentIDWhenNameIsMissing() throws {
+        let identity = try JSONDecoder().decode(
+            OpenClawAgentIdentity.self,
+            from: Data(#"{"agentId":"main"}"#.utf8)
+        )
+        XCTAssertEqual(identity.displayName, "main")
     }
 
     func testCorrelatesRPCResponse() async throws {
