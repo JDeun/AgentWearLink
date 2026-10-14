@@ -25,7 +25,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     /// `audio` UIBackgroundModes entry on this experiment branch).
     var experimentHoldAudioSession = false
     private var experimentHeartbeat: Task<Void, Never>?
-    private var keepAliveEngine: AVAudioEngine?
+    private let keepAlive = AWLSilentKeepAlive()
+    private let speaker = AWLReplySpeaker(language: "ko-KR")
+    private var audioHooksInstalled = false
     /// Silent self-recovery (no notifications): after an unexpected loss the
     /// host waits for the glasses to be available again and reconnects with
     /// the stored device grant, backing off on gateway failures.
@@ -262,30 +264,11 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     private func startLockedExperimentIfEnabled() {
         guard experimentKeepSessionInBackground || experimentHoldAudioSession else { return }
         logExperiment("experiment start A=\(experimentKeepSessionInBackground) B=\(experimentHoldAudioSession)")
-        if experimentHoldAudioSession, keepAliveEngine == nil {
-            // Keep-alive reported to survive a locked phone (dat-ios
-            // discussion #326): a silent .playback + .mixWithOthers player
-            // started in the foreground. No microphone is opened here; DAT
-            // Speech listens on the glasses and replies use A2DP.
-            do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
-                try session.setActive(true)
-                let engine = AVAudioEngine()
-                let player = AVAudioPlayerNode()
-                let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
-                engine.attach(player)
-                engine.connect(player, to: engine.mainMixerNode, format: format)
-                let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100)!
-                silence.frameLength = 44_100
-                try engine.start()
-                player.scheduleBuffer(silence, at: nil, options: .loops)
-                player.play()
-                keepAliveEngine = engine
-                logExperiment("keep-alive playing route=\(session.currentRoute.outputs.map(\.portType.rawValue))")
-            } catch {
-                logExperiment("keep-alive failed: \(error.localizedDescription)")
-            }
+        if experimentHoldAudioSession {
+            // Measured locked-phone keep-alive (.playback/.default/
+            // .mixWithOthers, zero-writing source node, 3 s watchdog). It
+            // also reports interruptions and media resets for recovery.
+            keepAlive.start()
         }
         guard experimentHeartbeat == nil else { return }
         experimentHeartbeat = Task { @MainActor [weak self] in
@@ -303,14 +286,40 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         // a locked app ~2 s after audio stops and refuses to restart playback
         // from the background, so recovery could never run. Only the user's
         // own Disconnect stops it (stopKeepAlive()).
-        if !lockedExperimentLog.isEmpty { logExperiment("session stop (keep-alive \(keepAliveEngine == nil ? "off" : "kept"))") }
+        if !lockedExperimentLog.isEmpty { logExperiment("session stop (keep-alive \(keepAlive.isRunning ? "kept" : "off"))") }
     }
 
     private func stopKeepAlive() {
         experimentHeartbeat?.cancel()
         experimentHeartbeat = nil
-        keepAliveEngine?.stop()
-        keepAliveEngine = nil
+        keepAlive.stop()
+    }
+
+    private func installAudioHooks() {
+        guard !audioHooksInstalled else { return }
+        audioHooksInstalled = true
+        keepAlive.onLog = { [weak self] line in self?.logExperiment(line) }
+        keepAlive.onEvent = { [weak self] event in self?.handleAudioEvent(event) }
+        speaker.onLog = { [weak self] line in self?.logExperiment(line) }
+        speaker.setDucking = { [weak self] on in self?.keepAlive.setDucking(on) }
+    }
+
+    /// A phone call ends the DAT session on current firmware (#332): after
+    /// an interruption ends or media services reset, rebuild it now rather
+    /// than waiting for the 5/10/30/60 s backoff.
+    private func handleAudioEvent(_ event: AWLSilentKeepAlive.Event) {
+        if event == .mediaServicesReset { speaker.recreate() }
+        guard event != .routeChanged, autoRecover, lastConnectRequest != nil else { return }
+        let reason = event == .interruptionEnded ? "audio interruption ended" : "media services reset"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.recoveryTask?.cancel()
+            self.recoveryTask = nil
+            if self.runtime != nil {
+                await self.disconnect()
+            }
+            self.scheduleRecoveryIfWanted(reason: reason)
+        }
     }
 
     func connect(
@@ -445,12 +454,11 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
             let wakeGate = AWLWakeGateBox(gate: AWLWakePhraseGate(wakePhrases: phrases))
-            let sink = AppleSpeechOutput(
-                synthesizer: AWLEchoGuardSynthesizer(
-                    inner: AVSpeechSynthesizerBridge(language: "ko-KR"),
-                    gate: wakeGate
-                )
-            )
+            installAudioHooks()
+            speaker.gate = wakeGate
+            // Route guard, reply ducking and an echo window that ends on the
+            // synthesizer's real didFinish (+ tail).
+            let sink = AppleSpeechOutput(synthesizer: speaker)
             let log: @Sendable (String) -> Void = { [weak self] line in
                 Task { @MainActor in self?.logExperiment(line) }
             }
@@ -789,13 +797,31 @@ enum AWLReferenceTurnOptions {
 /// Owns the wake-phrase gate on one actor for the DAT callback and the echo guard.
 actor AWLWakeGateBox {
     private let gate: AWLWakePhraseGate
+    /// Echo window: everything is ignored until this time.
+    private var echoUntil: Date?
+    static let secondsPerCharacter = 0.18
+    static let echoTail: TimeInterval = 4
+    static let maximumEstimate: TimeInterval = 120
 
     init(gate: AWLWakePhraseGate) {
         self.gate = gate
     }
 
     func evaluate(_ text: String) -> AWLWakePhraseGate.Decision {
-        gate.evaluate(text)
+        if let echoUntil, Date() < echoUntil { return .ignore }
+        return gate.evaluate(text)
+    }
+
+    /// Started with an estimate in case the finish callback never comes.
+    func beganSpeaking(_ text: String) {
+        let estimate = min(Double(text.count) * Self.secondsPerCharacter, Self.maximumEstimate) + Self.echoTail
+        let end = Date().addingTimeInterval(estimate)
+        echoUntil = max(echoUntil ?? end, end)
+    }
+
+    /// The synthesizer really finished: end at now + tail.
+    func finishedSpeaking() {
+        echoUntil = Date().addingTimeInterval(Self.echoTail)
     }
 
     func arm() {
@@ -804,27 +830,6 @@ actor AWLWakeGateBox {
 
     func suppress(until date: Date) {
         gate.suppress(until: date)
-    }
-}
-
-/// Mutes the wake gate while a reply is spoken (plus an echo tail), so the
-/// glasses microphone does not turn the reply back into a request.
-/// AVSpeechSynthesizer returns before speaking finishes, so the duration is
-/// estimated from the text length.
-struct AWLEchoGuardSynthesizer: SpeechSynthesizing {
-    let inner: any SpeechSynthesizing
-    let gate: AWLWakeGateBox
-    static let secondsPerCharacter = 0.18
-    static let echoTail: TimeInterval = 4
-
-    func speak(_ text: String) async {
-        let estimate = Double(text.count) * Self.secondsPerCharacter + Self.echoTail
-        await gate.suppress(until: Date().addingTimeInterval(estimate))
-        await inner.speak(text)
-    }
-
-    func stop() async {
-        await inner.stop()
     }
 }
 
