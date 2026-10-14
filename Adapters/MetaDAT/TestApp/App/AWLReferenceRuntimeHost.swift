@@ -25,6 +25,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     /// `audio` UIBackgroundModes entry on this experiment branch).
     var experimentHoldAudioSession = false
     private var experimentHeartbeat: Task<Void, Never>?
+    private var keepAliveEngine: AVAudioEngine?
+    /// C: comma-separated wake phrases; empty forwards every final transcript.
+    var experimentWakePhrases = ""
 
     private let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
     private let diagnostics = AWLDiagnosticRecorder(capacity: 256)
@@ -253,17 +256,28 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         guard experimentKeepSessionInBackground || experimentHoldAudioSession else { return }
         logExperiment("experiment start A=\(experimentKeepSessionInBackground) B=\(experimentHoldAudioSession)")
         if experimentHoldAudioSession {
+            // Keep-alive reported to survive a locked phone (dat-ios
+            // discussion #326): a silent .playback + .mixWithOthers player
+            // started in the foreground. No microphone is opened here; DAT
+            // Speech listens on the glasses and replies use A2DP.
             do {
                 let session = AVAudioSession.sharedInstance()
-                try session.setCategory(
-                    .playAndRecord,
-                    mode: .default,
-                    options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
-                )
+                try session.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
                 try session.setActive(true)
-                logExperiment("audio session active route=\(session.currentRoute.outputs.map(\.portType.rawValue))")
+                let engine = AVAudioEngine()
+                let player = AVAudioPlayerNode()
+                let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+                engine.attach(player)
+                engine.connect(player, to: engine.mainMixerNode, format: format)
+                let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100)!
+                silence.frameLength = 44_100
+                try engine.start()
+                player.scheduleBuffer(silence, at: nil, options: .loops)
+                player.play()
+                keepAliveEngine = engine
+                logExperiment("keep-alive playing route=\(session.currentRoute.outputs.map(\.portType.rawValue))")
             } catch {
-                logExperiment("audio session failed: \(error.localizedDescription)")
+                logExperiment("keep-alive failed: \(error.localizedDescription)")
             }
         }
         experimentHeartbeat?.cancel()
@@ -280,9 +294,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     private func stopLockedExperiment() {
         experimentHeartbeat?.cancel()
         experimentHeartbeat = nil
-        if experimentHoldAudioSession {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        }
+        keepAliveEngine?.stop()
+        keepAliveEngine = nil
         if !lockedExperimentLog.isEmpty { logExperiment("experiment stop") }
     }
 
@@ -413,9 +426,43 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 applicationLifecycle: lifecycle,
                 diagnostics: diagnostics
             )
+            let phrases = experimentWakePhrases
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            let wakeGate = AWLWakeGateBox(gate: AWLWakePhraseGate(wakePhrases: phrases))
             let sink = AppleSpeechOutput(
-                synthesizer: AVSpeechSynthesizerBridge(language: "ko-KR")
+                synthesizer: AWLEchoGuardSynthesizer(
+                    inner: AVSpeechSynthesizerBridge(language: "ko-KR"),
+                    gate: wakeGate
+                )
             )
+            let log: @Sendable (String) -> Void = { [weak self] line in
+                Task { @MainActor in self?.logExperiment(line) }
+            }
+            await concreteDevice.setActivityLogger(log)
+            if !phrases.isEmpty {
+                log("wake phrases: \(phrases.joined(separator: " / "))")
+                await concreteDevice.setTranscriptGate { text in
+                    let decision = await wakeGate.evaluate(text)
+                    switch decision {
+                    case let .forward(request):
+                        log("→ send: \(request)")
+                        return request
+                    case .armed:
+                        log("armed by name: \(text)")
+                        return nil
+                    case .ignore:
+                        log("ignored: \(text)")
+                        return nil
+                    }
+                }
+            }
+            await concreteDevice.setGlassesInputHandler { isSelect, _ in
+                guard isSelect else { return }
+                await wakeGate.arm()
+                log("armed by double tap")
+            }
             // No camera/media DeviceSession is created in voice-only mode.
             // Core still owns a production agent, output and event subscription.
             let runtimeDevice: any DeviceAdapter
@@ -649,5 +696,47 @@ enum AWLReferenceTurnOptions {
             extraSystemPrompt: voiceStyle ? voiceStylePrompt : nil,
             inputSourceChannel: inputSourceChannel
         )
+    }
+}
+
+/// Owns the wake-phrase gate on one actor for the DAT callback and the echo guard.
+actor AWLWakeGateBox {
+    private let gate: AWLWakePhraseGate
+
+    init(gate: AWLWakePhraseGate) {
+        self.gate = gate
+    }
+
+    func evaluate(_ text: String) -> AWLWakePhraseGate.Decision {
+        gate.evaluate(text)
+    }
+
+    func arm() {
+        gate.arm()
+    }
+
+    func suppress(until date: Date) {
+        gate.suppress(until: date)
+    }
+}
+
+/// Mutes the wake gate while a reply is spoken (plus an echo tail), so the
+/// glasses microphone does not turn the reply back into a request.
+/// AVSpeechSynthesizer returns before speaking finishes, so the duration is
+/// estimated from the text length.
+struct AWLEchoGuardSynthesizer: SpeechSynthesizing {
+    let inner: any SpeechSynthesizing
+    let gate: AWLWakeGateBox
+    static let secondsPerCharacter = 0.18
+    static let echoTail: TimeInterval = 4
+
+    func speak(_ text: String) async {
+        let estimate = Double(text.count) * Self.secondsPerCharacter + Self.echoTail
+        await gate.suppress(until: Date().addingTimeInterval(estimate))
+        await inner.speak(text)
+    }
+
+    func stop() async {
+        await inner.stop()
     }
 }

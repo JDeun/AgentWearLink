@@ -33,6 +33,8 @@ struct MetaDATTestHostApp: App {
     private var experimentKeepSession = false
     @AppStorage("awl.experiment.holdAudioSession")
     private var experimentHoldAudio = false
+    @AppStorage("awl.experiment.wakePhrases")
+    private var experimentWakePhrases = "알프레드, 알프레도, 앨프레드, Alfred"
     @AppStorage("awl.reference.voiceStyleAnswers")
     private var voiceStyleAnswers = true
     @State private var voiceWakeStartupStatus = "auto-wake-disabled"
@@ -179,8 +181,12 @@ struct MetaDATTestHostApp: App {
                         .accessibilityIdentifier("awl-voice-style-answers")
                     Toggle("EXPERIMENT A: keep voice session when locked", isOn: $experimentKeepSession)
                         .accessibilityIdentifier("awl-experiment-keep-session")
-                    Toggle("EXPERIMENT B: hold audio session", isOn: $experimentHoldAudio)
+                    Toggle("EXPERIMENT B: silent keep-alive audio", isOn: $experimentHoldAudio)
                         .accessibilityIdentifier("awl-experiment-hold-audio")
+                    TextField("EXPERIMENT C: wake phrases (comma, empty = all)", text: $experimentWakePhrases)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("awl-experiment-wake-phrases")
                     if !referenceHost.lockedExperimentLog.isEmpty {
                         Text(referenceHost.lockedExperimentLog.suffix(12).joined(separator: "\n"))
                             .font(.caption.monospaced())
@@ -358,6 +364,7 @@ struct MetaDATTestHostApp: App {
     private func applyExperimentSettings() {
         referenceHost.experimentKeepSessionInBackground = experimentKeepSession
         referenceHost.experimentHoldAudioSession = experimentHoldAudio
+        referenceHost.experimentWakePhrases = experimentWakePhrases
     }
 
     private var turnOptions: OpenClawAgentTurnOptions {
