@@ -77,6 +77,8 @@ final class CompanionRuntime: ObservableObject {
     private let gatewayLink = GatewayLink()
     private let keepAlive = SilentKeepAlive()
     private let speaker = ReplySpeaker(language: CompanionRuntime.speechLanguage)
+    private let calls = CallMonitor()
+    private var callGate = CallGate()
     private let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
     private let diagnostics = AWLDiagnosticRecorder(capacity: 256)
     private let pathMonitor = NWPathMonitor()
@@ -120,6 +122,10 @@ final class CompanionRuntime: ObservableObject {
         keepAlive.onEvent = { [weak self] event in self?.handleAudioEvent(event) }
         speaker.setDucking = { [weak self] on in self?.keepAlive.setExperimentalDucking(on) }
         speaker.duckingMode = loaded.replyDucking
+        callGate = CallGate(callActive: calls.isCallActive)
+        calls.onChange = { [weak self] active in
+            Task { @MainActor in self?.callsChanged(active) }
+        }
         keepAlive.isDATSessionLive = { [weak self] in
             guard let self else { return false }
             return self.runtime != nil || self.voiceConnecting
@@ -665,17 +671,41 @@ final class CompanionRuntime: ObservableObject {
         applySpeechPower(wearables.speechDecision)
     }
 
-    /// Stops Speech (the DAT session) when the glasses are taken off,
-    /// folded or too hot, and brings it back when they are usable again.
-    private func applySpeechPower(_ decision: SpeechPowerPolicy.Decision) {
+    /// Stops DAT Speech when the glasses are taken off, folded or too hot,
+    /// and restarts it when usable again, keeping the DAT session: a session
+    /// ended by a doff/fold can refuse new starts until a power cycle
+    /// (dat-ios #292). Only a real link drop / session stop tears down.
+    private func applySpeechPower(_ decision: SpeechPowerPolicy.Decision, force: Bool = false) {
         let previous = signals.speechPause
         signals.speechPause = decision
-        guard decision != previous else { return }
-        record("speech power: \(decision)")
-        if decision != .listen {
-            if runtime != nil { Task { await disconnectVoice() } }
-        } else if wantsListening, runtime == nil {
-            startRecovery("glasses usable again", immediate: false, restart: true)
+        guard force || decision != previous else { return }
+        if decision != previous { record("speech power: \(decision)") }
+        guard let device else { return }
+        Task {
+            if decision == .listen {
+                await device.resumeSpeech()
+            } else {
+                await device.pauseSpeech()
+            }
+        }
+    }
+
+    private func callsChanged(_ active: Bool) {
+        switch callGate.update(callActive: active) {
+        case .callStarted:
+            record("call started: reconnects paused")
+        case .lastCallEnded:
+            record("last call ended: recovering")
+            // Calls end the DAT session on current firmware (#332): rebuild
+            // now, after the usual settle, instead of waiting for backoff.
+            guard wantsListening else { return }
+            if runtime == nil {
+                startRecovery("call ended", immediate: false, restart: true)
+            } else {
+                requestReconcile("call ended", restartSession: true)
+            }
+        case .none:
+            break
         }
     }
 
@@ -711,8 +741,12 @@ final class CompanionRuntime: ObservableObject {
             var settle = !immediate
             while !Task.isCancelled {
                 guard let self else { return }
-                // Connected AND worn/unfolded/not too hot.
-                await self.wearables.waitForUsableDevice()
+                // Connected glasses (Speech pause/resume handles doff/fold).
+                await self.wearables.waitForConnectedDevice()
+                // No reconnect attempts during a call (#332): wait quietly.
+                while !Task.isCancelled, !self.callGate.allowsReconnect {
+                    try? await Task.sleep(for: .seconds(2))
+                }
                 if Task.isCancelled { break }
                 if settle {
                     try? await Task.sleep(for: .seconds(RecoveryPolicy.settleDelay))
@@ -781,7 +815,7 @@ final class CompanionRuntime: ObservableObject {
         let concreteDevice = MetaDATDeviceAdapter(applicationLifecycle: lifecycle, diagnostics: diagnostics)
         let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
         speaker.gate = gate
-        let sink = AppleSpeechOutput(synthesizer: speaker)
+        let sink = StreamingSpeechOutput(synthesizer: speaker)
         await configureDevice(concreteDevice, gate: gate)
 
         let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
@@ -838,6 +872,8 @@ final class CompanionRuntime: ObservableObject {
         }
         markGatewayHealthy()
         refreshGlasses()
+        // A session that starts while the glasses are off/folded pauses Speech.
+        applySpeechPower(wearables.speechDecision, force: true)
         startWatch(session: session, attempt: attempt)
         return .connected
     }

@@ -59,27 +59,36 @@ public enum AudioEventPolicy {
     }
 }
 
-/// The echo-guard window: the wake gate ignores everything while a reply is
-/// spoken and for a short tail afterwards. Started with an estimate (in case
-/// the finish callback never comes) and shortened to the real end + tail.
+/// The echo-guard window: the wake gate ignores everything while replies
+/// are spoken (possibly several queued sentences) and for a short tail
+/// afterwards. Each queued sentence extends the estimated end (in case a
+/// finish callback never comes); when the last one finishes the window ends
+/// at that moment plus the tail.
 public struct EchoWindow: Equatable, Sendable {
     public static let secondsPerCharacter = 0.18
     public static let tail: TimeInterval = 4
-    /// Cap for an estimate, so a lost callback cannot mute the gate for long.
+    /// Cap per utterance, so a lost callback cannot mute the gate for long.
     public static let maximumEstimate: TimeInterval = 120
 
-    public private(set) var until: Date?
+    public private(set) var pendingUtterances = 0
+    private var speechEnd: Date?
+    private var until: Date?
 
     public init() {}
 
     public mutating func beganSpeaking(_ text: String, at now: Date) {
-        let estimate = min(Double(text.count) * Self.secondsPerCharacter, Self.maximumEstimate) + Self.tail
-        let end = now.addingTimeInterval(estimate)
-        until = max(until ?? end, end)
+        let estimate = min(Double(text.count) * Self.secondsPerCharacter, Self.maximumEstimate)
+        let start = max(speechEnd ?? now, now)
+        speechEnd = start.addingTimeInterval(estimate)
+        pendingUtterances += 1
+        until = speechEnd?.addingTimeInterval(Self.tail)
     }
 
-    /// The synthesizer finished or was cancelled: end at now + tail.
+    /// One utterance finished or was cancelled.
     public mutating func finishedSpeaking(at now: Date) {
+        pendingUtterances = max(0, pendingUtterances - 1)
+        guard pendingUtterances == 0 else { return }
+        speechEnd = nil
         until = now.addingTimeInterval(Self.tail)
     }
 

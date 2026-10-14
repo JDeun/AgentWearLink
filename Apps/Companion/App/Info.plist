@@ -66,6 +66,14 @@
         <string>$(AWL_META_CLIENT_TOKEN)</string>
         <key>TeamID</key>
         <string>$(AWL_META_TEAM_ID)</string>
+        <!-- DAT SDK log level (Meta, dat-ios #301): "warning" keeps enough
+             history in Library/Caches/MetaWearablesDAT/Logs without rolling
+             over; unrecognised values fall back to "error". -->
+        <key>Logging</key>
+        <dict>
+            <key>Level</key>
+            <string>warning</string>
+        </dict>
     </dict>
 
     <key>UIBackgroundModes</key>

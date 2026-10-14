@@ -194,6 +194,20 @@ final class SilentKeepAlive {
             }
         })
         observers.append(center.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main
+        ) { [weak self] note in
+            let changed = note.object as AnyObject?
+            MainActor.assumeIsolated {
+                guard let self, let engine = self.engine, changed === engine else { return }
+                // The engine stopped itself (e.g. route/format change): restart
+                // the engine only, never the session.
+                self.onLog?("keep-alive engine configuration changed — restarting engine")
+                self.engine?.stop()
+                self.engine = nil
+                if self.wanted { self.startEngine() }
+            }
+        })
+        observers.append(center.addObserver(
             forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
         ) { [weak self] note in
             let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
