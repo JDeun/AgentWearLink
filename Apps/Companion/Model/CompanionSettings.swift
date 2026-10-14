@@ -1,0 +1,111 @@
+import Foundation
+
+/// Non-secret settings the companion app keeps across launches.
+///
+/// Only endpoint metadata and preferences live here (UserDefaults). The
+/// approved device grant and the device identity stay in the Keychain, and a
+/// Gateway token or setup-code bootstrap token is never persisted at all.
+public struct CompanionSettings: Equatable, Sendable {
+    /// Set once the setup flow finished. Launch then connects automatically.
+    public var setupCompleted = false
+    /// Validated Gateway WebSocket URL, e.g. `wss://host.tailnet.ts.net`.
+    public var gatewayURL: String = ""
+    /// Agent display name reported by the Gateway (`agent.identity.get`).
+    public var agentName: String = ""
+    /// Phrases that start a request. Empty means "derive from the agent name".
+    public var wakePhrases: [String] = []
+    /// "안경 호출 받기": listen for the glasses at all.
+    public var listenEnabled = true
+    /// "텔레그램에 기록": ask the Gateway to post replies to a Telegram chat.
+    public var telegramEnabled = false
+    public var telegramChatID: String = ""
+    /// "짧게 말로 답하기": ask for short, speakable answers.
+    public var voiceStyle = true
+    /// Optional OpenClaw session key; empty uses the agent's main session.
+    public var sessionKey: String = ""
+    /// Wall-clock time of the last spoken reply, for "마지막 대화 N분 전".
+    public var lastReplyAt: Date?
+    /// Speech end → first reply text, seconds.
+    public var lastReplyLatency: TimeInterval?
+
+    public init() {}
+
+    /// The wake phrases actually used: the user's list, or the defaults for
+    /// the agent name when the user has not edited them.
+    public var effectiveWakePhrases: [String] {
+        let custom = WakePhrases.normalized(wakePhrases)
+        return custom.isEmpty ? WakePhrases.defaults(forAgentName: agentName) : custom
+    }
+
+    /// Telegram delivery is only real when switched on and a chat id is valid.
+    public var isTelegramDeliveryConfigured: Bool {
+        telegramEnabled && CompanionTurnOptions.isTelegramChatID(telegramChatID)
+    }
+}
+
+/// Persists `CompanionSettings` as individual UserDefaults keys, so a single
+/// value can be inspected or reset without a migration.
+public struct CompanionSettingsStore {
+    public enum Key {
+        public static let setupCompleted = "awl.companion.setupCompleted"
+        public static let gatewayURL = "awl.companion.gatewayURL"
+        public static let agentName = "awl.companion.agentName"
+        public static let wakePhrases = "awl.companion.wakePhrases"
+        public static let listenEnabled = "awl.companion.listenEnabled"
+        public static let telegramEnabled = "awl.companion.telegramEnabled"
+        public static let telegramChatID = "awl.companion.telegramChatID"
+        public static let voiceStyle = "awl.companion.voiceStyle"
+        public static let sessionKey = "awl.companion.sessionKey"
+        public static let lastReplyAt = "awl.companion.lastReplyAt"
+        public static let lastReplyLatency = "awl.companion.lastReplyLatency"
+
+        static let all = [
+            setupCompleted, gatewayURL, agentName, wakePhrases, listenEnabled,
+            telegramEnabled, telegramChatID, voiceStyle, sessionKey,
+            lastReplyAt, lastReplyLatency,
+        ]
+    }
+
+    private let defaults: UserDefaults
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    public func load() -> CompanionSettings {
+        var settings = CompanionSettings()
+        settings.setupCompleted = defaults.bool(forKey: Key.setupCompleted)
+        settings.gatewayURL = defaults.string(forKey: Key.gatewayURL) ?? ""
+        settings.agentName = defaults.string(forKey: Key.agentName) ?? ""
+        settings.wakePhrases = defaults.stringArray(forKey: Key.wakePhrases) ?? []
+        settings.listenEnabled = defaults.object(forKey: Key.listenEnabled) as? Bool ?? true
+        settings.telegramEnabled = defaults.bool(forKey: Key.telegramEnabled)
+        settings.telegramChatID = defaults.string(forKey: Key.telegramChatID) ?? ""
+        settings.voiceStyle = defaults.object(forKey: Key.voiceStyle) as? Bool ?? true
+        settings.sessionKey = defaults.string(forKey: Key.sessionKey) ?? ""
+        settings.lastReplyAt = defaults.object(forKey: Key.lastReplyAt) as? Date
+        settings.lastReplyLatency = defaults.object(forKey: Key.lastReplyLatency) as? Double
+        // Never trust a "completed" flag without an endpoint to connect to.
+        if settings.gatewayURL.isEmpty { settings.setupCompleted = false }
+        return settings
+    }
+
+    public func save(_ settings: CompanionSettings) {
+        defaults.set(settings.setupCompleted, forKey: Key.setupCompleted)
+        defaults.set(settings.gatewayURL, forKey: Key.gatewayURL)
+        defaults.set(settings.agentName, forKey: Key.agentName)
+        defaults.set(settings.wakePhrases, forKey: Key.wakePhrases)
+        defaults.set(settings.listenEnabled, forKey: Key.listenEnabled)
+        defaults.set(settings.telegramEnabled, forKey: Key.telegramEnabled)
+        defaults.set(settings.telegramChatID, forKey: Key.telegramChatID)
+        defaults.set(settings.voiceStyle, forKey: Key.voiceStyle)
+        defaults.set(settings.sessionKey, forKey: Key.sessionKey)
+        defaults.set(settings.lastReplyAt, forKey: Key.lastReplyAt)
+        defaults.set(settings.lastReplyLatency, forKey: Key.lastReplyLatency)
+    }
+
+    /// "모두 지우고 처음부터": forget every stored preference.
+    public func reset() {
+        for key in Key.all { defaults.removeObject(forKey: key) }
+    }
+}
