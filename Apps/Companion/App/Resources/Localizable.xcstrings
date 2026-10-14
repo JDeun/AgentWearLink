@@ -625,6 +625,22 @@
         }
       }
     },
+    "iPhone 스피커로는 읽지 않아요. 안경이 연결되면 다음 답부터 들려요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replies are never read from the iPhone speaker. You'll hear the next one once the glasses connect."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 스피커로는 읽지 않아요. 안경이 연결되면 다음 답부터 들려요"
+          }
+        }
+      }
+    },
     "‘%@’%@ 호출 이름으로 추가": {
       "localizations": {
         "en": {
@@ -1181,6 +1197,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "다음부터는 자동으로 다시 연결돼요."
+          }
+        }
+      }
+    },
+    "답변은 텔레그램에서 확인하세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read the reply in Telegram"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변은 텔레그램에서 확인하세요"
           }
         }
       }
@@ -2157,6 +2189,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "안경으로 듣기"
+          }
+        }
+      }
+    },
+    "안경으로 들을 수 없어 답을 소리 내지 않았어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The reply wasn't spoken because the glasses can't play audio right now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경으로 들을 수 없어 답을 소리 내지 않았어요"
           }
         }
       }

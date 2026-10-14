@@ -34,6 +34,9 @@ public struct ConnectionSignals: Equatable, Sendable {
     /// A connect attempt failed while the glasses were connected (e.g. DAT
     /// refused the session): nothing is listening and recovery is retrying.
     public var listenFailed = false
+    /// The last reply was not spoken because no glasses/headphones audio
+    /// route was available (never played on the iPhone speaker).
+    public var replyNotSpoken = false
     public var network: Reachability = .unknown
     public var gateway: Gateway = .unknown
     public var agentFailing = false

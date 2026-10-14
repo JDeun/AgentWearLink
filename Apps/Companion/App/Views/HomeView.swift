@@ -26,6 +26,28 @@ struct HomeView: View {
                         onRestart: { runtime.restartListening() },
                         onResume: { runtime.settings.listenEnabled = true }
                     )
+                    if runtime.signals.replyNotSpoken {
+                        Card(background: Theme.raised) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("안경으로 들을 수 없어 답을 소리 내지 않았어요")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(Theme.text)
+                                    if state.showsTelegramLink {
+                                        Text("답변은 텔레그램에서 확인하세요")
+                                    } else {
+                                        Text("iPhone 스피커로는 읽지 않아요. 안경이 연결되면 다음 답부터 들려요")
+                                    }
+                                }
+                                .font(.footnote)
+                                .foregroundStyle(Theme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            } icon: {
+                                Image(systemName: "speaker.slash").foregroundStyle(Theme.problem)
+                            }
+                            .padding(14)
+                        }
+                    }
                     if case let .problem(problem) = state.banner,
                        problem.reason == .pairingPending || problem.reason == .pairingRevoked {
                         approvalCard(problem.reason)

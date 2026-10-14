@@ -76,6 +76,7 @@ final class CompanionRuntime: ObservableObject {
     private let wearables = WearablesLink()
     private let gatewayLink = GatewayLink()
     private let keepAlive = SilentKeepAlive()
+    private let speaker = ReplySpeaker(language: CompanionRuntime.speechLanguage)
     private let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
     private let diagnostics = AWLDiagnosticRecorder(capacity: 256)
     private let pathMonitor = NWPathMonitor()
@@ -115,7 +116,12 @@ final class CompanionRuntime: ObservableObject {
         if loaded.setupCompleted {
             setup = SetupProgress(completed: Set(SetupStep.allCases))
         }
-        keepAlive.onEvent = { [weak self] line in self?.record(line) }
+        keepAlive.onLog = { [weak self] line in self?.record(line) }
+        keepAlive.onEvent = { [weak self] event in self?.handleAudioEvent(event) }
+        speaker.setDucking = { [weak self] on in self?.keepAlive.setDucking(on) }
+        speaker.onEvent = { [weak self] line in self?.record(line) }
+        speaker.onSilenced = { [weak self] in self?.signals.replyNotSpoken = true }
+        speaker.onSpoken = { [weak self] in self?.signals.replyNotSpoken = false }
     }
 
     private var wantsListening: Bool {
@@ -135,6 +141,9 @@ final class CompanionRuntime: ObservableObject {
         #if DEBUG
         if CompanionPreviewFixture.apply(to: self) { return }
         #endif
+        // A background launch (Shortcut, Bluetooth automation) must not
+        // assume the foreground; the keep-alive watchdog retries if needed.
+        appActive = UIApplication.shared.applicationState == .active
         startPathMonitor()
         let configuration = wearables.configure()
         metaConfiguration = configuration
@@ -210,7 +219,8 @@ final class CompanionRuntime: ObservableObject {
     private func reconcile(_ reason: String, immediate: Bool, restartSession: Bool) async {
         guard !signalsFrozen else { return }
         if wantsListening {
-            if appActive { keepAlive.start() }
+            // May fail in the background; the keep-alive watchdog retries.
+            keepAlive.start()
             if restartSession, runtime != nil {
                 record("restart: \(reason)")
                 await disconnectVoice()
@@ -458,6 +468,27 @@ final class CompanionRuntime: ObservableObject {
         lastCheckAt = nil
         await restoreSetupProgress()
         record("reset")
+    }
+
+    /// Audio-session events: interruptions (calls end the DAT session on
+    /// current firmware), media-services resets and route changes.
+    private func handleAudioEvent(_ event: SilentKeepAlive.Event) {
+        let mapped: AudioEventPolicy.Event
+        switch event {
+        case .interruptionEnded: mapped = .interruptionEnded
+        case .mediaServicesReset: mapped = .mediaServicesReset
+        case .routeChanged: mapped = .routeChanged
+        }
+        let actions = AudioEventPolicy.actions(for: mapped, listeningWanted: wantsListening)
+        if actions.restartKeepAlive { keepAlive.start() }
+        if actions.recreateSynthesizer { speaker.recreate() }
+        if actions.recoverSessionNow {
+            if runtime == nil {
+                startRecovery("audio \(mapped)", immediate: true, restart: true)
+            } else {
+                requestReconcile("audio \(mapped)", restartSession: true)
+            }
+        }
     }
 
     /// "다시 시작": rebuild the voice session now.
@@ -723,12 +754,8 @@ final class CompanionRuntime: ObservableObject {
         )
         let concreteDevice = MetaDATDeviceAdapter(applicationLifecycle: lifecycle, diagnostics: diagnostics)
         let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
-        let sink = AppleSpeechOutput(
-            synthesizer: EchoGuardSynthesizer(
-                inner: AVSpeechSynthesizerBridge(language: Self.speechLanguage),
-                gate: gate
-            )
-        )
+        speaker.gate = gate
+        let sink = AppleSpeechOutput(synthesizer: speaker)
         await configureDevice(concreteDevice, gate: gate)
 
         let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
