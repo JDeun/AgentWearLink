@@ -187,6 +187,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     /// Speech stall watchdog (MetaDATSpeechStallPolicy).
     private var lastTranscriptEventAt: ContinuousClock.Instant?
     private var lastNonEmptyTranscriptAt: ContinuousClock.Instant?
+    private var speechEventCount = 0
+    private var speechNonEmptyCount = 0
+    private var speechStatsChecks = 0
     private var speechStallTask: Task<Void, Never>?
     private var speechStallRestarting = false
     private var speechStallRestarts = 0
@@ -753,8 +756,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         // partials, and is recorded before deduplication or gating.
         let now = ContinuousClock.now
         lastTranscriptEventAt = now
+        speechEventCount += 1
         if !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lastNonEmptyTranscriptAt = now
+            speechNonEmptyCount += 1
         }
 
         let accepted = await transcriptDeduplicator.accept(
@@ -810,6 +815,13 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         guard !stopping, generationFence.owns(generation) else { return false }
         guard let speech else { return true }
         let now = ContinuousClock.now
+        // Counts only (never text): tells "silent room" from "deaf Speech".
+        speechStatsChecks += 1
+        if speechStatsChecks % 5 == 0 {
+            activityLogger?("speech events \(speechEventCount) (non-empty \(speechNonEmptyCount)) in last 10 s, state \(speech.state)")
+            speechEventCount = 0
+            speechNonEmptyCount = 0
+        }
         func seconds(_ instant: ContinuousClock.Instant?) -> TimeInterval? {
             guard let instant else { return nil }
             let duration = now - instant
