@@ -36,6 +36,32 @@ Advantages:
 - The phone can move between Wi-Fi and cellular while remaining on the tailnet.
 - No public Funnel is required.
 
+### When port 443 is already used by a Funnel
+
+If the Mac already publishes something else on its MagicDNS name's port 443
+(for example a chat webhook through Tailscale Funnel), do not move the Gateway
+onto that public path. Serve the Gateway on a separate **tailnet-only** HTTPS
+port instead, and leave the Funnel untouched:
+
+```bash
+tailscale serve --bg --https=8443 http://127.0.0.1:18789
+tailscale serve status   # 443 stays "Funnel on"; 8443 shows "tailnet only"
+```
+
+The iOS reference host and `OpenClawEndpoint.tailnetServe(hostname:)` accept
+`<mac-mini>.ts.net:8443`. A non-default port gets its own credential
+namespace, so a pairing made for `:8443` is not reused for `:443`.
+
+### Proxy trust and pairing
+
+Through Serve, the Gateway sees the TCP connection coming from `127.0.0.1`.
+Confirm that the Gateway trusts the local proxy's forwarding headers (OpenClaw
+`gateway.trustedProxies` containing `127.0.0.1` and `::1`). Without that, a
+proxied tailnet client can look like a loopback client, and a Gateway that
+auto-approves local devices would pair it without the explicit approval step.
+After the first iPhone connection, `openclaw devices list` should show a
+**pending** request to approve rather than a device that is already paired.
+
 ## Alternative: direct Tailnet bind
 
 OpenClaw can bind directly to the Tailnet interface and accept a connection such as:

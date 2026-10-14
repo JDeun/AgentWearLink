@@ -67,11 +67,22 @@ public struct OpenClawEndpoint: Sendable, Equatable {
         .init(endpoint: self)
     }
 
+    /// `hostname` is a MagicDNS name, optionally with `:port` when Tailscale Serve
+    /// exposes the Gateway on a non-default tailnet-only HTTPS port (for example
+    /// because port 443 already carries a Funnel).
     public static func tailnetServe(hostname: String) throws -> Self {
-        guard !hostname.isEmpty, !hostname.contains("/") else {
+        guard !hostname.isEmpty,
+              !hostname.contains(where: { "/?#@".contains($0) }) else {
             throw OpenClawEndpointError.invalidHostname
         }
-        guard let url = URL(string: "wss://\(hostname)") else {
+        guard let url = URL(string: "wss://\(hostname)"),
+              URLComponents(url: url, resolvingAgainstBaseURL: false)?.user == nil else {
+            throw OpenClawEndpointError.invalidHostname
+        }
+        if let port = url.port, !(1...65_535).contains(port) {
+            throw OpenClawEndpointError.invalidHostname
+        }
+        if hostname.contains(":"), url.port == nil {
             throw OpenClawEndpointError.invalidHostname
         }
         return try .init(gatewayURL: url, exposure: .tailnetServe)
