@@ -18,4 +18,10 @@ final class MetaDATSpeechRestartPolicyTests: XCTestCase {
         XCTAssertEqual(MetaDATSpeechRestartPolicy.limit, 3)
         XCTAssertEqual(MetaDATSpeechRestartPolicy.delay, .milliseconds(750))
     }
+
+    func testAPausedStopIsNeverRestarted() {
+        XCTAssertEqual(MetaDATSpeechRestartPolicy.action(for: .stopped, attempts: 0, paused: true), .none)
+        XCTAssertEqual(MetaDATSpeechRestartPolicy.action(for: .started, attempts: 2, paused: true), .resetAttempts)
+        XCTAssertEqual(MetaDATSpeechRestartPolicy.action(for: .stopped, attempts: 0, paused: false), .restart(attempt: 1))
+    }
 }
