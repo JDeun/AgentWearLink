@@ -18,7 +18,11 @@ final class AWLReferenceRuntimeHost: ObservableObject {
 
     private let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
     private let diagnostics = AWLDiagnosticRecorder(capacity: 256)
-    private var runtime: AgentWearLinkRuntime?
+    private var runtime: AgentWearLinkRuntime? {
+        // A foreground-only voice session dies when auto-lock suspends the
+        // app, so keep the screen awake exactly while a runtime is live.
+        didSet { UIApplication.shared.isIdleTimerDisabled = runtime != nil }
+    }
     private var device: MetaDATDeviceAdapter?
     private var visionAgent: OpenClawNativeAgentAdapter?
     private var outputSink: AppleSpeechOutput?
@@ -210,7 +214,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         enableVision: Bool,
         experimentalStandalonePhoto: Bool = false,
         voiceOnly: Bool = false,
-        voiceWake: Bool = false
+        voiceWake: Bool = false,
+        turnOptions: OpenClawAgentTurnOptions = AWLReferenceTurnOptions.make()
     ) async {
         #if !DEBUG
         // Pinned DAT 1.0.0 experimental Camera.photo is not publishable.
@@ -320,7 +325,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 runClient: OpenClawAgentRunClient(dispatcher: dispatcher),
                 sessionKey: sessionKey.trimmingCharacters(in: .whitespacesAndNewlines)
                     .isEmpty ? nil : sessionKey,
-                supportsVisionInput: enableVision
+                supportsVisionInput: enableVision,
+                turnOptions: turnOptions
             )
             let concreteDevice = MetaDATDeviceAdapter(
                 snapshotMode: experimentalStandalonePhoto
@@ -530,3 +536,37 @@ final class AWLReferenceRuntimeHost: ObservableObject {
 }
 
 private struct AWLReadOnlyHealthParams: Encodable, Sendable {}
+
+/// Per-turn options the reference host sends with every glasses turn.
+enum AWLReferenceTurnOptions {
+    /// Lets Gateway plugins recognise a spoken glasses turn
+    /// (inputProvenance.sourceChannel).
+    static let inputSourceChannel = "agentwearlink"
+
+    static let voiceStylePrompt = """
+    이 요청은 사용자가 스마트 안경으로 말한 것이고, 답은 음성으로 읽힙니다. \
+    두세 문장 이내로 짧게, 말하듯이 답하세요. 마크다운, 목록, 표, 링크, 이모지는 쓰지 마세요.
+    """
+
+    /// - Parameters:
+    ///   - telegramChatID: when set, the Gateway also posts the agent's final
+    ///     reply to this Telegram chat. Empty or non-numeric turns it off.
+    ///   - voiceStyle: asks the agent for a short, speakable answer.
+    static func make(
+        telegramChatID: String = "",
+        telegramAccountID: String = "default",
+        voiceStyle: Bool = false
+    ) -> OpenClawAgentTurnOptions {
+        let chatID = telegramChatID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let digits = chatID.hasPrefix("-") ? chatID.dropFirst() : Substring(chatID)
+        let isChatID = !digits.isEmpty
+            && digits.allSatisfy { $0.isASCII && $0.isNumber }
+        return OpenClawAgentTurnOptions(
+            replyDelivery: isChatID
+                ? .init(channel: "telegram", to: chatID, accountId: telegramAccountID)
+                : nil,
+            extraSystemPrompt: voiceStyle ? voiceStylePrompt : nil,
+            inputSourceChannel: inputSourceChannel
+        )
+    }
+}

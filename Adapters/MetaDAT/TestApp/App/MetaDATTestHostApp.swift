@@ -27,6 +27,10 @@ struct MetaDATTestHostApp: App {
     private var voiceWakeStartupHostname = ""
     @AppStorage("awl.reference.voiceWakeStartupSession")
     private var voiceWakeStartupSession = ""
+    @AppStorage("awl.reference.telegramMirrorChatID")
+    private var telegramMirrorChatID = ""
+    @AppStorage("awl.reference.voiceStyleAnswers")
+    private var voiceStyleAnswers = true
     @State private var voiceWakeStartupStatus = "auto-wake-disabled"
     @State private var attemptedVoiceWakeThisLaunch = false
 
@@ -162,6 +166,13 @@ struct MetaDATTestHostApp: App {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("awl-openclaw-session-key")
+                    TextField("Telegram chat ID for agent replies (optional)", text: $telegramMirrorChatID)
+                        .keyboardType(.numbersAndPunctuation)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("awl-telegram-mirror-chat-id")
+                    Toggle("Short spoken answers", isOn: $voiceStyleAnswers)
+                        .accessibilityIdentifier("awl-voice-style-answers")
                     Toggle("Enable vision only for a verified image-capable OpenClaw model", isOn: $allowVision)
                         .accessibilityIdentifier("awl-vision-opt-in")
                     #if DEBUG
@@ -194,7 +205,8 @@ struct MetaDATTestHostApp: App {
                                 token: suppliedToken,
                                 sessionKey: targetSessionKey,
                                 enableVision: allowVision,
-                                experimentalStandalonePhoto: experimentalStandalonePhoto
+                                experimentalStandalonePhoto: experimentalStandalonePhoto,
+                                turnOptions: turnOptions
                             )
                         }
                     }
@@ -208,7 +220,8 @@ struct MetaDATTestHostApp: App {
                                 token: suppliedToken,
                                 sessionKey: targetSessionKey,
                                 enableVision: false,
-                                voiceOnly: true
+                                voiceOnly: true,
+                                turnOptions: turnOptions
                             )
                         }
                     }
@@ -222,7 +235,8 @@ struct MetaDATTestHostApp: App {
                                 token: suppliedToken,
                                 sessionKey: targetSessionKey,
                                 enableVision: false,
-                                voiceWake: true
+                                voiceWake: true,
+                                turnOptions: turnOptions
                             )
                         }
                     }
@@ -321,6 +335,13 @@ struct MetaDATTestHostApp: App {
     }
 
     @MainActor
+    private var turnOptions: OpenClawAgentTurnOptions {
+        AWLReferenceTurnOptions.make(
+            telegramChatID: telegramMirrorChatID,
+            voiceStyle: voiceStyleAnswers
+        )
+    }
+
     private func startOptedInForegroundVoiceWakeOnce() async {
         // Does not launch an iOS process in the background or assume special
         // Hey Meta/lock-screen privileges. Once per foreground app process only.
@@ -341,7 +362,8 @@ struct MetaDATTestHostApp: App {
             token: "",
             sessionKey: voiceWakeStartupSession,
             enableVision: false,
-            voiceWake: true
+            voiceWake: true,
+            turnOptions: turnOptions
         )
         voiceWakeStartupStatus = referenceHost.status == "voice-wake-runtime-started"
             ? "auto-wake-runtime-started"
