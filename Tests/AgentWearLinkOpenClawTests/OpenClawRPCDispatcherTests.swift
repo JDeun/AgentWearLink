@@ -547,6 +547,85 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
     }
 
 
+    // 2026-10-13, physical iPhone over Tailnet/Serve: agent.wait asks the Gateway to
+    // hold for 30s, and the dispatcher's own deadline was also 30s. The Gateway's
+    // reply at 30.0s plus network latency always lost, so any turn longer than 30s
+    // failed with deadlineExceeded (loopback won the race only by luck).
+
+    func testPerRequestTimeoutOutlivesDefaultDeadline() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(),
+            requestTimeout: .milliseconds(20)
+        )
+        await dispatcher.start()
+        let requestTask = Task {
+            try await dispatcher.request(
+                method: "health",
+                params: EmptyParams(),
+                timeout: .seconds(5)
+            )
+        }
+        let id = try await socket.lastRequestID()
+        try await Task.sleep(for: .milliseconds(150))
+        await socket.push(#"{"type":"res","id":"\#(id)","ok":true,"payload":{}}"#)
+        let response = try await requestTask.value
+        XCTAssertTrue(response.ok)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testPerRequestTimeoutCanBeShorterThanDefault() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(),
+            requestTimeout: .seconds(30)
+        )
+        await dispatcher.start()
+        do {
+            _ = try await dispatcher.request(
+                method: "health",
+                params: EmptyParams(),
+                timeout: .milliseconds(20)
+            )
+            XCTFail("Expected per-request deadline")
+        } catch let error as OpenClawRPCDispatcherError {
+            XCTAssertEqual(error, .deadlineExceeded)
+        }
+        await dispatcher.stop()
+        await socket.close()
+    }
+
+    func testAgentWaitDeadlineExceedsRequestedServerHold() async throws {
+        let socket = DispatcherSocket()
+        // Default deadline equal to the server hold: the original failure shape.
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(
+                scopes: ["operator.read", "operator.write"],
+                methods: ["health", "agent.wait"]
+            ),
+            requestTimeout: .milliseconds(100)
+        )
+        await dispatcher.start()
+        let client = OpenClawAgentRunClient(dispatcher: dispatcher)
+        let waitTask = Task {
+            try await client.wait(runID: "run-1", timeoutMilliseconds: 100)
+        }
+        let id = try await socket.lastRequestID()
+        // Gateway answers exactly at its hold time plus "network latency".
+        try await Task.sleep(for: .milliseconds(250))
+        await socket.push(
+            #"{"type":"res","id":"\#(id)","ok":true,"payload":{"status":"timeout"}}"#
+        )
+        let result = try await waitTask.value
+        XCTAssertEqual(result.status, "timeout")
+        await dispatcher.stop()
+        await socket.close()
+    }
+
     func testLivenessUsesTwoIntervalThresholdWithoutHotLooping() async throws {
         let socket = DispatcherSocket()
         let dispatcher = OpenClawRPCDispatcher(

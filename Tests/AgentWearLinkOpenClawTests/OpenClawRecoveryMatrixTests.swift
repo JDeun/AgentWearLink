@@ -22,6 +22,11 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var sentFrames: [String] = []
     private var receiveWaiter: CheckedContinuation<String, Error>?
     private var failNextReceive = false
+    /// Like URLSessionWebSocketTask: once closed, receive() fails until the
+    /// next connect(). Without this, a close() that lands while the dispatcher
+    /// is between receive() calls is lost and the next receive() parks forever,
+    /// so dispatcher.stop() waits on the receive task indefinitely.
+    private var closed = false
     private var successfulConnectCalls: Set<Int> = [1]
     private var pairingResponses: [Int: SupervisorPairingResponse] = [:]
     private var blockedConnectCall: Int?
@@ -33,6 +38,7 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
     private var closeWaiter: CheckedContinuation<Void, Never>?
 
     func connect() async {
+        closed = false
         connectCalls += 1
         transportGenerationValue &+= 1
         handshakeStep = 0
@@ -136,13 +142,26 @@ private actor SupervisorRetrySocket: OpenClawWebSocket {
             failNextReceive = false
             throw AWLOpenClawError.disconnected
         }
+        if closed {
+            throw AWLOpenClawError.disconnected
+        }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            receiveWaiter = continuation
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                receiveWaiter = continuation
+            }
+        } onCancel: {
+            Task { await self.cancelPendingReceive() }
         }
     }
 
+    private func cancelPendingReceive() {
+        receiveWaiter?.resume(throwing: CancellationError())
+        receiveWaiter = nil
+    }
+
     func close() async {
+        closed = true
         closeCalls += 1
         if let target = closeWaitTarget, closeCalls >= target {
             closeWaiter?.resume()

@@ -14,6 +14,46 @@ final class OpenClawEndpointTests: XCTestCase {
         XCTAssertEqual(endpoint.exposure, .tailnetServe)
     }
 
+    func testTailnetServeAcceptsExplicitPort() throws {
+        // A Mac whose port 443 already carries a Funnel (for example a chat webhook)
+        // serves the Gateway on a separate tailnet-only HTTPS port.
+        let endpoint = try OpenClawEndpoint.tailnetServe(
+            hostname: "mac-mini.example.ts.net:8443"
+        )
+
+        XCTAssertEqual(
+            endpoint.gatewayURL.absoluteString,
+            "wss://mac-mini.example.ts.net:8443"
+        )
+        XCTAssertEqual(endpoint.gatewayURL.port, 8443)
+        XCTAssertEqual(endpoint.exposure, .tailnetServe)
+    }
+
+    func testTailnetServePortSeparatesCredentialNamespaceButDefaultPortDoesNot() throws {
+        let plain = try OpenClawEndpoint.tailnetServe(hostname: "mac-mini.example.ts.net")
+        let explicitDefault = try OpenClawEndpoint.tailnetServe(hostname: "mac-mini.example.ts.net:443")
+        let custom = try OpenClawEndpoint.tailnetServe(hostname: "mac-mini.example.ts.net:8443")
+
+        XCTAssertEqual(plain.credentialNamespace, explicitDefault.credentialNamespace)
+        XCTAssertNotEqual(plain.credentialNamespace, custom.credentialNamespace)
+    }
+
+    func testTailnetServeRejectsHostnameWithQueryFragmentUserInfoOrBadPort() {
+        for input in [
+            "mac-mini.example.ts.net?x=1",
+            "mac-mini.example.ts.net#frag",
+            "attacker@mac-mini.example.ts.net",
+            "mac-mini.example.ts.net:0",
+            "mac-mini.example.ts.net:70000",
+            "mac-mini.example.ts.net:abc",
+        ] {
+            XCTAssertThrowsError(
+                try OpenClawEndpoint.tailnetServe(hostname: input),
+                input
+            )
+        }
+    }
+
     func testTailnetServeRejectsPlainWebSocket() {
         XCTAssertThrowsError(
             try OpenClawEndpoint(
