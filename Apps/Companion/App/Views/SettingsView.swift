@@ -126,9 +126,9 @@ struct SettingsView: View {
         Button {
             runtime.previewVoice()
         } label: {
-            Label("안경으로 미리 듣기", systemImage: "play.circle")
+            Label("미리 듣기", systemImage: "play.circle")
         }
-        Text("더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요.")
+        Text("안경을 쓰고 있지 않으면 iPhone 스피커로 들려요. 더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요.")
             .font(.footnote)
             .foregroundStyle(Theme.secondary)
     }

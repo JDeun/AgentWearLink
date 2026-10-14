@@ -83,9 +83,15 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     }
 
     func speak(_ text: String) async {
+        await speak(text, allowPhoneSpeaker: false)
+    }
+
+    /// `allowPhoneSpeaker` is only for the Settings voice preview, which the
+    /// user starts with the phone in hand; replies never use the speaker.
+    func speak(_ text: String, allowPhoneSpeaker: Bool) async {
         guard !text.isEmpty else { return }
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType).map(Self.kind)
-        guard AudioRoutePolicy.canSpeakAloud(outputs: outputs) else {
+        guard allowPhoneSpeaker || AudioRoutePolicy.canSpeakAloud(outputs: outputs) else {
             onEvent?("reply not spoken: route \(outputs)")
             onSilenced?()
             return

@@ -1026,10 +1026,11 @@ final class CompanionRuntime: ObservableObject {
 
     var voiceOptions: [VoiceOption] { speaker.voiceOptions() }
 
-    /// "미리 듣기": speaks a sample through the glasses with the chosen voice
-    /// (same route guard as replies; nothing plays from the iPhone speaker).
+    /// "미리 듣기": speaks a sample with the chosen voice, through the glasses
+    /// when connected, otherwise the iPhone speaker (the user is holding the
+    /// phone). Replies themselves never use the speaker.
     func previewVoice() {
-        Task { await speaker.speak("안녕하십니까, 주인님. 이 목소리로 답해 드릴게요.") }
+        Task { await speaker.speak("안녕하십니까, 주인님. 이 목소리로 답해 드릴게요.", allowPhoneSpeaker: true) }
     }
 
     // MARK: Audio cues and follow-up

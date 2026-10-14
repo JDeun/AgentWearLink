@@ -1393,22 +1393,6 @@
         }
       }
     },
-    "더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download more voices in iPhone Settings › Accessibility › Spoken Content › Voices."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요."
-          }
-        }
-      }
-    },
     "두세 문장으로 답해요. 긴 답은 텔레그램에서 볼 수 있어요": {
       "localizations": {
         "en": {
@@ -1741,6 +1725,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "목소리"
+          }
+        }
+      }
+    },
+    "미리 듣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 듣기"
           }
         }
       }
@@ -2481,22 +2481,6 @@
         }
       }
     },
-    "안경으로 미리 듣기": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preview on the glasses"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "안경으로 미리 듣기"
-          }
-        }
-      }
-    },
     "안경으로 부르면 에이전트에게 연결해요": {
       "localizations": {
         "en": {
@@ -2605,6 +2589,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "안경을 쓰고 아래처럼 말해 보세요. 들은 말과 호출 여부가 여기에 바로 보여요."
+          }
+        }
+      }
+    },
+    "안경을 쓰고 있지 않으면 iPhone 스피커로 들려요. 더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plays on the iPhone speaker when you are not wearing the glasses. Download more voices in iPhone Settings › Accessibility › Spoken Content › Voices."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 쓰고 있지 않으면 iPhone 스피커로 들려요. 더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요."
           }
         }
       }
