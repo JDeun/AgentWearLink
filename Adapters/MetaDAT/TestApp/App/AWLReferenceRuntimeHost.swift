@@ -262,7 +262,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     private func startLockedExperimentIfEnabled() {
         guard experimentKeepSessionInBackground || experimentHoldAudioSession else { return }
         logExperiment("experiment start A=\(experimentKeepSessionInBackground) B=\(experimentHoldAudioSession)")
-        if experimentHoldAudioSession {
+        if experimentHoldAudioSession, keepAliveEngine == nil {
             // Keep-alive reported to survive a locked phone (dat-ios
             // discussion #326): a silent .playback + .mixWithOthers player
             // started in the foreground. No microphone is opened here; DAT
@@ -287,7 +287,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 logExperiment("keep-alive failed: \(error.localizedDescription)")
             }
         }
-        experimentHeartbeat?.cancel()
+        guard experimentHeartbeat == nil else { return }
         experimentHeartbeat = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
@@ -299,11 +299,18 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     }
 
     private func stopLockedExperiment() {
+        // The keep-alive deliberately survives a lost session: iOS suspends
+        // a locked app ~2 s after audio stops and refuses to restart playback
+        // from the background, so recovery could never run. Only the user's
+        // own Disconnect stops it (stopKeepAlive()).
+        if !lockedExperimentLog.isEmpty { logExperiment("session stop (keep-alive \(keepAliveEngine == nil ? "off" : "kept"))") }
+    }
+
+    private func stopKeepAlive() {
         experimentHeartbeat?.cancel()
         experimentHeartbeat = nil
         keepAliveEngine?.stop()
         keepAliveEngine = nil
-        if !lockedExperimentLog.isEmpty { logExperiment("experiment stop") }
     }
 
     func connect(
@@ -602,6 +609,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         recoveryTask = nil
         lastConnectRequest = nil
         await disconnect()
+        stopKeepAlive()
     }
 
     /// Reconnect with the last settings and the stored grant (no token).
@@ -631,10 +639,17 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             while !Task.isCancelled {
                 // Glasses folded, in the case or charging: wait quietly until
                 // DAT reports a device again (first value arrives at once).
-                for await identifiers in Wearables.shared.devicesStream() {
-                    if Task.isCancelled { return }
-                    if !identifiers.isEmpty { break }
+                // Paired-but-folded glasses are still listed, so wait for a
+                // device whose link is actually connected.
+                while !Task.isCancelled {
+                    let wearables = Wearables.shared
+                    let connected = wearables.devices.contains {
+                        wearables.deviceForIdentifier($0)?.linkState == .connected
+                    }
+                    if connected { break }
+                    try? await Task.sleep(for: .seconds(2))
                 }
+                if Task.isCancelled { return }
                 // A new session too soon after a stop fails (dat-ios #231).
                 try? await Task.sleep(for: .seconds(2))
                 guard let self, !Task.isCancelled else { return }
