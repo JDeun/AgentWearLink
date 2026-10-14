@@ -5,6 +5,9 @@ The pin is intentional: PRs remain reproducible and do not become red because
 OpenClaw main moves. To adopt a newer upstream contract, update UPSTREAM_COMMIT,
 review every assertion below, update the Swift contract tests, and record the
 new pin in docs/openclaw-protocol-contract.md.
+
+Operators can check the OpenClaw release they actually run with
+``--commit <full 40-hex sha>``; CI always uses the pin.
 """
 
 from __future__ import annotations
@@ -16,10 +19,14 @@ import urllib.request
 
 UPSTREAM_REPOSITORY = "openclaw/openclaw"
 UPSTREAM_COMMIT = "172a5d6202214eea253234c3b04c8184df9fea70"
-RAW_BASE = (
-    f"https://raw.githubusercontent.com/{UPSTREAM_REPOSITORY}/"
-    f"{UPSTREAM_COMMIT}/"
-)
+
+# chat.abort fields AWL encodes (OpenClawChatAbortParams in
+# Sources/AgentWearLinkOpenClaw/OpenClawAgentRun.swift). Upstream's schema is a
+# closedObject, so these must exist upstream; fields AWL never sends
+# (preserveSideRuns, discardPendingInput) are not part of AWL's contract.
+# Requiring discardPendingInput wrongly failed OpenClaw 2026.9.6, whose schema
+# accepts every field AWL sends.
+CHAT_ABORT_ENCODED_FIELDS = ("sessionKey:", "agentId:", "runId:")
 
 PATHS = {
     "version": "packages/gateway-protocol/src/version.ts",
@@ -33,13 +40,25 @@ PATHS = {
 }
 
 
-def fetch(path: str) -> str:
-    url = RAW_BASE + path
+def raw_base(commit: str) -> str:
+    return f"https://raw.githubusercontent.com/{UPSTREAM_REPOSITORY}/{commit}/"
+
+
+def parse_commit(argv: list[str]) -> str:
+    if not argv:
+        return UPSTREAM_COMMIT
+    if len(argv) == 2 and argv[0] == "--commit" and re.fullmatch(r"[0-9a-f]{40}", argv[1]):
+        return argv[1]
+    raise SystemExit("usage: verify-openclaw-protocol-contract.py [--commit <full 40-hex sha>]")
+
+
+def fetch(path: str, commit: str = UPSTREAM_COMMIT) -> str:
+    url = raw_base(commit) + path
     try:
         with urllib.request.urlopen(url, timeout=20) as response:
             return response.read().decode("utf-8")
     except (urllib.error.URLError, TimeoutError, UnicodeDecodeError) as exc:
-        raise RuntimeError(f"unable to fetch pinned upstream source {path}: {exc}") from exc
+        raise RuntimeError(f"unable to fetch upstream source {path}@{commit}: {exc}") from exc
 
 
 def compact(source: str) -> str:
@@ -72,8 +91,18 @@ def section(source: str, start: str, end: str) -> str:
     return source[start_index:end_index]
 
 
-def verify() -> None:
-    sources = {name: fetch(path) for name, path in PATHS.items()}
+def check_chat_abort(chat: str) -> None:
+    abort = section(
+        chat,
+        "export const ChatAbortParamsSchema",
+        "export const ChatInjectParamsSchema",
+    )
+    for field in CHAT_ABORT_ENCODED_FIELDS:
+        require(abort, field, "chat.abort params")
+
+
+def verify(commit: str = UPSTREAM_COMMIT) -> None:
+    sources = {name: fetch(path, commit) for name, path in PATHS.items()}
 
     version = compact(sources["version"])
     require(
@@ -177,20 +206,7 @@ def verify() -> None:
         "agent.wait statuses",
     )
 
-    chat = compact(sources["chat"])
-    abort = section(
-        chat,
-        "export const ChatAbortParamsSchema",
-        "export const ChatInjectParamsSchema",
-    )
-    for field in [
-        "sessionKey:",
-        "agentId:",
-        "runId:",
-        "preserveSideRuns:",
-        "discardPendingInput:",
-    ]:
-        require(abort, field, "chat.abort params")
+    check_chat_abort(compact(sources["chat"]))
 
     device_auth = compact(sources["device_auth"])
     require(device_auth, '"v3"', "device auth V3")
@@ -224,13 +240,14 @@ def verify() -> None:
 
     print(
         "OpenClaw protocol contract verified:",
-        f"{UPSTREAM_REPOSITORY}@{UPSTREAM_COMMIT}",
+        f"{UPSTREAM_REPOSITORY}@{commit}",
     )
 
 
 if __name__ == "__main__":
+    selected = parse_commit(sys.argv[1:])
     try:
-        verify()
+        verify(selected)
     except Exception as exc:
         print(f"OpenClaw protocol contract verification failed: {exc}", file=sys.stderr)
         raise SystemExit(1)
