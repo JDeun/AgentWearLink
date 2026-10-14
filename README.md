@@ -65,6 +65,8 @@ cd AgentWearLink
 swift test
 ```
 
+`swift test` needs XCTest, which ships with **Xcode**. With Command Line Tools only, `swift build` works but `swift test` stops with `no such module 'XCTest'`.
+
 The concrete Meta DAT adapter has a separate **Swift 6.0+ toolchain** requirement to resolve the pinned vendor SDK; its integration sources currently use Swift 5 language mode. See the [installation and verification guide](docs/getting-started.md) for the iOS simulator and OpenClaw pathways.
 
 ## Packages
