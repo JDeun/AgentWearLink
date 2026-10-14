@@ -33,8 +33,8 @@ actor WakeGateBox {
 /// - Route guard: speaks only when the output is Bluetooth A2DP/LE or
 ///   headphones; never out of the iPhone speaker. It never asks for HFP or
 ///   the speaker (`.allowBluetoothHFP` / `.defaultToSpeaker` are not used).
-/// - Ducks other audio (music) while speaking and restores plain mixing
-///   when the utterance finishes, using the synthesizer delegate.
+/// - Never touches the audio session (see `SilentKeepAlive`): replies mix
+///   over other audio.
 /// - Ends the echo-guard window at the real end of speech plus a tail.
 @MainActor
 final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDelegate {
@@ -45,12 +45,22 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     var onSilenced: (() -> Void)?
     var onSpoken: (() -> Void)?
     var onEvent: ((String) -> Void)?
+    /// EXPERIMENT (default off), see `ReplyDuckingMode`.
+    var duckingMode: ReplyDuckingMode = .off {
+        didSet {
+            guard duckingMode != oldValue else { return }
+            onEvent?("reply ducking mode: \(duckingMode.rawValue)")
+            recreate()
+        }
+    }
+    /// Variant 2 only: toggles `.duckOthers` on the app session.
     var setDucking: ((Bool) -> Void)?
 
     init(language: String?) {
         self.language = language
         super.init()
         synthesizer.delegate = self
+        configureSynthesizer()
     }
 
     /// After a media-services reset the old synthesizer is unusable.
@@ -59,7 +69,12 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
         synthesizer.stopSpeaking(at: .immediate)
         synthesizer = AVSpeechSynthesizer()
         synthesizer.delegate = self
-        setDucking?(false)
+        configureSynthesizer()
+    }
+
+    private func configureSynthesizer() {
+        // Variant 1: the synthesizer owns a separate session; ours is untouched.
+        synthesizer.usesApplicationAudioSession = duckingMode != .separateSynthesizerSession
     }
 
     func speak(_ text: String) async {
@@ -71,7 +86,13 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
             return
         }
         await gate?.beganSpeaking(text)
-        setDucking?(true)
+        // Default: no ducking. Changing the audio session while a DAT session
+        // is held makes the glasses end it (dat-ios #292); replies mix over
+        // music. The variants below exist only to be measured.
+        if duckingMode != .off {
+            onEvent?("reply start [\(duckingMode.rawValue)] otherAudio=\(AVAudioSession.sharedInstance().isOtherAudioPlaying)")
+        }
+        if duckingMode == .toggleDuckOthers { setDucking?(true) }
         let utterance = AVSpeechUtterance(string: text)
         if let language { utterance.voice = AVSpeechSynthesisVoice(language: language) }
         synthesizer.speak(utterance)
@@ -92,8 +113,11 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
 
     private func utteranceEnded() {
         Task { await gate?.finishedSpeaking() }
-        // More chunks may be queued; restore mixing only when all are done.
-        if !synthesizer.isSpeaking { setDucking?(false) }
+        guard !synthesizer.isSpeaking else { return }
+        if duckingMode != .off {
+            onEvent?("reply end [\(duckingMode.rawValue)] otherAudio=\(AVAudioSession.sharedInstance().isOtherAudioPlaying)")
+        }
+        if duckingMode == .toggleDuckOthers { setDucking?(false) }
     }
 
     static func kind(_ port: AVAudioSession.Port) -> AudioOutputKind {
@@ -115,21 +139,28 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
 /// interrupts music or navigation. No microphone is opened: DAT Speech
 /// listens on the glasses.
 ///
-/// Its lifecycle is independent of the voice session: wanted whenever
-/// listening is wanted, stopped only when the user stops listening. A 3 s
-/// watchdog restarts the engine whenever it is not running (interruption,
-/// route change, a background launch where activation first failed).
+/// Audio-session rule (dat-ios #292): reconfiguring or re-activating the
+/// AVAudioSession while a DAT session is held makes the glasses end that
+/// session within ~300 ms. So the category is set once, the session is
+/// activated before a DAT session is created, and while one is live only
+/// the engine is restarted; activation waits until no DAT session exists.
+/// Every audio-session call is logged (with the log's timestamp) so device
+/// logs can be matched against session ends.
 @MainActor
 final class SilentKeepAlive {
     enum Event { case interruptionEnded, mediaServicesReset, routeChanged }
 
     private var engine: AVAudioEngine?
     private var wanted = false
-    private var ducking = false
+    private var categoryConfigured = false
+    /// Our best knowledge of whether the session is active.
+    private var sessionActive = false
     private var watchdog: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
     var onLog: ((String) -> Void)?
     var onEvent: ((Event) -> Void)?
+    /// True while a DAT session exists (or is being created).
+    var isDATSessionLive: () -> Bool = { false }
 
     var isRunning: Bool { engine?.isRunning ?? false }
 
@@ -145,10 +176,9 @@ final class SilentKeepAlive {
                 guard let self else { return }
                 let ended = type == .ended
                 self.onLog?("audio interruption \(ended ? "ended" : "began") reason=\(reason.map(String.init) ?? "-")")
-                if ended {
-                    self.restartIfWanted()
-                    self.onEvent?(.interruptionEnded)
-                }
+                // The system deactivated our session for the interruption.
+                self.sessionActive = false
+                if ended { self.onEvent?(.interruptionEnded) }
             }
         })
         observers.append(center.addObserver(
@@ -158,7 +188,8 @@ final class SilentKeepAlive {
                 guard let self else { return }
                 self.onLog?("audio media services reset")
                 self.engine = nil
-                self.restartIfWanted()
+                self.sessionActive = false
+                self.categoryConfigured = false
                 self.onEvent?(.mediaServicesReset)
             }
         })
@@ -171,13 +202,15 @@ final class SilentKeepAlive {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.onLog?("audio route reason=\(reason.map(String.init) ?? "-") outputs=\(outputs)")
-                self.restartIfWanted()
+                // Only the engine; never the session.
+                if self.wanted, !self.isRunning { self.startEngine() }
                 self.onEvent?(.routeChanged)
             }
         })
     }
 
-    /// Idempotent. Also starts the watchdog, which keeps retrying.
+    /// Idempotent. Activates the session only if no DAT session is live,
+    /// then starts the engine; the watchdog keeps retrying.
     func start() {
         wanted = true
         if watchdog == nil {
@@ -185,14 +218,27 @@ final class SilentKeepAlive {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(3))
                     guard let self, !Task.isCancelled else { return }
-                    if self.wanted, !self.isRunning {
-                        self.onLog?("keep-alive not running — restarting (watchdog)")
+                    guard self.wanted else { continue }
+                    if !self.sessionActive, !self.isDATSessionLive() {
+                        self.activateSession(reason: "watchdog")
+                    }
+                    if !self.isRunning {
+                        self.onLog?("keep-alive not running — restarting engine (watchdog)")
                         self.startEngine()
                     }
                 }
             }
         }
+        if !sessionActive, !isDATSessionLive() { activateSession(reason: "start") }
         startEngine()
+    }
+
+    /// Call right before creating a DAT session: the only safe moment to
+    /// (re)activate the audio session.
+    func prepareForDATSession() {
+        guard wanted else { return }
+        if !sessionActive { activateSession(reason: "before DAT session") }
+        if !isRunning { startEngine() }
     }
 
     func stop() {
@@ -201,41 +247,55 @@ final class SilentKeepAlive {
         watchdog = nil
         engine?.stop()
         engine = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    /// Ducks other audio while a reply is spoken; the session stays active.
-    func setDucking(_ on: Bool) {
-        guard on != ducking else { return }
-        ducking = on
+        guard sessionActive, !isDATSessionLive() else { return }
         do {
-            try configureSession()
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            sessionActive = false
+            onLog?("audio-session setActive(false) ok")
         } catch {
-            onLog?("audio ducking \(on ? "on" : "off") failed: \(error.localizedDescription)")
+            onLog?("audio-session setActive(false) failed: \(error.localizedDescription)")
         }
     }
 
-    private func restartIfWanted() {
-        guard wanted, !isRunning else { return }
-        startEngine()
-    }
-
-    private func configureSession() throws {
+    private func activateSession(reason: String) {
         let session = AVAudioSession.sharedInstance()
-        let options: AVAudioSession.CategoryOptions = ducking ? [.mixWithOthers, .duckOthers] : [.mixWithOthers]
-        try session.setCategory(.playback, mode: .default, options: options)
-        try session.setActive(true)
+        if !categoryConfigured {
+            do {
+                // Never .allowBluetoothHFP / .defaultToSpeaker.
+                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                categoryConfigured = true
+                onLog?("audio-session setCategory(.playback, .default, mixWithOthers) ok [\(reason)]")
+            } catch {
+                onLog?("audio-session setCategory failed [\(reason)]: \(error.localizedDescription)")
+            }
+        }
+        do {
+            try session.setActive(true)
+            sessionActive = true
+            onLog?("audio-session setActive(true) ok [\(reason)]")
+        } catch {
+            onLog?("audio-session setActive(true) failed [\(reason)]: \(error.localizedDescription)")
+        }
     }
 
+    /// EXPERIMENT variant 2 only (default off): toggles `.duckOthers` on the
+    /// playback session around a reply. dat-ios #292 suggests this can end
+    /// the DAT session; it is logged so that can be measured.
+    func setExperimentalDucking(_ on: Bool) {
+        let options: AVAudioSession.CategoryOptions = on ? [.mixWithOthers, .duckOthers] : [.mixWithOthers]
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: options)
+            onLog?("audio-session setCategory(duckOthers=\(on)) ok [experiment, DAT live=\(isDATSessionLive())]")
+        } catch {
+            onLog?("audio-session setCategory(duckOthers=\(on)) failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Engine only: never touches the session.
     private func startEngine() {
         if isRunning { return }
         engine?.stop()
         engine = nil
-        do {
-            try configureSession()
-        } catch {
-            onLog?("keep-alive session failed: \(error.localizedDescription)")
-        }
         let engine = AVAudioEngine()
         var format = engine.mainMixerNode.outputFormat(forBus: 0)
         if format.sampleRate == 0 || format.channelCount == 0,
@@ -254,9 +314,9 @@ final class SilentKeepAlive {
         do {
             try engine.start()
             self.engine = engine
-            onLog?("keep-alive on")
+            onLog?("keep-alive engine on")
         } catch {
-            onLog?("keep-alive start failed: \(error.localizedDescription)")
+            onLog?("keep-alive engine start failed: \(error.localizedDescription)")
         }
     }
 }

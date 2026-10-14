@@ -188,3 +188,32 @@ final class ConnectionStatusTests: XCTestCase {
         }
     }
 }
+
+final class SpeechPauseStatusTests: XCTestCase {
+    private func worn() -> ConnectionSignals {
+        var signals = ConnectionSignals()
+        signals.glasses = .connected
+        signals.microphone = .granted
+        signals.network = .reachable
+        signals.gateway = .ok
+        signals.listening = false
+        signals.speechReady = false
+        signals.listenFailed = true
+        return signals
+    }
+
+    func testTakenOffIsRestingNotAnError() {
+        var signals = worn()
+        signals.speechPause = .pauseNotWorn
+        let state = HomeViewState(signals: signals, telegramConfigured: false)
+        XCTAssertEqual(state.banner, .waitingForGlasses)
+        XCTAssertEqual(state.rows[0].state, .resting)
+        XCTAssertNotEqual(state.rows[1].state, .notListening)
+    }
+
+    func testHeatIsShownAsShed() {
+        var signals = worn()
+        signals.speechPause = .shedThermal
+        XCTAssertEqual(HomeViewState(signals: signals, telegramConfigured: false).banner, .thermalShed)
+    }
+}

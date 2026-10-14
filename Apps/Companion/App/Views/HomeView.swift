@@ -20,6 +20,7 @@ struct HomeView: View {
                         state: state,
                         wakePhrase: runtime.settings.effectiveWakePhrases.first ?? "",
                         lastCheckAt: runtime.lastCheckAt,
+                        speechPause: runtime.signals.speechPause,
                         gatewayName: runtime.gatewayLabel,
                         agentName: runtime.agentLabel,
                         onRepair: { repairProblem = $0 },
@@ -207,6 +208,7 @@ struct StatusBanner: View {
     let state: HomeViewState
     let wakePhrase: String
     let lastCheckAt: Date?
+    var speechPause: SpeechPowerPolicy.Decision = .listen
     let gatewayName: String
     let agentName: String
     let onRepair: (AWLChainProblem) -> Void
@@ -273,6 +275,7 @@ struct StatusBanner: View {
         case .waitingForGlasses: (Theme.waitingBackground, Theme.waitingInner, Theme.accent, "eyeglasses")
         case .listeningOff: (Theme.card, Theme.raised, Theme.secondary, "pause.fill")
         case .problem, .notListening: (Theme.problemBackground, Theme.problemInner, Theme.problem, "exclamationmark")
+        case .thermalShed: (Theme.problemBackground, Theme.problemInner, Theme.problem, "thermometer.high")
         case .checking: (Theme.card, Theme.raised, Theme.accent, "ellipsis")
         }
     }
@@ -283,6 +286,7 @@ struct StatusBanner: View {
         case .waitingForGlasses: Text("안경을 기다리고 있어요")
         case .listeningOff: Text("듣기를 멈췄어요")
         case .notListening: Text("지금 듣고 있지 않아요")
+        case .thermalShed: Text("안경이 뜨거워 잠시 듣기를 멈췄어요")
         case let .problem(problem):
             ProblemHeadline(reason: problem.reason, gatewayName: gatewayName, agentName: agentName)
         case .checking: Text("확인하는 중")
@@ -297,7 +301,13 @@ struct StatusBanner: View {
             } else {
                 Text("방금 확인")
             }
-        case .waitingForGlasses: Text("안경을 쓰면 자동으로 연결돼요")
+        case .waitingForGlasses:
+            switch speechPause {
+            case .pauseNotWorn: Text("배터리를 아끼려고 듣기를 쉬어요. 다시 쓰면 바로 들어요")
+            case .pauseFolded: Text("배터리를 아끼려고 듣기를 쉬어요. 펼쳐 쓰면 바로 들어요")
+            default: Text("안경을 쓰면 자동으로 연결돼요")
+            }
+        case .thermalShed: Text("식으면 자동으로 다시 들어요")
         case .listeningOff: Text("다시 듣기를 누르면 이어서 들어요")
         case .notListening: Text("안경 음성 인식이 시작되지 않았어요")
         case let .problem(problem): ProblemReasonText(reason: problem.reason)

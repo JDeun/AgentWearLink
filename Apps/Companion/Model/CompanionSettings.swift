@@ -5,6 +5,19 @@ import Foundation
 /// Only endpoint metadata and preferences live here (UserDefaults). The
 /// approved device grant and the device identity stay in the Keychain, and a
 /// Gateway token or setup-code bootstrap token is never persisted at all.
+/// EXPERIMENT (default off): how replies duck other audio. Changing the
+/// app's audio session while a DAT session is held can end that session
+/// (dat-ios #292), so both variants exist only to be measured.
+public enum ReplyDuckingMode: String, CaseIterable, Equatable, Sendable {
+    /// Replies mix over other audio; the session is never touched.
+    case off
+    /// AVSpeechSynthesizer manages its own audio session
+    /// (`usesApplicationAudioSession = false`).
+    case separateSynthesizerSession
+    /// Toggle `.duckOthers` on the app's playback session around a reply.
+    case toggleDuckOthers
+}
+
 public struct CompanionSettings: Equatable, Sendable {
     /// Set once the setup flow finished. Launch then connects automatically.
     public var setupCompleted = false
@@ -29,6 +42,7 @@ public struct CompanionSettings: Equatable, Sendable {
     public var voiceStyle = true
     /// Optional OpenClaw session key; empty uses the agent's main session.
     public var sessionKey: String = ""
+    public var replyDucking: ReplyDuckingMode = .off
     /// Wall-clock time of the last spoken reply, for "마지막 대화 N분 전".
     public var lastReplyAt: Date?
     /// Speech end → first reply text, seconds.
@@ -83,12 +97,13 @@ public struct CompanionSettingsStore {
         public static let telegramChatID = "awl.companion.telegramChatID"
         public static let voiceStyle = "awl.companion.voiceStyle"
         public static let sessionKey = "awl.companion.sessionKey"
+        public static let replyDucking = "awl.companion.replyDucking"
         public static let lastReplyAt = "awl.companion.lastReplyAt"
         public static let lastReplyLatency = "awl.companion.lastReplyLatency"
 
         static let all = [
             setupCompleted, gatewayURL, gatewayName, agentName, wakePhrases, spokenName, listenEnabled,
-            telegramEnabled, telegramChatID, voiceStyle, sessionKey,
+            telegramEnabled, telegramChatID, voiceStyle, sessionKey, replyDucking,
             lastReplyAt, lastReplyLatency,
         ]
     }
@@ -112,6 +127,8 @@ public struct CompanionSettingsStore {
         settings.telegramChatID = defaults.string(forKey: Key.telegramChatID) ?? ""
         settings.voiceStyle = defaults.object(forKey: Key.voiceStyle) as? Bool ?? true
         settings.sessionKey = defaults.string(forKey: Key.sessionKey) ?? ""
+        settings.replyDucking = defaults.string(forKey: Key.replyDucking)
+            .flatMap(ReplyDuckingMode.init(rawValue:)) ?? .off
         settings.lastReplyAt = defaults.object(forKey: Key.lastReplyAt) as? Date
         settings.lastReplyLatency = defaults.object(forKey: Key.lastReplyLatency) as? Double
         // Never trust a "completed" flag without an endpoint to connect to.
@@ -131,6 +148,7 @@ public struct CompanionSettingsStore {
         defaults.set(settings.telegramChatID, forKey: Key.telegramChatID)
         defaults.set(settings.voiceStyle, forKey: Key.voiceStyle)
         defaults.set(settings.sessionKey, forKey: Key.sessionKey)
+        defaults.set(settings.replyDucking.rawValue, forKey: Key.replyDucking)
         defaults.set(settings.lastReplyAt, forKey: Key.lastReplyAt)
         defaults.set(settings.lastReplyLatency, forKey: Key.lastReplyLatency)
     }

@@ -225,6 +225,19 @@ struct SettingsView: View {
                     }
                 }
             }
+            Picker(selection: binding(\.replyDucking)) {
+                Text("끔 (기본)").tag(ReplyDuckingMode.off)
+                Text("실험 1: 별도 음성 세션").tag(ReplyDuckingMode.separateSynthesizerSession)
+                Text("실험 2: 답할 때 음악 줄이기").tag(ReplyDuckingMode.toggleDuckOthers)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("답할 때 다른 소리 줄이기")
+                    Text("실험 기능이에요. 안경 연결이 끊길 수 있어 기본은 꺼져 있어요")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                }
+            }
+            .pickerStyle(.navigationLink)
             DisclosureGroup(isExpanded: $showFullFingerprint) {
                 Text(verbatim: DeviceFingerprint.grouped(runtime.deviceID))
                     .font(.caption.monospaced())

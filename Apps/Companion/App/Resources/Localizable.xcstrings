@@ -1057,6 +1057,22 @@
         }
       }
     },
+    "끔 (기본)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off (default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "끔 (기본)"
+          }
+        }
+      }
+    },
     "나중에 하기": {
       "localizations": {
         "en": {
@@ -1229,6 +1245,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "답이 오지 않아요"
+          }
+        }
+      }
+    },
+    "답할 때 다른 소리 줄이기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lower other audio during replies"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답할 때 다른 소리 줄이기"
           }
         }
       }
@@ -1665,6 +1697,54 @@
         }
       }
     },
+    "배터리를 아끼려고 듣기를 쉬어요. 다시 쓰면 바로 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening is paused to save battery. Put them back on to resume."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배터리를 아끼려고 듣기를 쉬어요. 다시 쓰면 바로 들어요"
+          }
+        }
+      }
+    },
+    "배터리를 아끼려고 듣기를 쉬어요. 펼쳐 쓰면 바로 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening is paused to save battery. Unfold and wear them to resume."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배터리를 아끼려고 듣기를 쉬어요. 펼쳐 쓰면 바로 들어요"
+          }
+        }
+      }
+    },
+    "벗어 두었어요 · 쓰면 다시 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taken off · resumes when worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "벗어 두었어요 · 쓰면 다시 들어요"
+          }
+        }
+      }
+    },
     "복사됨": {
       "localizations": {
         "en": {
@@ -1981,6 +2061,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "승인했어요, 다시 확인"
+          }
+        }
+      }
+    },
+    "식으면 자동으로 다시 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening resumes once they cool down"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "식으면 자동으로 다시 들어요"
+          }
+        }
+      }
+    },
+    "실험 1: 별도 음성 세션": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experiment 1: separate speech session"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험 1: 별도 음성 세션"
+          }
+        }
+      }
+    },
+    "실험 2: 답할 때 음악 줄이기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experiment 2: duck music while replying"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험 2: 답할 때 음악 줄이기"
+          }
+        }
+      }
+    },
+    "실험 기능이에요. 안경 연결이 끊길 수 있어 기본은 꺼져 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimental. It may drop the glasses connection, so it's off by default."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험 기능이에요. 안경 연결이 끊길 수 있어 기본은 꺼져 있어요"
           }
         }
       }
@@ -2413,6 +2557,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "안경의 음성 인식은 이름을 한글로 받아 적어요. 적어 두면 그 이름으로도 부를 수 있어요."
+          }
+        }
+      }
+    },
+    "안경이 뜨거워 잠시 듣기를 멈췄어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The glasses are hot, so listening is paused"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 뜨거워 잠시 듣기를 멈췄어요"
           }
         }
       }
@@ -3213,6 +3373,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "전체 기기 지문"
+          }
+        }
+      }
+    },
+    "접혀 있어요 · 펼쳐 쓰면 다시 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folded · resumes when unfolded and worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "접혀 있어요 · 펼쳐 쓰면 다시 들어요"
           }
         }
       }

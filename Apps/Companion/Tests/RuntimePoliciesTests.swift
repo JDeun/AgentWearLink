@@ -83,3 +83,28 @@ final class RuntimePoliciesTests: XCTestCase {
         XCTAssertTrue(data.dropFirst(44).allSatisfy { $0 == 0 })
     }
 }
+
+final class SpeechPowerPolicyTests: XCTestCase {
+    func testUnknownNeverPauses() {
+        XCTAssertEqual(SpeechPowerPolicy.decide(wear: .unknown, hinge: .unknown, thermal: .unknown), .listen)
+        XCTAssertEqual(SpeechPowerPolicy.decide(wear: .worn, hinge: .open, thermal: .normal), .listen)
+    }
+
+    func testTakenOffOrFoldedPauses() {
+        XCTAssertEqual(SpeechPowerPolicy.decide(wear: .notWorn, hinge: .open, thermal: .normal), .pauseNotWorn)
+        XCTAssertEqual(SpeechPowerPolicy.decide(wear: .notWorn, hinge: .folded, thermal: .normal), .pauseFolded)
+    }
+
+    func testHeatShedsFirst() {
+        XCTAssertEqual(SpeechPowerPolicy.decide(wear: .worn, hinge: .open, thermal: .severe), .shedThermal)
+    }
+
+    func testDecisionUsesTheConnectedDevice() {
+        let folded = GlassesDeviceObservation(link: .disconnected, hinge: .folded)
+        let worn = GlassesDeviceObservation(link: .connected, wear: .worn, hinge: .open, thermal: .normal)
+        XCTAssertEqual(GlassesStateMapper.speechDecision([folded, worn]), .listen)
+        XCTAssertEqual(GlassesStateMapper.speechDecision([folded]), .listen)
+        let hot = GlassesDeviceObservation(link: .connected, thermal: .severe)
+        XCTAssertEqual(GlassesStateMapper.speechDecision([hot]), .shedThermal)
+    }
+}

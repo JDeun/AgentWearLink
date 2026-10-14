@@ -118,7 +118,12 @@ final class CompanionRuntime: ObservableObject {
         }
         keepAlive.onLog = { [weak self] line in self?.record(line) }
         keepAlive.onEvent = { [weak self] event in self?.handleAudioEvent(event) }
-        speaker.setDucking = { [weak self] on in self?.keepAlive.setDucking(on) }
+        speaker.setDucking = { [weak self] on in self?.keepAlive.setExperimentalDucking(on) }
+        speaker.duckingMode = loaded.replyDucking
+        keepAlive.isDATSessionLive = { [weak self] in
+            guard let self else { return false }
+            return self.runtime != nil || self.voiceConnecting
+        }
         speaker.onEvent = { [weak self] line in self?.record(line) }
         speaker.onSilenced = { [weak self] in self?.signals.replyNotSpoken = true }
         speaker.onSpoken = { [weak self] in self?.signals.replyNotSpoken = false }
@@ -224,6 +229,8 @@ final class CompanionRuntime: ObservableObject {
             if restartSession, runtime != nil {
                 record("restart: \(reason)")
                 await disconnectVoice()
+                // No DAT session now: safe to reactivate audio if needed.
+                keepAlive.start()
                 // A new DAT session too soon after a stop fails (dat-ios #231).
                 startRecovery(reason, immediate: false, restart: true)
             } else if runtime == nil {
@@ -540,6 +547,7 @@ final class CompanionRuntime: ObservableObject {
         if old.listenEnabled != settings.listenEnabled || old.setupCompleted != settings.setupCompleted {
             requestReconcile(settings.listenEnabled ? "listening on" : "listening off")
         }
+        if old.replyDucking != settings.replyDucking { speaker.duckingMode = settings.replyDucking }
         if old.effectiveWakePhrases != settings.effectiveWakePhrases, let wakeGate {
             let phrases = settings.effectiveWakePhrases
             Task { await wakeGate.replacePhrases(phrases) }
@@ -654,6 +662,21 @@ final class CompanionRuntime: ObservableObject {
         if !settings.setupCompleted, wearables.isRegistered, setup.current == .metaRegistration {
             setup.complete(.metaRegistration)
         }
+        applySpeechPower(wearables.speechDecision)
+    }
+
+    /// Stops Speech (the DAT session) when the glasses are taken off,
+    /// folded or too hot, and brings it back when they are usable again.
+    private func applySpeechPower(_ decision: SpeechPowerPolicy.Decision) {
+        let previous = signals.speechPause
+        signals.speechPause = decision
+        guard decision != previous else { return }
+        record("speech power: \(decision)")
+        if decision != .listen {
+            if runtime != nil { Task { await disconnectVoice() } }
+        } else if wantsListening, runtime == nil {
+            startRecovery("glasses usable again", immediate: false, restart: true)
+        }
     }
 
     // MARK: Recovery
@@ -688,7 +711,8 @@ final class CompanionRuntime: ObservableObject {
             var settle = !immediate
             while !Task.isCancelled {
                 guard let self else { return }
-                await self.wearables.waitForConnectedDevice()
+                // Connected AND worn/unfolded/not too hot.
+                await self.wearables.waitForUsableDevice()
                 if Task.isCancelled { break }
                 if settle {
                     try? await Task.sleep(for: .seconds(RecoveryPolicy.settleDelay))
@@ -732,6 +756,8 @@ final class CompanionRuntime: ObservableObject {
             break
         }
         guard let attempt = connectionFence.begin() else { return .retry }
+        // The only safe moment to (re)activate the audio session (#292).
+        keepAlive.prepareForDATSession()
         voiceConnecting = true
         defer {
             voiceConnecting = false

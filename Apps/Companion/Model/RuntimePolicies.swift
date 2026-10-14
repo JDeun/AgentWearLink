@@ -103,12 +103,22 @@ public struct GlassesDeviceObservation: Equatable, Sendable {
     public var updateRequired: Bool
     public var battery: Int?
     public var charging: Bool
+    public var wear: SpeechPowerPolicy.Wear
+    public var hinge: SpeechPowerPolicy.Hinge
+    public var thermal: SpeechPowerPolicy.Thermal
 
-    public init(link: Link, updateRequired: Bool = false, battery: Int? = nil, charging: Bool = false) {
+    public init(
+        link: Link, updateRequired: Bool = false, battery: Int? = nil, charging: Bool = false,
+        wear: SpeechPowerPolicy.Wear = .unknown, hinge: SpeechPowerPolicy.Hinge = .unknown,
+        thermal: SpeechPowerPolicy.Thermal = .unknown
+    ) {
         self.link = link
         self.updateRequired = updateRequired
         self.battery = battery
         self.charging = charging
+        self.wear = wear
+        self.hinge = hinge
+        self.thermal = thermal
     }
 }
 
@@ -119,6 +129,12 @@ public struct GlassesSnapshot: Equatable, Sendable {
 }
 
 public enum GlassesStateMapper {
+    /// Speech decision for the connected device (listen when none or unknown).
+    public static func speechDecision(_ devices: [GlassesDeviceObservation]) -> SpeechPowerPolicy.Decision {
+        guard let device = devices.first(where: { $0.link == .connected }) else { return .listen }
+        return SpeechPowerPolicy.decide(wear: device.wear, hinge: device.hinge, thermal: device.thermal)
+    }
+
     /// Paired glasses that are folded or in the case are listed but not
     /// connected: that is waiting, never "available".
     public static func hasConnectedDevice(_ devices: [GlassesDeviceObservation]) -> Bool {
@@ -170,5 +186,30 @@ public enum SilentWAV {
         append(UInt32(dataBytes))
         data.append(Data(count: dataBytes))
         return data
+    }
+}
+
+/// When to stop DAT Speech to save glasses battery.
+public enum SpeechPowerPolicy {
+    public enum Wear: Equatable, Sendable { case worn, notWorn, unknown }
+    public enum Hinge: Equatable, Sendable { case open, folded, unknown }
+    public enum Thermal: Equatable, Sendable { case normal, unknown, severe }
+
+    public enum Decision: Equatable, Sendable {
+        case listen
+        /// Taken off: stop Speech, restart when worn again.
+        case pauseNotWorn
+        /// Folded: stop Speech, restart when unfolded.
+        case pauseFolded
+        /// Severe/critical heat: shed Speech, show it, resume when cooler.
+        case shedThermal
+    }
+
+    /// Unknown states never pause: only a positive observation stops Speech.
+    public static func decide(wear: Wear, hinge: Hinge, thermal: Thermal) -> Decision {
+        if thermal == .severe { return .shedThermal }
+        if hinge == .folded { return .pauseFolded }
+        if wear == .notWorn { return .pauseNotWorn }
+        return .listen
     }
 }

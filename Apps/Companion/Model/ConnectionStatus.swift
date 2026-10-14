@@ -37,6 +37,9 @@ public struct ConnectionSignals: Equatable, Sendable {
     /// The last reply was not spoken because no glasses/headphones audio
     /// route was available (never played on the iPhone speaker).
     public var replyNotSpoken = false
+    /// Speech deliberately stopped to save glasses battery (taken off,
+    /// folded) or shed because the glasses are too hot.
+    public var speechPause: SpeechPowerPolicy.Decision = .listen
     public var network: Reachability = .unknown
     public var gateway: Gateway = .unknown
     public var agentFailing = false
@@ -69,7 +72,7 @@ public struct ConnectionSignals: Equatable, Sendable {
         if microphone == .denied {
             result[.phone] = .broken(.microphoneDenied)
         } else if listenEnabled, glasses == .connected, !(listening && speechReady),
-                  !upstreamOfPhoneBlocksListening {
+                  speechPause == .listen, !upstreamOfPhoneBlocksListening {
             // Glasses are here but nothing is listening yet (connecting, or
             // Speech failed to start): do not claim the phone hop is fine.
         } else {
@@ -109,7 +112,7 @@ public struct ConnectionSignals: Equatable, Sendable {
     /// Glasses are on, nothing upstream is broken, but nothing is listening.
     public var isNotListening: Bool {
         listenEnabled && glasses == .connected && microphone != .denied
-            && !upstreamOfPhoneBlocksListening
+            && speechPause == .listen && !upstreamOfPhoneBlocksListening
             && ((listening && !speechReady) || (!listening && listenFailed))
     }
 
@@ -127,6 +130,8 @@ public struct HomeViewState: Equatable, Sendable {
         /// Glasses on but Speech is not running: a problem with one action
         /// ("다시 시작").
         case notListening
+        /// Speech shed because the glasses are too hot; resumes by itself.
+        case thermalShed
         case listeningOff
         case problem(AWLChainProblem)
         case checking
@@ -138,6 +143,8 @@ public struct HomeViewState: Equatable, Sendable {
         case waiting
         /// The phone hop when Speech is not running.
         case notListening
+        /// Taken off or folded: Speech paused to save battery (not an error).
+        case resting
         /// Not observed yet.
         case checking
         /// Cannot be observed because an earlier hop is broken.
@@ -173,6 +180,10 @@ public struct HomeViewState: Equatable, Sendable {
                 }
             }
             if case .broken = link.status { upstreamBroken = true }
+            if link.id == .glasses, state == .ok,
+               [.pauseNotWorn, .pauseFolded].contains(signals.speechPause) {
+                return Row(id: link.id, state: .resting, checkedAt: signals.checkedAt[link.id])
+            }
             if link.id == .phone, state == .checking, signals.isNotListening {
                 return Row(id: link.id, state: .notListening, checkedAt: signals.checkedAt[link.id])
             }
@@ -184,6 +195,10 @@ public struct HomeViewState: Equatable, Sendable {
             banner = .problem(problem)
         } else if !signals.listenEnabled {
             banner = .listeningOff
+        } else if signals.speechPause == .shedThermal {
+            banner = .thermalShed
+        } else if [.pauseNotWorn, .pauseFolded].contains(signals.speechPause) {
+            banner = .waitingForGlasses
         } else if signals.isNotListening {
             banner = .notListening
         } else if signals.glasses == .waiting,
@@ -215,7 +230,7 @@ public struct HomeViewState: Equatable, Sendable {
     public static func statusLabel(for row: Row) -> StatusLabel {
         switch row.state {
         case .ok: return row.id == .agent ? .answered : .connected
-        case .waiting: return .waiting
+        case .waiting, .resting: return .waiting
         case .checking: return .checking
         case .notCheckable: return .notCheckable
         case .notListening: return .notListening

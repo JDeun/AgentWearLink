@@ -92,6 +92,19 @@ final class WearablesLink {
         GlassesStateMapper.hasConnectedDevice(observations())
     }
 
+    var speechDecision: SpeechPowerPolicy.Decision {
+        GlassesStateMapper.speechDecision(observations())
+    }
+
+    /// Connected and usable for Speech (worn, unfolded, not too hot).
+    func waitForUsableDevice(pollInterval: Duration = .seconds(2)) async {
+        guard isConfigured else { return }
+        while !Task.isCancelled {
+            if isRegistered, hasConnectedDevice, speechDecision == .listen { return }
+            try? await Task.sleep(for: pollInterval)
+        }
+    }
+
     private func observations() -> [GlassesDeviceObservation] {
         guard isConfigured else { return [] }
         let wearables = Wearables.shared
@@ -103,11 +116,32 @@ final class WearablesLink {
             default: link = .disconnected
             }
             let compatibility = device.compatibility()
+            let wear: SpeechPowerPolicy.Wear
+            switch device.donState {
+            case .donned: wear = .worn
+            case .doffed: wear = .notWorn
+            default: wear = .unknown
+            }
+            let hinge: SpeechPowerPolicy.Hinge
+            switch device.hingeState {
+            case .open: hinge = .open
+            case .closed: hinge = .folded
+            default: hinge = .unknown
+            }
+            let thermal: SpeechPowerPolicy.Thermal
+            switch device.thermalLevel {
+            case .severe, .critical, .emergency, .shutdown: thermal = .severe
+            case .unknown: thermal = .unknown
+            default: thermal = .normal
+            }
             return GlassesDeviceObservation(
                 link: link,
                 updateRequired: compatibility == .deviceUpdateRequired || compatibility == .sdkUpdateRequired,
                 battery: device.batteryLevel,
-                charging: device.chargingState == .charging
+                charging: device.chargingState == .charging,
+                wear: wear,
+                hinge: hinge,
+                thermal: thermal
             )
         }
     }

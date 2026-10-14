@@ -210,7 +210,7 @@ struct ChainRowView: View {
         switch row.state {
         case .ok: Theme.ok
         case .problem, .notListening: Theme.problem
-        case .waiting: Theme.accent
+        case .waiting, .resting: Theme.accent
         case .checking, .notCheckable: Theme.tertiary
         }
     }
@@ -232,6 +232,9 @@ struct ChainRowView: View {
         case let .problem(reason): ProblemText(reason: reason)
         case .waiting: Text("쓰면 자동으로 연결돼요")
         case .notListening: Text("음성 인식이 멈춰 있어요")
+        case .resting:
+            signals.speechPause == .pauseFolded
+                ? Text("접혀 있어요 · 펼쳐 쓰면 다시 들어요") : Text("벗어 두었어요 · 쓰면 다시 들어요")
         case .checking:
             switch row.id {
             case .agent: Text("아직 대화가 없어요")

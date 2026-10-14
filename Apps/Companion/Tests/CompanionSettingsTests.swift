@@ -19,6 +19,7 @@ final class CompanionSettingsTests: XCTestCase {
         XCTAssertTrue(settings.listenEnabled)
         XCTAssertTrue(settings.voiceStyle)
         XCTAssertFalse(settings.telegramEnabled)
+        XCTAssertEqual(settings.replyDucking, .off)
     }
 
     func testRoundTripAndReset() {
@@ -34,6 +35,7 @@ final class CompanionSettingsTests: XCTestCase {
         settings.telegramEnabled = true
         settings.telegramChatID = "-100123"
         settings.voiceStyle = false
+        settings.replyDucking = .separateSynthesizerSession
         settings.lastReplyAt = Date(timeIntervalSince1970: 1_000)
         settings.lastReplyLatency = 3.5
         store.save(settings)
