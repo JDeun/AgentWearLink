@@ -29,6 +29,10 @@ struct MetaDATTestHostApp: App {
     private var voiceWakeStartupSession = ""
     @AppStorage("awl.reference.telegramMirrorChatID")
     private var telegramMirrorChatID = ""
+    @AppStorage("awl.experiment.keepSessionInBackground")
+    private var experimentKeepSession = false
+    @AppStorage("awl.experiment.holdAudioSession")
+    private var experimentHoldAudio = false
     @AppStorage("awl.reference.voiceStyleAnswers")
     private var voiceStyleAnswers = true
     @State private var voiceWakeStartupStatus = "auto-wake-disabled"
@@ -173,6 +177,19 @@ struct MetaDATTestHostApp: App {
                         .accessibilityIdentifier("awl-telegram-mirror-chat-id")
                     Toggle("Short spoken answers", isOn: $voiceStyleAnswers)
                         .accessibilityIdentifier("awl-voice-style-answers")
+                    Toggle("EXPERIMENT A: keep voice session when locked", isOn: $experimentKeepSession)
+                        .accessibilityIdentifier("awl-experiment-keep-session")
+                    Toggle("EXPERIMENT B: hold audio session", isOn: $experimentHoldAudio)
+                        .accessibilityIdentifier("awl-experiment-hold-audio")
+                    if !referenceHost.lockedExperimentLog.isEmpty {
+                        Text(referenceHost.lockedExperimentLog.suffix(12).joined(separator: "\n"))
+                            .font(.caption.monospaced())
+                            .accessibilityIdentifier("awl-experiment-log")
+                        Button("Copy experiment log") {
+                            UIPasteboard.general.string = referenceHost.lockedExperimentLog.joined(separator: "\n")
+                        }
+                        .accessibilityIdentifier("awl-experiment-log-copy")
+                    }
                     Toggle("Enable vision only for a verified image-capable OpenClaw model", isOn: $allowVision)
                         .accessibilityIdentifier("awl-vision-opt-in")
                     #if DEBUG
@@ -200,6 +217,7 @@ struct MetaDATTestHostApp: App {
                         let suppliedToken = bootstrapToken
                         bootstrapToken = ""
                         Task {
+                            applyExperimentSettings()
                             await referenceHost.connect(
                                 hostname: gatewayHostname,
                                 token: suppliedToken,
@@ -215,6 +233,7 @@ struct MetaDATTestHostApp: App {
                         let suppliedToken = bootstrapToken
                         bootstrapToken = ""
                         Task {
+                            applyExperimentSettings()
                             await referenceHost.connect(
                                 hostname: gatewayHostname,
                                 token: suppliedToken,
@@ -230,6 +249,7 @@ struct MetaDATTestHostApp: App {
                         let suppliedToken = bootstrapToken
                         bootstrapToken = ""
                         Task {
+                            applyExperimentSettings()
                             await referenceHost.connect(
                                 hostname: gatewayHostname,
                                 token: suppliedToken,
@@ -335,6 +355,11 @@ struct MetaDATTestHostApp: App {
     }
 
     @MainActor
+    private func applyExperimentSettings() {
+        referenceHost.experimentKeepSessionInBackground = experimentKeepSession
+        referenceHost.experimentHoldAudioSession = experimentHoldAudio
+    }
+
     private var turnOptions: OpenClawAgentTurnOptions {
         AWLReferenceTurnOptions.make(
             telegramChatID: telegramMirrorChatID,
@@ -357,6 +382,7 @@ struct MetaDATTestHostApp: App {
         // The original bearer is never persisted or restored; #590's scoped
         // approved Keychain grant admission must pass before socket startup.
         voiceWakeStartupStatus = "auto-wake-connecting"
+        applyExperimentSettings()
         await referenceHost.connect(
             hostname: voiceWakeStartupHostname,
             token: "",

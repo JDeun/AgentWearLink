@@ -2,6 +2,7 @@ import AgentWearLinkAppleOutput
 import AgentWearLinkCore
 import AgentWearLinkMetaDATIntegration
 import AgentWearLinkOpenClaw
+import AVFoundation
 import Foundation
 import MWDATCore
 import SwiftUI
@@ -15,6 +16,15 @@ import UIKit
 final class AWLReferenceRuntimeHost: ObservableObject {
     @Published private(set) var status = "disconnected"
     @Published private(set) var gatewayHealthStatus = "gateway-not-checked"
+    /// EXPERIMENT (locked-phone voice): timestamped phase/heartbeat log so a
+    /// physical test can show whether iOS kept the process running.
+    @Published private(set) var lockedExperimentLog: [String] = []
+    /// A: do not retire the DAT session when the app leaves the foreground.
+    var experimentKeepSessionInBackground = false
+    /// B: also hold an active playAndRecord AVAudioSession (needs the
+    /// `audio` UIBackgroundModes entry on this experiment branch).
+    var experimentHoldAudioSession = false
+    private var experimentHeartbeat: Task<Void, Never>?
 
     private let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
     private let diagnostics = AWLDiagnosticRecorder(capacity: 256)
@@ -223,7 +233,57 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         if phase == .background {
             visionTask?.cancel()
         }
+        if runtime != nil, experimentKeepSessionInBackground {
+            // EXPERIMENT A: leave the DAT session alone; only record the phase.
+            logExperiment("phase \(phase == .background ? "background" : "foreground") (session kept)")
+            return
+        }
         await lifecycle.transition(to: phase)
+    }
+
+    private func logExperiment(_ line: String) {
+        let stamp = Date.now.formatted(date: .omitted, time: .standard)
+        lockedExperimentLog.append("\(stamp) \(line)")
+        if lockedExperimentLog.count > 200 {
+            lockedExperimentLog.removeFirst(lockedExperimentLog.count - 200)
+        }
+    }
+
+    private func startLockedExperimentIfEnabled() {
+        guard experimentKeepSessionInBackground || experimentHoldAudioSession else { return }
+        logExperiment("experiment start A=\(experimentKeepSessionInBackground) B=\(experimentHoldAudioSession)")
+        if experimentHoldAudioSession {
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: .default,
+                    options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
+                )
+                try session.setActive(true)
+                logExperiment("audio session active route=\(session.currentRoute.outputs.map(\.portType.rawValue))")
+            } catch {
+                logExperiment("audio session failed: \(error.localizedDescription)")
+            }
+        }
+        experimentHeartbeat?.cancel()
+        experimentHeartbeat = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard let self, !Task.isCancelled else { return }
+                let state = UIApplication.shared.applicationState
+                self.logExperiment("alive \(state == .active ? "active" : state == .background ? "background" : "inactive")")
+            }
+        }
+    }
+
+    private func stopLockedExperiment() {
+        experimentHeartbeat?.cancel()
+        experimentHeartbeat = nil
+        if experimentHoldAudioSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        if !lockedExperimentLog.isEmpty { logExperiment("experiment stop") }
     }
 
     func connect(
@@ -424,6 +484,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                     clearRuntimeReferences()
                     return
                 }
+                startLockedExperimentIfEnabled()
                 // Channel registration may still be pending. This is not a
                 // claim that physical Hey Meta or locked-phone launch works.
                 if voiceWake {
@@ -472,6 +533,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     }
 
     private func clearRuntimeReferences() {
+        stopLockedExperiment()
         runtime = nil
         device = nil
         visionAgent = nil
