@@ -8,6 +8,17 @@ enum LaunchSetupCode {
     static let flag = "-AWLSetupCode"
 
     static func value(in arguments: [String]) -> String? {
+        LaunchArgument.value(flag, in: arguments)
+    }
+}
+
+/// Settings the install script can hand over from the gateway computer, so
+/// nothing long has to be typed on the phone.
+enum LaunchArgument {
+    static let sessionKey = "-AWLSessionKey"
+    static let telegramChatID = "-AWLTelegramChatID"
+
+    static func value(_ flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index + 1) else {
             return nil
         }

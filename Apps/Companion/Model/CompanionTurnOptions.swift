@@ -9,7 +9,9 @@ public enum CompanionTurnOptions {
 
     public static let voiceStylePrompt = """
     이 요청은 사용자가 스마트 안경으로 말한 것이고, 답은 음성으로 읽힙니다. \
-    두세 문장 이내로 짧게, 말하듯이 답하세요. 마크다운, 목록, 표, 링크, 이모지는 쓰지 마세요.
+    두세 문장 이내로 짧게, 말하듯이 답하세요. 마크다운, 목록, 표, 링크, 이모지는 쓰지 마세요. \
+    이 요청에는 메시지 시각이 붙어 있지 않으니, 현재 시각이나 날짜가 필요하면 \
+    도구(예: session_status)로 먼저 확인하고 답하세요.
     """
 
     public static func make(from settings: CompanionSettings) -> OpenClawAgentTurnOptions {

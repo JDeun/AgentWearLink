@@ -324,7 +324,19 @@ final class CompanionRuntime: ObservableObject {
 
     /// USB pairing (see `LaunchSetupCode`). The code itself is never logged.
     private func consumeLaunchSetupCode() {
-        guard let code = LaunchSetupCode.value(in: ProcessInfo.processInfo.arguments) else { return }
+        let arguments = ProcessInfo.processInfo.arguments
+        if let key = LaunchArgument.value(LaunchArgument.sessionKey, in: arguments), key != settings.sessionKey {
+            settings.sessionKey = key
+            record("settings: session key from the connected computer")
+        }
+        if let chat = LaunchArgument.value(LaunchArgument.telegramChatID, in: arguments),
+           CompanionTurnOptions.isTelegramChatID(chat),
+           chat != settings.telegramChatID || !settings.telegramEnabled {
+            settings.telegramChatID = chat
+            settings.telegramEnabled = true
+            record("settings: Telegram chat from the connected computer")
+        }
+        guard let code = LaunchSetupCode.value(in: arguments) else { return }
         record("pairing: setup code from the connected computer")
         pair(setupCode: code)
     }

@@ -64,3 +64,19 @@ final class EchoWindowQueueTests: XCTestCase {
         XCTAssertFalse(window.suppresses(at: t0.addingTimeInterval(14.1)))
     }
 }
+
+final class EmojiFilterTests: XCTestCase {
+    func testDropsPictographsAndTheirGap() {
+        XCTAssertEqual(EmojiFilter.strip("안녕하십니까, 주인님. 🎩"), "안녕하십니까, 주인님.")
+        XCTAssertEqual(EmojiFilter.strip("맑아요 ☀️ 좋습니다"), "맑아요 좋습니다")
+        XCTAssertEqual(EmojiFilter.strip("완료 👍🏽 했습니다"), "완료 했습니다")
+    }
+
+    func testKeepsDigitsHashAndAsterisk() {
+        XCTAssertEqual(EmojiFilter.strip("3시 #1 *중요*"), "3시 #1 *중요*")
+    }
+
+    func testSpeakableOfOnlyEmojiIsNothing() {
+        XCTAssertNil(TTSControlFilter.speakable("🎩"))
+    }
+}

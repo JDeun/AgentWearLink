@@ -25,3 +25,17 @@ final class LaunchSetupCodeTests: XCTestCase {
         XCTAssertNil(LaunchSetupCode.value(in: ["App", "-AWLSetupCode", "   "]))
     }
 }
+
+final class LaunchArgumentTests: XCTestCase {
+    func testReadsSessionKeyAndChat() {
+        let arguments = ["App", "-AWLSessionKey", "agent:main:telegram:default:direct:42", "-AWLTelegramChatID", "42"]
+        XCTAssertEqual(LaunchArgument.value(LaunchArgument.sessionKey, in: arguments), "agent:main:telegram:default:direct:42")
+        XCTAssertEqual(LaunchArgument.value(LaunchArgument.telegramChatID, in: arguments), "42")
+    }
+
+    func testNegativeChatIDIsNotTakenForAFlag() {
+        // Group chat ids are negative; only a leading "-" followed by a
+        // letter would look like a flag, but the parser rejects any "-".
+        XCTAssertNil(LaunchArgument.value(LaunchArgument.telegramChatID, in: ["App", "-AWLTelegramChatID", "-100123"]))
+    }
+}

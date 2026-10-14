@@ -65,10 +65,10 @@ public enum SentenceSplitter {
 /// before speaking.
 public enum TTSControlFilter {
     public static func speakable(_ text: String) -> String? {
-        let kept = text
+        let kept = EmojiFilter.strip(text
             .components(separatedBy: "\n")
             .filter { !isControlLine($0) }
-            .joined(separator: "\n")
+            .joined(separator: "\n"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return kept.isEmpty ? nil : kept
     }
@@ -103,5 +103,32 @@ public struct CallGate: Equatable, Sendable {
         case (true, false): return .lastCallEnded
         default: return .none
         }
+    }
+}
+
+/// Drops emoji before speech: the system voice reads them by name
+/// ("🎩" became "실크해트"). Digits, "#" and "*" are emoji-capable scalars
+/// too, so only pictographic characters are removed.
+public enum EmojiFilter {
+    public static func strip(_ text: String) -> String {
+        var out = ""
+        for character in text where !isPictographic(character) {
+            out.append(character)
+        }
+        // Collapse the gaps left behind ("안녕하십니까 🎩 주인님").
+        while out.contains("  ") { out = out.replacingOccurrences(of: "  ", with: " ") }
+        return out.replacingOccurrences(of: " .", with: ".").trimmingCharacters(in: .whitespaces)
+    }
+
+    static func isPictographic(_ character: Character) -> Bool {
+        let scalars = character.unicodeScalars
+        if scalars.contains(where: { $0.properties.isEmojiPresentation }) { return true }
+        // Text-default emoji turned pictographic by VS16 (e.g. "☺️"), and
+        // keycaps such as "1️⃣".
+        if scalars.contains(where: { $0.value == 0xFE0F || $0.value == 0x20E3 }) { return true }
+        // Remaining pictographs (e.g. "☺" without VS16) above the ASCII and
+        // letter ranges.
+        if let first = scalars.first, first.properties.isEmoji, first.value >= 0x2600 { return true }
+        return false
     }
 }
