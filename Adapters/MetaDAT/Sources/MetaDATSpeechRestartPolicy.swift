@@ -19,11 +19,14 @@ enum MetaDATSpeechRestartPolicy {
     static let limit = 3
     static let delay: Duration = .milliseconds(750)
 
-    static func action(for state: ObservedState, attempts: Int) -> Action {
+    /// - Parameter paused: the host deliberately stopped Speech (glasses
+    ///   taken off or folded); a stop is then expected and never restarted.
+    static func action(for state: ObservedState, attempts: Int, paused: Bool = false) -> Action {
         switch state {
         case .started:
             return .resetAttempts
         case .stopped:
+            if paused { return .none }
             return attempts < limit ? .restart(attempt: attempts + 1) : .giveUp
         case .transitioning:
             return .none

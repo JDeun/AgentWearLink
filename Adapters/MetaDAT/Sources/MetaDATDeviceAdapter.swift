@@ -178,6 +178,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var speechErrorToken: (any AnyListenerToken)?
     private var speechStateToken: (any AnyListenerToken)?
     private var speechRestartAttempts = 0
+    /// Speech deliberately stopped by the host (glasses taken off/folded):
+    /// the DeviceSession and the attached Speech are kept, only Speech is
+    /// stopped, so no new session start is needed when the glasses are worn
+    /// again (a session ended by a doff can refuse new starts, dat-ios #292).
+    private var speechPaused = false
+    private var speechLocaleToken: (any AnyListenerToken)?
     private var inputs: Inputs?
     private var inputsTask: Task<Void, Never>?
     private var transcriptGate: (@Sendable (String) async -> String?)?
@@ -713,7 +719,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         speechStateToken = speech.statePublisher.listen { [weak self] state in
             Task { await self?.handleSpeechState(state, generation: generation) }
         }
+        // The recognizer's locale (never transcript text) for field logs.
+        speechLocaleToken = speech.localePublisher.listen { [weak self] locale in
+            Task { await self?.logSpeechLocale(locale, generation: generation) }
+        }
         speechRestartAttempts = 0
+        speechPaused = false
         self.speech = speech
         speech.start()
 
@@ -758,6 +769,32 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         yieldEvent(event)
     }
 
+    private func logSpeechLocale(_ locale: String, generation: UInt64) {
+        guard !stopping, generationFence.owns(generation) else { return }
+        activityLogger?("speech locale \(locale)")
+    }
+
+    /// Stops DAT Speech but keeps the DeviceSession and the attached Speech
+    /// (glasses taken off or folded). Idempotent.
+    public func pauseSpeech() {
+        guard !stopping, let speech, !speechPaused else { return }
+        speechPaused = true
+        activityLogger?("speech paused")
+        speech.stop()
+    }
+
+    /// Restarts the attached Speech after `pauseSpeech()`. Idempotent; a no-op
+    /// when the session (and its Speech) is gone, which recovery handles.
+    public func resumeSpeech() {
+        guard !stopping, let speech, speechPaused else { return }
+        speechPaused = false
+        speechRestartAttempts = 0
+        activityLogger?("speech resumed")
+        speech.start()
+    }
+
+    public var isSpeechPaused: Bool { speechPaused }
+
     private func handleSpeechState(_ state: SpeechState, generation: UInt64) async {
         guard !stopping, generationFence.owns(generation), let speech else { return }
         activityLogger?("speech \(state)")
@@ -767,13 +804,15 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         case .stopped: observed = .stopped
         default: observed = .transitioning
         }
-        switch MetaDATSpeechRestartPolicy.action(for: observed, attempts: speechRestartAttempts) {
+        switch MetaDATSpeechRestartPolicy.action(
+            for: observed, attempts: speechRestartAttempts, paused: speechPaused
+        ) {
         case .resetAttempts:
             speechRestartAttempts = 0
         case let .restart(attempt):
             speechRestartAttempts = attempt
             try? await Task.sleep(for: MetaDATSpeechRestartPolicy.delay)
-            guard !stopping, generationFence.owns(generation), self.speech === speech else { return }
+            guard !stopping, !speechPaused, generationFence.owns(generation), self.speech === speech else { return }
             activityLogger?("speech restart \(attempt)")
             speech.start()
         case .giveUp:
@@ -1076,6 +1115,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             Task { await speechStateToken.cancel() }
         }
         self.speechStateToken = nil
+        if let speechLocaleToken {
+            Task { await speechLocaleToken.cancel() }
+        }
+        self.speechLocaleToken = nil
+        speechPaused = false
         inputsTask?.cancel()
         inputsTask = nil
         inputs = nil
