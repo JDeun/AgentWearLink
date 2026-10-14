@@ -669,9 +669,37 @@ final class CompanionRuntime: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, !Task.isCancelled else { return }
+                self.appendPowerSample()
                 if self.appActive { await self.checkNow() }
             }
         }
+    }
+
+    // MARK: Power log
+
+    private var speechStallRestartCount = 0
+    private var turnCount = 0
+    private let powerLog = PowerLogFile(
+        url: (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory).appendingPathComponent("power-log.csv")
+    )
+
+    /// One line a minute, also in the background while the keep-alive runs.
+    private func appendPowerSample() {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+")
+        powerLog.append(PowerSample(
+            time: Date(),
+            glassesBattery: signals.glassesBattery,
+            glassesCharging: signals.glassesCharging,
+            listening: signals.listening,
+            speechPause: String(describing: signals.speechPause),
+            keepAliveRunning: keepAlive.isRunning,
+            outputs: outputs,
+            appActive: appActive,
+            phoneLocked: !UIApplication.shared.isProtectedDataAvailable,
+            speechStallRestarts: speechStallRestartCount,
+            turns: turnCount
+        ))
     }
 
     private func startPathMonitor() {
@@ -1122,6 +1150,8 @@ final class CompanionRuntime: ObservableObject {
 
     private func record(_ message: String) {
         log.append(message)
+        if message.hasPrefix("speech stall restart") { speechStallRestartCount += 1 }
+        if message.hasPrefix("request forwarded") { turnCount += 1 }
         #if DEBUG
         // Same lines as the diagnostics screen (never transcripts), so a
         // connected Mac can follow them with `devicectl ... --console`.
