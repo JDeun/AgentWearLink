@@ -26,6 +26,7 @@
 | Other open-source glasses-to-agent projects and their field lessons | [Other projects](other-projects.md) |
 | What a companion app can and cannot know or do on iOS | [Companion app constraints](companion-app-constraints.md) |
 | OpenClaw Gateway behaviour learned on a real deployment | [OpenClaw integration findings](openclaw-integration-findings.md) |
+| What drains the glasses with always-on Speech, and the A/B plan | [Glasses battery](glasses-battery.md) |
 | Physical bring-up log (October 2026) | [Validation log](validation-log-2026-10.md) |
 
 ## Sources
