@@ -281,7 +281,9 @@ final class OpenClawExistingSessionAdapterTests: XCTestCase {
     func testDefaultTurnSendsNoDeliveryOrPromptFields() async throws {
         let params = try await submitOneTurn(turnOptions: .init())
 
-        for key in ["deliver", "channel", "to", "accountId", "extraSystemPrompt"] {
+        for key in [
+            "deliver", "channel", "to", "accountId", "extraSystemPrompt", "inputProvenance",
+        ] {
             XCTAssertNil(params[key], "\(key) must stay off the wire by default")
         }
     }
@@ -294,7 +296,8 @@ final class OpenClawExistingSessionAdapterTests: XCTestCase {
                     to: "7621260501",
                     accountId: "default"
                 ),
-                extraSystemPrompt: "Answer in two short spoken sentences."
+                extraSystemPrompt: "Answer in two short spoken sentences.",
+                inputSourceChannel: "agentwearlink"
             )
         )
 
@@ -306,6 +309,10 @@ final class OpenClawExistingSessionAdapterTests: XCTestCase {
             params["extraSystemPrompt"] as? String,
             "Answer in two short spoken sentences."
         )
+        let provenance = try XCTUnwrap(params["inputProvenance"] as? [String: Any])
+        XCTAssertEqual(provenance["kind"] as? String, "external_user")
+        XCTAssertEqual(provenance["sourceChannel"] as? String, "agentwearlink")
+        XCTAssertEqual(provenance.count, 2)
         XCTAssertEqual(params["sessionKey"] as? String, "agent:main:main")
     }
 
