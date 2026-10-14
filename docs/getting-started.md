@@ -6,7 +6,7 @@ Choose the development path that matches the evidence you need. You **do not nee
 
 | Path | Requirements |
 | --- | --- |
-| Core and OpenClaw protocol tests | Swift 5.10+, macOS 14+; no live Gateway |
+| Core and OpenClaw protocol tests | Swift 5.10+, macOS 14+, Xcode (for XCTest); no live Gateway |
 | Concrete Meta DAT integration | macOS, Xcode, Swift 6.0+ **toolchain**, iOS 17.2+ target, pinned Meta DAT revision |
 | Vendor-backed iOS simulator | Xcode and a compatible installed iOS Simulator runtime; repository-pinned XcodeGen for the generated app host |
 | Real OpenClaw deployment | An **operator-controlled** Gateway, approved device identity, private networking and credentials (not required for CI) |
@@ -23,6 +23,8 @@ cd AgentWearLink
 swift --version
 swift test
 ```
+
+`swift test` needs XCTest, which ships with **Xcode**. With Command Line Tools only, `swift build` works but `swift test` stops with `no such module 'XCTest'`.
 
 This runs deterministic Core, Apple output, Meta adapter *boundary* and OpenClaw protocol tests. It does not require Meta DAT to be paired with a wearable.
 

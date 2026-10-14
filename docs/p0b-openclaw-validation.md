@@ -106,7 +106,9 @@ development-Gateway smoke harness redirects chat output to `/dev/null`.
 The reference iOS host exposes **Check Gateway health (read-only, no glasses)**
 to verify an actual iPhone → Tailscale Serve HTTPS/WSS path before preparing
 Meta registration or connecting physical eyewear. Enter the private
-`<mac-mini>.ts.net` hostname and a development Gateway token, and tap the
+`<mac-mini>.ts.net` hostname (add `:port` when the Gateway is served on a
+separate tailnet-only port, see [Tailscale](tailscale.md)) and a development
+Gateway token, and tap the
 read-only button. The token input is cleared immediately and is not exported.
 
 This path composes the real production `URLSessionOpenClawWebSocket`,
