@@ -28,6 +28,11 @@ final class AWLReferenceRuntimeHost: ObservableObject {
     private let keepAlive = AWLSilentKeepAlive()
     private let speaker = AWLReplySpeaker(language: "ko-KR")
     private var audioHooksInstalled = false
+    /// EXPERIMENT E: reply ducking variants (default off).
+    var experimentReplyDucking: AWLReplyDuckingMode = .off {
+        didSet { speaker.duckingMode = experimentReplyDucking }
+    }
+    private var speechPowerTask: Task<Void, Never>?
     /// Silent self-recovery (no notifications): after an unexpected loss the
     /// host waits for the glasses to be available again and reconnects with
     /// the stored device grant, backing off on gateway failures.
@@ -301,7 +306,11 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         keepAlive.onLog = { [weak self] line in self?.logExperiment(line) }
         keepAlive.onEvent = { [weak self] event in self?.handleAudioEvent(event) }
         speaker.onLog = { [weak self] line in self?.logExperiment(line) }
-        speaker.setDucking = { [weak self] on in self?.keepAlive.setDucking(on) }
+        speaker.setDucking = { [weak self] on in self?.keepAlive.setExperimentalDucking(on) }
+        keepAlive.isDATSessionLive = { [weak self] in
+            guard let self else { return false }
+            return self.runtime != nil || self.connectionFence.isStarting
+        }
     }
 
     /// A phone call ends the DAT session on current firmware (#332): after
@@ -318,6 +327,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             if self.runtime != nil {
                 await self.disconnect()
             }
+            // No DAT session now: the only safe moment to reactivate audio.
+            if self.experimentHoldAudioSession { self.keepAlive.start() }
             self.scheduleRecoveryIfWanted(reason: reason)
         }
     }
@@ -520,6 +531,13 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 output: output
             )
 
+            // dat-ios #292: activate audio BEFORE the DAT session exists and
+            // never reconfigure it while one is live.
+            if experimentHoldAudioSession {
+                installAudioHooks()
+                keepAlive.start()
+            }
+
             // Core itself first subscribes to device.events() before connecting
             // either transport, so no device event is lost during connect.
             runtime = composed
@@ -554,6 +572,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                     return
                 }
                 startLockedExperimentIfEnabled()
+                startSpeechPowerWatch()
                 lastConnectRequest = AWLConnectRequest(
                     hostname: hostname,
                     sessionKey: sessionKey,
@@ -613,6 +632,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
 
     /// The user's own Disconnect: stop and do not recover.
     func userDisconnect() async {
+        speechPowerTask?.cancel()
+        speechPowerTask = nil
         recoveryTask?.cancel()
         recoveryTask = nil
         lastConnectRequest = nil
@@ -654,7 +675,8 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                     let connected = wearables.devices.contains {
                         wearables.deviceForIdentifier($0)?.linkState == .connected
                     }
-                    if connected { break }
+                    // Also worn, unfolded and not too hot (saves glasses battery).
+                    if connected, Self.speechPauseReason() == nil { break }
                     try? await Task.sleep(for: .seconds(2))
                 }
                 if Task.isCancelled { return }
@@ -670,6 +692,41 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 let delay = Self.recoveryBackoff[min(attempt, Self.recoveryBackoff.count - 1)]
                 attempt += 1
                 try? await Task.sleep(for: delay)
+            }
+        }
+    }
+
+    /// Why Speech should be off right now, or nil to listen. Unknown states
+    /// never pause; heat sheds first, then folded, then taken off.
+    static func speechPauseReason() -> String? {
+        let wearables = Wearables.shared
+        guard let device = wearables.devices
+            .compactMap({ wearables.deviceForIdentifier($0) })
+            .first(where: { $0.linkState == .connected }) else { return nil }
+        switch device.thermalLevel {
+        case .severe, .critical, .emergency, .shutdown: return "glasses too hot (\(device.thermalLevel))"
+        default: break
+        }
+        if device.hingeState == .closed { return "glasses folded" }
+        if device.donState == .doffed { return "glasses taken off" }
+        return nil
+    }
+
+    /// Stops Speech (the DAT session) when the glasses are taken off,
+    /// folded or too hot; recovery restarts it once they are usable again.
+    private func startSpeechPowerWatch() {
+        speechPowerTask?.cancel()
+        speechPowerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard let self, !Task.isCancelled, self.runtime != nil else { return }
+                if let reason = Self.speechPauseReason() {
+                    self.logExperiment("speech paused: \(reason)")
+                    await self.disconnect()
+                    self.status = "speech-paused"
+                    self.scheduleRecoveryIfWanted(reason: reason)
+                    return
+                }
             }
         }
     }

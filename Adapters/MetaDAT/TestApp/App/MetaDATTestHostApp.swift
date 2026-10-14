@@ -33,6 +33,8 @@ struct MetaDATTestHostApp: App {
     private var experimentKeepSession = false
     @AppStorage("awl.experiment.holdAudioSession")
     private var experimentHoldAudio = false
+    @AppStorage("awl.experiment.replyDucking")
+    private var experimentReplyDucking = AWLReplyDuckingMode.off.rawValue
     /// Remembered after a successful manual connect; used for auto-connect on
     /// launch, the Start Listening App Intent and silent recovery.
     @AppStorage("awl.autoconnect.enabled")
@@ -193,6 +195,12 @@ struct MetaDATTestHostApp: App {
                         .accessibilityIdentifier("awl-experiment-keep-session")
                     Toggle("EXPERIMENT B: silent keep-alive audio", isOn: $experimentHoldAudio)
                         .accessibilityIdentifier("awl-experiment-hold-audio")
+                    Picker("EXPERIMENT E: reply ducking", selection: $experimentReplyDucking) {
+                        Text("off (default)").tag(AWLReplyDuckingMode.off.rawValue)
+                        Text("1: separate synthesizer session").tag(AWLReplyDuckingMode.separateSynthesizerSession.rawValue)
+                        Text("2: toggle duckOthers (#292 risk)").tag(AWLReplyDuckingMode.toggleDuckOthers.rawValue)
+                    }
+                    .accessibilityIdentifier("awl-experiment-reply-ducking")
                     TextField("EXPERIMENT C: wake phrases (comma, empty = all)", text: $experimentWakePhrases)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -399,6 +407,7 @@ struct MetaDATTestHostApp: App {
         }
         referenceHost.experimentKeepSessionInBackground = experimentKeepSession
         referenceHost.experimentHoldAudioSession = experimentHoldAudio
+        referenceHost.experimentReplyDucking = AWLReplyDuckingMode(rawValue: experimentReplyDucking) ?? .off
         referenceHost.experimentWakePhrases = experimentWakePhrases
     }
 
