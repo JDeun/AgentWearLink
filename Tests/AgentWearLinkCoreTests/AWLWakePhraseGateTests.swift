@@ -71,6 +71,8 @@ final class AWLWakePhraseGateFuzzyHangulTests: XCTestCase {
         XCTAssertEqual(gate().evaluate("앨프레드 안녕"), .forward("안녕"))
         XCTAssertEqual(gate().evaluate("알프레드야 오늘 일정"), .forward("오늘 일정"))
         XCTAssertEqual(gate().evaluate("알프레드님 안녕"), .forward("안녕"))
+        // Field log 2026-10-14: the glasses recognizer split 알 into 아이.
+        XCTAssertEqual(gate().evaluate("아이프레드 지금 몇 시야?"), .forward("지금 몇 시야?"))
     }
 
     func testBareNameWithPunctuationArms() {
@@ -80,6 +82,8 @@ final class AWLWakePhraseGateFuzzyHangulTests: XCTestCase {
     func testDifferentWordsDoNotWake() {
         XCTAssertEqual(gate().evaluate("알바 구하는 중"), .ignore)
         XCTAssertEqual(gate().evaluate("아프리카 여행"), .ignore)
+        XCTAssertEqual(gate().evaluate("아이폰 충전해"), .ignore)
+        XCTAssertEqual(gate().evaluate("프레드 왔어"), .ignore)
         XCTAssertEqual(gate().evaluate("오늘 알프레드 봤어"), .ignore)
     }
 

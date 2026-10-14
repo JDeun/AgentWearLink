@@ -137,8 +137,11 @@ enum AWLHangulFuzzy {
         let rest = String(text[index...]).drop { AWLWakePhraseGate.isSeparator($0) }
 
         let syllables = phrase.unicodeScalars.filter { (0xAC00...0xD7A3).contains($0.value) }.count
-        let allowed = syllables <= 4 ? 1 : 2
         let target = jamo(phraseWords.joined())
+        // Short names allow one jamo edit. Names of 9+ jamo (e.g. 알프레드)
+        // allow two: recognizers split a final consonant into a syllable
+        // ("알프레드" heard as "아이프레드", field log 2026-10-14).
+        let allowed = syllables <= 4 && target.count < 9 ? 1 : 2
 
         var candidates = [words.joined()]
         if let last = words.last {
