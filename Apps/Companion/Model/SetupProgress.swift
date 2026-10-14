@@ -56,7 +56,7 @@ public struct SetupProgress: Equatable, Sendable {
         return true
     }
 
-    /// "맥미니 승인만 다시 받기": go back to the Gateway step only.
+    /// "승인만 다시 받기": go back to the Gateway step only.
     public mutating func restartGatewayApproval() {
         completed.remove(.gateway)
         completed.remove(.practice)

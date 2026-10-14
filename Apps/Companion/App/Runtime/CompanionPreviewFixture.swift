@@ -22,7 +22,7 @@ enum CompanionPreviewFixture {
         let now = Date()
         var settings = CompanionSettings()
         settings.setupCompleted = fixture != "setup"
-        settings.gatewayURL = "wss://gateway.example.ts.net"
+        settings.gatewayURL = "wss://studio.example.ts.net"
         settings.agentName = "Nova"
         settings.telegramEnabled = true
         settings.telegramChatID = "100000000"

@@ -27,6 +27,7 @@ final class CompanionSettingsTests: XCTestCase {
         settings.setupCompleted = true
         settings.gatewayURL = "wss://gateway.example.ts.net"
         settings.agentName = "Nova"
+        settings.gatewayName = "Studio"
         settings.wakePhrases = ["Nova", "노바"]
         settings.listenEnabled = false
         settings.telegramEnabled = true

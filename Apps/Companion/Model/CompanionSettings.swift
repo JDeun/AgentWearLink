@@ -10,6 +10,9 @@ public struct CompanionSettings: Equatable, Sendable {
     public var setupCompleted = false
     /// Validated Gateway WebSocket URL, e.g. `wss://host.tailnet.ts.net`.
     public var gatewayURL: String = ""
+    /// User-edited display name for the Gateway host ("게이트웨이 이름").
+    /// Empty means "derive from the paired host".
+    public var gatewayName: String = ""
     /// Agent display name reported by the Gateway (`agent.identity.get`).
     public var agentName: String = ""
     /// Phrases that start a request. Empty means "derive from the agent name".
@@ -37,6 +40,13 @@ public struct CompanionSettings: Equatable, Sendable {
         return custom.isEmpty ? WakePhrases.defaults(forAgentName: agentName) : custom
     }
 
+    /// Name shown for the Gateway hop: the user's name, else the first DNS
+    /// label of the paired host. Empty when unknown (the UI says "게이트웨이").
+    public var gatewayDisplayName: String {
+        let custom = gatewayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return custom.isEmpty ? GatewayAddress.defaultName(forGatewayURL: gatewayURL) : custom
+    }
+
     /// Telegram delivery is only real when switched on and a chat id is valid.
     public var isTelegramDeliveryConfigured: Bool {
         telegramEnabled && CompanionTurnOptions.isTelegramChatID(telegramChatID)
@@ -50,6 +60,7 @@ public struct CompanionSettingsStore {
         public static let setupCompleted = "awl.companion.setupCompleted"
         public static let gatewayURL = "awl.companion.gatewayURL"
         public static let agentName = "awl.companion.agentName"
+        public static let gatewayName = "awl.companion.gatewayName"
         public static let wakePhrases = "awl.companion.wakePhrases"
         public static let listenEnabled = "awl.companion.listenEnabled"
         public static let telegramEnabled = "awl.companion.telegramEnabled"
@@ -60,7 +71,7 @@ public struct CompanionSettingsStore {
         public static let lastReplyLatency = "awl.companion.lastReplyLatency"
 
         static let all = [
-            setupCompleted, gatewayURL, agentName, wakePhrases, listenEnabled,
+            setupCompleted, gatewayURL, gatewayName, agentName, wakePhrases, listenEnabled,
             telegramEnabled, telegramChatID, voiceStyle, sessionKey,
             lastReplyAt, lastReplyLatency,
         ]
@@ -77,6 +88,7 @@ public struct CompanionSettingsStore {
         settings.setupCompleted = defaults.bool(forKey: Key.setupCompleted)
         settings.gatewayURL = defaults.string(forKey: Key.gatewayURL) ?? ""
         settings.agentName = defaults.string(forKey: Key.agentName) ?? ""
+        settings.gatewayName = defaults.string(forKey: Key.gatewayName) ?? ""
         settings.wakePhrases = defaults.stringArray(forKey: Key.wakePhrases) ?? []
         settings.listenEnabled = defaults.object(forKey: Key.listenEnabled) as? Bool ?? true
         settings.telegramEnabled = defaults.bool(forKey: Key.telegramEnabled)
@@ -94,6 +106,7 @@ public struct CompanionSettingsStore {
         defaults.set(settings.setupCompleted, forKey: Key.setupCompleted)
         defaults.set(settings.gatewayURL, forKey: Key.gatewayURL)
         defaults.set(settings.agentName, forKey: Key.agentName)
+        defaults.set(settings.gatewayName, forKey: Key.gatewayName)
         defaults.set(settings.wakePhrases, forKey: Key.wakePhrases)
         defaults.set(settings.listenEnabled, forKey: Key.listenEnabled)
         defaults.set(settings.telegramEnabled, forKey: Key.telegramEnabled)

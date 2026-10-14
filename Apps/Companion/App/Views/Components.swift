@@ -85,7 +85,7 @@ struct ChainListView: View {
     let rows: [HomeViewState.Row]
     let signals: ConnectionSignals
     let agentName: String
-    let gatewayHost: String
+    let gatewayName: String
 
     var body: some View {
         Card {
@@ -97,7 +97,7 @@ struct ChainListView: View {
                         isLast: index == rows.count - 1,
                         signals: signals,
                         agentName: agentName,
-                        gatewayHost: gatewayHost
+                        gatewayName: gatewayName
                     )
                 }
             }
@@ -113,7 +113,7 @@ struct ChainRowView: View {
     let isLast: Bool
     let signals: ConnectionSignals
     let agentName: String
-    let gatewayHost: String
+    let gatewayName: String
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -175,8 +175,8 @@ struct ChainRowView: View {
         switch row.id {
         case .glasses: Text("메타 안경")
         case .phone: Text("이 iPhone")
-        case .network: Text("집 네트워크")
-        case .gateway: Text("맥미니")
+        case .network: Text("네트워크")
+        case .gateway: Text(verbatim: gatewayName)
         case .agent:
             if agentName.isEmpty { Text("에이전트") } else { Text(verbatim: agentName) }
         }
@@ -210,13 +210,9 @@ struct ChainRowView: View {
             case .phone:
                 signals.listening ? Text("듣는 중") : Text("앱 실행 중")
             case .network:
-                Text("맥미니까지 응답함")
+                Text("Tailscale로 게이트웨이 응답")
             case .gateway:
-                if gatewayHost.isEmpty {
-                    Text("OpenClaw 게이트웨이 · 이 기기 승인됨")
-                } else {
-                    Text("\(gatewayHost) · 이 기기 승인됨")
-                }
+                Text("OpenClaw 게이트웨이 · 이 기기 승인됨")
             case .agent:
                 if let last = signals.lastReplyAt {
                     Text("마지막 응답 \(RelativeTime.string(last))")
@@ -240,9 +236,9 @@ struct ProblemText: View {
         case .metaRegistrationMissing: Text("Meta AI 앱 등록 필요")
         case .microphoneDenied: Text("안경 마이크 권한 없음")
         case .appNotRunning: Text("앱이 실행 중이 아님")
-        case .networkUnreachable: Text("맥미니까지 닿지 않음")
+        case .networkUnreachable: Text("게이트웨이까지 닿지 않음")
         case .gatewayUnreachable: Text("게이트웨이가 응답하지 않음")
-        case .pairingPending: Text("맥미니에서 승인 대기 중")
+        case .pairingPending: Text("게이트웨이에서 승인 대기 중")
         case .pairingRevoked: Text("이 기기 승인이 필요함")
         case .agentNotResponding: Text("에이전트가 응답하지 않음")
         }
@@ -252,13 +248,14 @@ struct ProblemText: View {
 /// Headline for the Repair screen and the problem banner.
 struct ProblemHeadline: View {
     let link: AWLChainLinkID
+    let gatewayName: String
 
     var body: some View {
         switch link {
         case .glasses: Text("안경 연결에 문제가 있어요")
         case .phone: Text("이 iPhone 설정이 필요해요")
-        case .network: Text("맥미니에 닿지 않아요")
-        case .gateway: Text("맥미니 게이트웨이에 문제가 있어요")
+        case .network: Text("\(gatewayName)에 닿지 않아요")
+        case .gateway: Text("\(gatewayName)에 문제가 있어요")
         case .agent: Text("에이전트가 답하지 않아요")
         }
     }

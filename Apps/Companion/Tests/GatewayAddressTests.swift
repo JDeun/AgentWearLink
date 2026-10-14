@@ -47,8 +47,22 @@ final class GatewayAddressTests: XCTestCase {
         XCTAssertEqual(try GatewayAddress.endpoint(for: setup.url).exposure, .tailnetServe)
     }
 
-    func testDisplayHostIsTheFirstLabel() {
-        XCTAssertEqual(GatewayAddress.displayHost("wss://gateway.example.ts.net"), "gateway")
-        XCTAssertEqual(GatewayAddress.displayHost("nonsense"), "")
+    func testDefaultNameIsTheFirstDNSLabel() {
+        XCTAssertEqual(GatewayAddress.defaultName(forGatewayURL: "wss://mac-mini.tail1234.ts.net"), "mac-mini")
+        XCTAssertEqual(GatewayAddress.defaultName(forGatewayURL: "ws://gateway-host:18789"), "gateway-host")
+        XCTAssertEqual(GatewayAddress.defaultName(forGatewayURL: "ws://100.101.102.103:18789"), "100.101.102.103")
+        XCTAssertEqual(GatewayAddress.defaultName(forGatewayURL: ""), "")
+        XCTAssertEqual(GatewayAddress.defaultName(forGatewayURL: "nonsense"), "")
+    }
+
+    func testUserGatewayNameOverridesTheDerivedOne() {
+        var settings = CompanionSettings()
+        XCTAssertEqual(settings.gatewayDisplayName, "")
+        settings.gatewayURL = "wss://mac-mini.tail1234.ts.net"
+        XCTAssertEqual(settings.gatewayDisplayName, "mac-mini")
+        settings.gatewayName = "  Studio  "
+        XCTAssertEqual(settings.gatewayDisplayName, "Studio")
+        settings.gatewayName = " "
+        XCTAssertEqual(settings.gatewayDisplayName, "mac-mini")
     }
 }

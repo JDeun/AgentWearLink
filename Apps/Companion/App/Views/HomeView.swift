@@ -15,13 +15,14 @@ struct HomeView: View {
                         banner: state.banner,
                         wakePhrase: runtime.settings.effectiveWakePhrases.first ?? "",
                         lastCheckAt: runtime.lastCheckAt,
+                        gatewayName: runtime.gatewayLabel,
                         onRepair: { repairProblem = $0 }
                     )
                     ChainListView(
                         rows: state.rows,
                         signals: runtime.signals,
                         agentName: runtime.settings.agentName,
-                        gatewayHost: GatewayAddress.displayHost(runtime.settings.gatewayURL)
+                        gatewayName: runtime.gatewayLabel
                     )
                     tiles
                     if state.showsTelegramLink {
@@ -139,6 +140,7 @@ struct StatusBanner: View {
     let banner: HomeViewState.Banner
     let wakePhrase: String
     let lastCheckAt: Date?
+    let gatewayName: String
     let onRepair: (AWLChainProblem) -> Void
 
     var body: some View {
@@ -199,7 +201,7 @@ struct StatusBanner: View {
         case .allConnected: Text("모두 연결됨")
         case .waitingForGlasses: Text("안경 대기 중")
         case .listeningOff: Text("안경 호출 꺼짐")
-        case let .problem(problem): ProblemHeadline(link: problem.link)
+        case let .problem(problem): ProblemHeadline(link: problem.link, gatewayName: gatewayName)
         case .checking: Text("확인 중")
         }
     }

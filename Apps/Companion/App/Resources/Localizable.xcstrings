@@ -1,18 +1,34 @@
 {
   "sourceLanguage": "ko",
   "strings": {
-    "%@ · 이 기기 승인됨": {
+    "%@ 연결": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ · this device approved"
+            "value": "Connect %@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ · 이 기기 승인됨"
+            "value": "%@ 연결"
+          }
+        }
+      }
+    },
+    "%@ 연결 완료": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ connected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 연결 완료"
           }
         }
       }
@@ -29,6 +45,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 확인"
+          }
+        }
+      }
+    },
+    "%@에 닿지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 닿지 않아요"
+          }
+        }
+      }
+    },
+    "%@에 문제가 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ has a problem"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 문제가 있어요"
           }
         }
       }
@@ -257,6 +305,38 @@
         }
       }
     },
+    "OpenClaw 게이트웨이가 멈춤": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The OpenClaw Gateway stopped"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenClaw 게이트웨이가 멈춤"
+          }
+        }
+      }
+    },
+    "OpenClaw 게이트웨이에서 새 기기 요청을 승인해 주세요. 요청의 기기 지문이 아래와 같은지 확인하세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve the new device request on the OpenClaw Gateway. Check that its fingerprint matches the one below."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenClaw 게이트웨이에서 새 기기 요청을 승인해 주세요. 요청의 기기 지문이 아래와 같은지 확인하세요."
+          }
+        }
+      }
+    },
     "QR 찍기": {
       "localizations": {
         "en": {
@@ -337,6 +417,22 @@
         }
       }
     },
+    "Tailscale로 게이트웨이 응답": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway answers over Tailscale"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale로 게이트웨이 응답"
+          }
+        }
+      }
+    },
     "Tailscale을 항상 연결해 두세요": {
       "localizations": {
         "en": {
@@ -401,6 +497,118 @@
         }
       }
     },
+    "게이트웨이": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이"
+          }
+        }
+      }
+    },
+    "게이트웨이 연결": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect the Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 연결"
+          }
+        }
+      }
+    },
+    "게이트웨이 이름": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 이름"
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터가 꺼졌거나 잠듦": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Gateway computer is off or asleep"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터가 꺼졌거나 잠듦"
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터에서 openclaw qr을 실행하면 주소와 1회용 연결 코드가 담긴 QR이 나와요. 토큰을 직접 입력할 필요가 없어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run openclaw qr on the Gateway computer to show a QR with its address and a one-time code. No need to type a token."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터에서 openclaw qr을 실행하면 주소와 1회용 연결 코드가 담긴 QR이 나와요. 토큰을 직접 입력할 필요가 없어요."
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터의 QR을 찍어 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the QR from your Gateway computer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터의 QR을 찍어 주세요"
+          }
+        }
+      }
+    },
+    "게이트웨이가 연결을 거절했어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Gateway refused the connection."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이가 연결을 거절했어요."
+          }
+        }
+      }
+    },
     "게이트웨이가 응답하지 않음": {
       "localizations": {
         "en": {
@@ -413,6 +621,118 @@
           "stringUnit": {
             "state": "translated",
             "value": "게이트웨이가 응답하지 않음"
+          }
+        }
+      }
+    },
+    "게이트웨이까지 닿지 않음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach the Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이까지 닿지 않음"
+          }
+        }
+      }
+    },
+    "게이트웨이에 닿지 않아요. Tailscale이 켜져 있는지 확인해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach the Gateway. Check that Tailscale is on."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이에 닿지 않아요. Tailscale이 켜져 있는지 확인해 주세요."
+          }
+        }
+      }
+    },
+    "게이트웨이에 연결하는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to the Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이에 연결하는 중"
+          }
+        }
+      }
+    },
+    "게이트웨이에서 승인 대기 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for approval on the Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이에서 승인 대기 중"
+          }
+        }
+      }
+    },
+    "게이트웨이에서 승인을 기다리는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for approval on the Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이에서 승인을 기다리는 중"
+          }
+        }
+      }
+    },
+    "게이트웨이에서 이 기기 승인을 아직 하지 않음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device hasn't been approved on the Gateway yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이에서 이 기기 승인을 아직 하지 않음"
+          }
+        }
+      }
+    },
+    "게이트웨이에서 이 기기 승인이 취소됨": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device's approval was revoked on the Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이에서 이 기기 승인이 취소됨"
           }
         }
       }
@@ -509,6 +829,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "나중에 하기"
+          }
+        }
+      }
+    },
+    "네트워크": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네트워크"
           }
         }
       }
@@ -785,342 +1121,6 @@
         }
       }
     },
-    "맥미니": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니"
-          }
-        }
-      }
-    },
-    "맥미니 게이트웨이에 문제가 있어요": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The Mac mini Gateway has a problem"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니 게이트웨이에 문제가 있어요"
-          }
-        }
-      }
-    },
-    "맥미니 승인 다시 받기": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Approve on the Mac mini again"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니 승인 다시 받기"
-          }
-        }
-      }
-    },
-    "맥미니 승인만 다시 받기": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Re-approve on the Mac mini only"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니 승인만 다시 받기"
-          }
-        }
-      }
-    },
-    "맥미니 연결": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect the Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니 연결"
-          }
-        }
-      }
-    },
-    "맥미니 연결 완료": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mac mini connected"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니 연결 완료"
-          }
-        }
-      }
-    },
-    "맥미니 화면의 QR을 찍어 주세요": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan the QR on your Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니 화면의 QR을 찍어 주세요"
-          }
-        }
-      }
-    },
-    "맥미니가 꺼졌거나 잠듦": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The Mac mini is off or asleep"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니가 꺼졌거나 잠듦"
-          }
-        }
-      }
-    },
-    "맥미니까지 닿지 않음": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't reach the Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니까지 닿지 않음"
-          }
-        }
-      }
-    },
-    "맥미니까지 응답함": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The Mac mini answers"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니까지 응답함"
-          }
-        }
-      }
-    },
-    "맥미니에 닿지 않아요": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't reach the Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니에 닿지 않아요"
-          }
-        }
-      }
-    },
-    "맥미니에 닿지 않아요. Tailscale이 켜져 있는지 확인해 주세요.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't reach the Mac mini. Check that Tailscale is on."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니에 닿지 않아요. Tailscale이 켜져 있는지 확인해 주세요."
-          }
-        }
-      }
-    },
-    "맥미니에 연결하는 중": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connecting to the Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니에 연결하는 중"
-          }
-        }
-      }
-    },
-    "맥미니에서 openclaw qr을 실행하면 주소와 1회용 연결 코드가 담긴 QR이 나와요. 토큰을 직접 입력할 필요가 없어요.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Run openclaw qr on the Mac mini to show a QR with its address and a one-time code. No need to type a token."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니에서 openclaw qr을 실행하면 주소와 1회용 연결 코드가 담긴 QR이 나와요. 토큰을 직접 입력할 필요가 없어요."
-          }
-        }
-      }
-    },
-    "맥미니에서 승인 대기 중": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Waiting for approval on the Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니에서 승인 대기 중"
-          }
-        }
-      }
-    },
-    "맥미니에서 승인을 기다리는 중": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Waiting for approval on the Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니에서 승인을 기다리는 중"
-          }
-        }
-      }
-    },
-    "맥미니에서 이 기기 승인을 아직 하지 않음": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This device hasn't been approved on the Mac mini yet"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니에서 이 기기 승인을 아직 하지 않음"
-          }
-        }
-      }
-    },
-    "맥미니에서 이 기기 승인이 취소됨": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This device's approval was revoked on the Mac mini"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니에서 이 기기 승인이 취소됨"
-          }
-        }
-      }
-    },
-    "맥미니의 OpenClaw 게이트웨이가 멈춤": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The OpenClaw Gateway on the Mac mini stopped"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니의 OpenClaw 게이트웨이가 멈춤"
-          }
-        }
-      }
-    },
-    "맥미니의 OpenClaw에서 새 기기 요청을 승인해 주세요. 요청의 기기 지문이 아래와 같은지 확인하세요.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Approve the new device request in OpenClaw on the Mac mini. Check that its fingerprint matches the one below."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니의 OpenClaw에서 새 기기 요청을 승인해 주세요. 요청의 기기 지문이 아래와 같은지 확인하세요."
-          }
-        }
-      }
-    },
-    "맥미니의 게이트웨이가 연결을 거절했어요.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The Mac mini Gateway refused the connection."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "맥미니의 게이트웨이가 연결을 거절했어요."
-          }
-        }
-      }
-    },
     "메타 안경": {
       "localizations": {
         "en": {
@@ -1217,18 +1217,18 @@
         }
       }
     },
-    "밖에서도 맥미니에 닿으려면 이 iPhone의 Tailscale이 켜져 있어야 해요.": {
+    "밖에서도 게이트웨이에 닿으려면 이 iPhone의 Tailscale이 켜져 있어야 해요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "To reach the Mac mini away from home, Tailscale must stay on on this iPhone."
+            "value": "To reach the Gateway away from home, Tailscale must stay on on this iPhone."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "밖에서도 맥미니에 닿으려면 이 iPhone의 Tailscale이 켜져 있어야 해요."
+            "value": "밖에서도 게이트웨이에 닿으려면 이 iPhone의 Tailscale이 켜져 있어야 해요."
           }
         }
       }
@@ -1313,34 +1313,34 @@
         }
       }
     },
-    "설정 코드가 만료됐어요. 맥미니에서 QR을 새로 만들어 주세요.": {
+    "설정 코드가 만료됐어요. 게이트웨이 컴퓨터에서 QR을 새로 만들어 주세요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The setup code expired. Create a new QR on the Mac mini."
+            "value": "The setup code expired. Create a new QR on the Gateway computer."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "설정 코드가 만료됐어요. 맥미니에서 QR을 새로 만들어 주세요."
+            "value": "설정 코드가 만료됐어요. 게이트웨이 컴퓨터에서 QR을 새로 만들어 주세요."
           }
         }
       }
     },
-    "설정 코드를 읽을 수 없어요. 맥미니에서 QR을 새로 만들어 주세요.": {
+    "설정 코드를 읽을 수 없어요. 게이트웨이 컴퓨터에서 QR을 새로 만들어 주세요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't read the setup code. Create a new QR on the Mac mini."
+            "value": "Couldn't read the setup code. Create a new QR on the Gateway computer."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "설정 코드를 읽을 수 없어요. 맥미니에서 QR을 새로 만들어 주세요."
+            "value": "설정 코드를 읽을 수 없어요. 게이트웨이 컴퓨터에서 QR을 새로 만들어 주세요."
           }
         }
       }
@@ -1453,6 +1453,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "승인되지 않았거나 권한이 부족해요. 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "승인만 다시 받기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Re-approve this device only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인만 다시 받기"
           }
         }
       }
@@ -2001,6 +2017,22 @@
         }
       }
     },
+    "에이전트 답을 받을 텔레그램 채팅의 숫자 ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Numeric ID of the Telegram chat that receives the agent's replies"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 답을 받을 텔레그램 채팅의 숫자 ID"
+          }
+        }
+      }
+    },
     "에이전트가 다른 작업 중이거나 응답이 늦음": {
       "localizations": {
         "en": {
@@ -2193,18 +2225,18 @@
         }
       }
     },
-    "연결하면 맥미니에 승인 요청이 가요. 승인할 때 이 기기 지문 %@이 맞는지 확인하세요.": {
+    "연결하면 게이트웨이에 승인 요청이 가요. 승인할 때 이 기기 지문 %@이 맞는지 확인하세요.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecting sends an approval request to the Mac mini. When approving, check that the device fingerprint is %@."
+            "value": "Connecting sends an approval request to the Gateway. When approving, check that the device fingerprint is %@."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "연결하면 맥미니에 승인 요청이 가요. 승인할 때 이 기기 지문 %@이 맞는지 확인하세요."
+            "value": "연결하면 게이트웨이에 승인 요청이 가요. 승인할 때 이 기기 지문 %@이 맞는지 확인하세요."
           }
         }
       }
@@ -2337,18 +2369,18 @@
         }
       }
     },
-    "이 기기의 저장된 승인을 지우고 맥미니 연결 단계로 돌아갑니다. 다른 설정은 그대로입니다.": {
+    "이 기기의 저장된 승인을 지우고 게이트웨이 연결 단계로 돌아갑니다. 다른 설정은 그대로입니다.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Removes this device's stored approval and returns to the Mac mini step. Other settings stay."
+            "value": "Removes this device's stored approval and returns to the Gateway step. Other settings stay."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 기기의 저장된 승인을 지우고 맥미니 연결 단계로 돌아갑니다. 다른 설정은 그대로입니다."
+            "value": "이 기기의 저장된 승인을 지우고 게이트웨이 연결 단계로 돌아갑니다. 다른 설정은 그대로입니다."
           }
         }
       }
@@ -2433,18 +2465,18 @@
         }
       }
     },
-    "주소 (예: mac-mini.tailnet.ts.net)": {
+    "주소 (예: gateway-host.tailnet.ts.net)": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Address (e.g. mac-mini.tailnet.ts.net)"
+            "value": "Address (e.g. gateway-host.tailnet.ts.net)"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "주소 (예: mac-mini.tailnet.ts.net)"
+            "value": "주소 (예: gateway-host.tailnet.ts.net)"
           }
         }
       }
@@ -2541,22 +2573,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "진단 로그 (개발자용)"
-          }
-        }
-      }
-    },
-    "집 네트워크": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Home network"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "집 네트워크"
           }
         }
       }

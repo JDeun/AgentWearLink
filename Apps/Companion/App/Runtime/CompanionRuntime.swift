@@ -48,6 +48,11 @@ final class CompanionRuntime: ObservableObject {
     @Published private(set) var log = ActivityLog()
 
     var isListening: Bool { runtime != nil }
+    /// Gateway hop name for the UI; "게이트웨이"/"Gateway" when unknown.
+    var gatewayLabel: String {
+        let name = settings.gatewayDisplayName
+        return name.isEmpty ? String(localized: "게이트웨이") : name
+    }
     var homeState: HomeViewState {
         HomeViewState(signals: signals, telegramConfigured: settings.isTelegramDeliveryConfigured)
     }
@@ -305,7 +310,7 @@ final class CompanionRuntime: ObservableObject {
 
     // MARK: Settings actions
 
-    /// "맥미니 승인만 다시 받기".
+    /// "승인만 다시 받기".
     func reapprove() async {
         await stopListening(userInitiated: true)
         if let endpoint = currentEndpoint { await gatewayLink.forgetGrant(for: endpoint) }

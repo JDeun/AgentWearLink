@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var confirmReset = false
     @State private var versionTaps = 0
     @State private var showDiagnostics = false
+    @State private var showFullFingerprint = false
 
     var body: some View {
         Form {
@@ -25,11 +26,21 @@ struct SettingsView: View {
                 )
                 if runtime.settings.telegramEnabled {
                     VStack(alignment: .leading, spacing: 6) {
-                        TextField(text: binding(\.telegramChatID)) { Text("텔레그램 채팅 ID") }
-                            .keyboardType(.numbersAndPunctuation)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .frame(minHeight: 44)
+                        Text("텔레그램 채팅 ID")
+                            .font(.subheadline.weight(.semibold))
+                        // Numbers-first keyboard: group chat ids start with "-".
+                        TextField(text: binding(\.telegramChatID), prompt: Text(verbatim: "123456789")) {
+                            Text("텔레그램 채팅 ID")
+                        }
+                        .keyboardType(.numbersAndPunctuation)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
+                        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        Text("에이전트 답을 받을 텔레그램 채팅의 숫자 ID")
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondary)
                         if !runtime.settings.telegramChatID.isEmpty,
                            !CompanionTurnOptions.isTelegramChatID(runtime.settings.telegramChatID) {
                             Text("숫자로 된 채팅 ID를 입력해 주세요")
@@ -72,25 +83,34 @@ struct SettingsView: View {
             }
 
             Section {
-                LabeledContent {
-                    VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("게이트웨이 이름")
+                        .font(.subheadline.weight(.semibold))
+                    TextField(
+                        text: binding(\.gatewayName),
+                        prompt: Text(verbatim: defaultGatewayName)
+                    ) {
+                        Text("게이트웨이 이름")
+                    }
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 44)
+                }
+                DisclosureGroup(isExpanded: $showFullFingerprint) {
+                    Text(verbatim: DeviceFingerprint.grouped(runtime.deviceID))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.secondary)
+                        .textSelection(.enabled)
+                } label: {
+                    LabeledContent {
                         Text(verbatim: DeviceFingerprint.short(runtime.deviceID))
                             .font(.body.monospaced().weight(.semibold))
                             .foregroundStyle(Theme.accent)
-                        Text(verbatim: DeviceFingerprint.grouped(runtime.deviceID))
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(Theme.tertiary)
-                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Text("이 기기 지문")
                     }
-                    .textSelection(.enabled)
-                } label: {
-                    Text("이 기기 지문")
                 }
-                LabeledContent {
-                    Text(verbatim: GatewayAddress.displayHost(runtime.settings.gatewayURL))
-                } label: {
-                    Text("맥미니")
-                }
+                .frame(minHeight: 44)
                 if !runtime.settings.agentName.isEmpty {
                     LabeledContent {
                         Text(verbatim: runtime.settings.agentName)
@@ -106,7 +126,7 @@ struct SettingsView: View {
                 Button {
                     confirmReapprove = true
                 } label: {
-                    Text("맥미니 승인만 다시 받기").frame(minHeight: 44)
+                    Text("승인만 다시 받기").frame(minHeight: 44)
                 }
                 Button(role: .destructive) {
                     confirmReset = true
@@ -140,16 +160,22 @@ struct SettingsView: View {
         .onAppear {
             phrasesText = runtime.settings.effectiveWakePhrases.joined(separator: ", ")
         }
-        .confirmationDialog(Text("맥미니 승인만 다시 받기"), isPresented: $confirmReapprove, titleVisibility: .visible) {
+        .confirmationDialog(Text("승인만 다시 받기"), isPresented: $confirmReapprove, titleVisibility: .visible) {
             Button("승인 다시 받기") { Task { await runtime.reapprove() } }
         } message: {
-            Text("이 기기의 저장된 승인을 지우고 맥미니 연결 단계로 돌아갑니다. 다른 설정은 그대로입니다.")
+            Text("이 기기의 저장된 승인을 지우고 게이트웨이 연결 단계로 돌아갑니다. 다른 설정은 그대로입니다.")
         }
         .confirmationDialog(Text("모두 지우고 처음부터"), isPresented: $confirmReset, titleVisibility: .visible) {
             Button("모두 지우기", role: .destructive) { Task { await runtime.resetEverything() } }
         } message: {
             Text("승인, 기기 지문, 모든 설정을 지우고 처음 설정부터 다시 시작합니다.")
         }
+    }
+
+    /// Placeholder: the name derived from the paired host, else "게이트웨이".
+    private var defaultGatewayName: String {
+        let derived = GatewayAddress.defaultName(forGatewayURL: runtime.settings.gatewayURL)
+        return derived.isEmpty ? String(localized: "게이트웨이") : derived
     }
 
     private func savePhrases() {

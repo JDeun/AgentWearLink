@@ -104,13 +104,16 @@ private struct StepList: View {
 }
 
 private struct StepTitle: View {
+    @EnvironmentObject private var runtime: CompanionRuntime
     let step: SetupStep
     var body: some View {
         switch step {
         case .metaRegistration: Text("메타 안경 등록")
         case .microphone: Text("마이크 권한")
         case .tailscale: Text("Tailscale 자동 연결")
-        case .gateway: Text("맥미니 연결")
+        case .gateway:
+            let name = runtime.settings.gatewayDisplayName
+            if name.isEmpty { Text("게이트웨이 연결") } else { Text("\(name) 연결") }
         case .practice: Text("호출 연습")
         }
     }
@@ -237,7 +240,7 @@ private struct TailscaleStep: View {
         VStack(alignment: .leading, spacing: 16) {
             StepHeader(
                 title: "Tailscale을 항상 연결해 두세요",
-                message: "밖에서도 맥미니에 닿으려면 이 iPhone의 Tailscale이 켜져 있어야 해요."
+                message: "밖에서도 게이트웨이에 닿으려면 이 iPhone의 Tailscale이 켜져 있어야 해요."
             )
             VStack(alignment: .leading, spacing: 10) {
                 GuideLine(number: 1, text: "Tailscale 앱을 열고 설정으로 이동")
@@ -299,8 +302,8 @@ private struct GatewayStep: View {
     private var entry: some View {
         VStack(alignment: .leading, spacing: 16) {
             StepHeader(
-                title: "맥미니 화면의 QR을 찍어 주세요",
-                message: "맥미니에서 openclaw qr을 실행하면 주소와 1회용 연결 코드가 담긴 QR이 나와요. 토큰을 직접 입력할 필요가 없어요."
+                title: "게이트웨이 컴퓨터의 QR을 찍어 주세요",
+                message: "게이트웨이 컴퓨터에서 openclaw qr을 실행하면 주소와 1회용 연결 코드가 담긴 QR이 나와요. 토큰을 직접 입력할 필요가 없어요."
             )
             if case let .failed(error) = runtime.pairing {
                 Notice(text: failureText(error))
@@ -366,7 +369,7 @@ private struct GatewayStep: View {
 
     private var manualForm: some View {
         VStack(spacing: 12) {
-            TextField(text: $address) { Text("주소 (예: mac-mini.tailnet.ts.net)") }
+            TextField(text: $address) { Text("주소 (예: gateway-host.tailnet.ts.net)") }
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -389,7 +392,7 @@ private struct GatewayStep: View {
         let short = Text(verbatim: DeviceFingerprint.short(runtime.deviceID))
             .font(.footnote.monospaced().weight(.semibold))
             .foregroundColor(Theme.accent)
-        return Text("연결하면 맥미니에 승인 요청이 가요. 승인할 때 이 기기 지문 \(short)이 맞는지 확인하세요.")
+        return Text("연결하면 게이트웨이에 승인 요청이 가요. 승인할 때 이 기기 지문 \(short)이 맞는지 확인하세요.")
             .font(.footnote)
             .foregroundStyle(Theme.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -400,13 +403,13 @@ private struct GatewayStep: View {
             HStack(spacing: 12) {
                 ProgressView().tint(Theme.accent)
                 if runtime.pairing == .connecting {
-                    Text("맥미니에 연결하는 중").font(.title3.weight(.bold))
+                    Text("게이트웨이에 연결하는 중").font(.title3.weight(.bold))
                 } else {
-                    Text("맥미니에서 승인을 기다리는 중").font(.title3.weight(.bold))
+                    Text("게이트웨이에서 승인을 기다리는 중").font(.title3.weight(.bold))
                 }
             }
             .foregroundStyle(Theme.text)
-            Text("맥미니의 OpenClaw에서 새 기기 요청을 승인해 주세요. 요청의 기기 지문이 아래와 같은지 확인하세요.")
+            Text("OpenClaw 게이트웨이에서 새 기기 요청을 승인해 주세요. 요청의 기기 지문이 아래와 같은지 확인하세요.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -432,7 +435,7 @@ private struct GatewayStep: View {
     private var succeeded: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label {
-                Text("맥미니 연결 완료").font(.title3.weight(.bold))
+                Text("\(runtime.gatewayLabel) 연결 완료").font(.title3.weight(.bold))
             } icon: {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
             }
@@ -450,12 +453,12 @@ private struct GatewayStep: View {
 
     private func failureText(_ error: CompanionRuntime.PairingError) -> LocalizedStringKey {
         switch error {
-        case .invalidCode: "설정 코드를 읽을 수 없어요. 맥미니에서 QR을 새로 만들어 주세요."
-        case .expiredCode: "설정 코드가 만료됐어요. 맥미니에서 QR을 새로 만들어 주세요."
+        case .invalidCode: "설정 코드를 읽을 수 없어요. 게이트웨이 컴퓨터에서 QR을 새로 만들어 주세요."
+        case .expiredCode: "설정 코드가 만료됐어요. 게이트웨이 컴퓨터에서 QR을 새로 만들어 주세요."
         case .invalidAddress: "주소 형식이 올바르지 않아요."
         case .insecureAddress: "암호화되지 않은 공개 주소는 쓸 수 없어요. Tailscale 주소를 입력해 주세요."
-        case .network: "맥미니에 닿지 않아요. Tailscale이 켜져 있는지 확인해 주세요."
-        case .gateway: "맥미니의 게이트웨이가 연결을 거절했어요."
+        case .network: "게이트웨이에 닿지 않아요. Tailscale이 켜져 있는지 확인해 주세요."
+        case .gateway: "게이트웨이가 연결을 거절했어요."
         case .rejected: "승인되지 않았거나 권한이 부족해요. 다시 시도해 주세요."
         case .timedOut: "승인을 너무 오래 기다렸어요. 다시 시도해 주세요."
         }

@@ -15,7 +15,7 @@ struct RepairView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Card(background: Theme.problemBackground, radius: 24) {
                     VStack(alignment: .leading, spacing: 6) {
-                        ProblemHeadline(link: problem.link)
+                        ProblemHeadline(link: problem.link, gatewayName: runtime.gatewayLabel)
                             .font(.title2.weight(.bold))
                             .foregroundStyle(Theme.text)
                         ProblemText(reason: problem.reason)
@@ -75,7 +75,7 @@ struct RepairView: View {
                     rows: runtime.homeState.rows,
                     signals: runtime.signals,
                     agentName: runtime.settings.agentName,
-                    gatewayHost: GatewayAddress.displayHost(runtime.settings.gatewayURL)
+                    gatewayName: runtime.gatewayLabel
                 )
             }
             .padding(.horizontal, 20)
@@ -108,7 +108,7 @@ struct RepairView: View {
                 Task { await runtime.checkNow() }
             }
         case .runSetupAgain:
-            PrimaryButton(title: "맥미니 승인 다시 받기", systemImage: "checkmark.shield", prominent: true) {
+            PrimaryButton(title: "승인 다시 받기", systemImage: "checkmark.shield", prominent: true) {
                 Task { await runtime.reapprove() }
             }
         case .reopenApp, .reconnectGlasses, .chargeGlasses, .recheck, .retryGateway, .sendTestTurn, .none:
@@ -133,11 +133,11 @@ private struct CauseText: View {
         case .metaAppNotRegistered: Text("Meta AI 앱에서 이 앱 연결이 해제됨")
         case .microphoneNotAllowed: Text("Meta AI 앱에서 안경 마이크를 허용하지 않음")
         case .tailscaleOff: Text("이 iPhone의 Tailscale이 꺼짐 — Tailscale 앱에서 켜 주세요")
-        case .hostAsleep: Text("맥미니가 꺼졌거나 잠듦")
+        case .hostAsleep: Text("게이트웨이 컴퓨터가 꺼졌거나 잠듦")
         case .weakInternet: Text("지금 인터넷 연결이 약함")
-        case .gatewayStopped: Text("맥미니의 OpenClaw 게이트웨이가 멈춤")
-        case .approvalPending: Text("맥미니에서 이 기기 승인을 아직 하지 않음")
-        case .approvalRevoked: Text("맥미니에서 이 기기 승인이 취소됨")
+        case .gatewayStopped: Text("OpenClaw 게이트웨이가 멈춤")
+        case .approvalPending: Text("게이트웨이에서 이 기기 승인을 아직 하지 않음")
+        case .approvalRevoked: Text("게이트웨이에서 이 기기 승인이 취소됨")
         case .agentBusy: Text("에이전트가 다른 작업 중이거나 응답이 늦음")
         }
     }

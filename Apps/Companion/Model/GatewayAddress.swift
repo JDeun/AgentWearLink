@@ -13,7 +13,7 @@ public enum GatewayAddressError: Error, Equatable, Sendable {
 /// Gateway endpoint. Public plaintext addresses are refused.
 public enum GatewayAddress {
     /// Accepts `wss://host`, `https://host`, `host.tailnet.ts.net`,
-    /// `100.x.y.z:18789` and MagicDNS short names (`mac-mini:18789`).
+    /// `100.x.y.z:18789` and MagicDNS short names (`gateway-host:18789`).
     public static func endpoint(fromUserInput raw: String) throws -> OpenClawEndpoint {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw GatewayAddressError.empty }
@@ -63,9 +63,13 @@ public enum GatewayAddress {
         throw secure ? GatewayAddressError.invalid : GatewayAddressError.insecure
     }
 
-    /// Short host label for the UI ("맥미니" row detail), never the full URL.
-    public static func displayHost(_ gatewayURL: String) -> String {
-        guard let host = URL(string: gatewayURL)?.host else { return "" }
+    /// Default display name for the paired Gateway: the first DNS label of
+    /// its host (`mac-mini.tail1234.ts.net` → `mac-mini`), or the whole host
+    /// for an IP address. Empty when no Gateway is paired.
+    public static func defaultName(forGatewayURL gatewayURL: String) -> String {
+        guard let host = URL(string: gatewayURL)?.host, !host.isEmpty else { return "" }
+        let isIP = host.contains(":") || host.allSatisfy { $0.isNumber || $0 == "." }
+        if isIP { return host }
         return host.split(separator: ".").first.map(String.init) ?? host
     }
 }

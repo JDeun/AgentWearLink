@@ -55,7 +55,7 @@ struct GatewayLink: Sendable {
         }
     }
 
-    /// "맥미니 승인만 다시 받기": drop the stored grant, keep the identity.
+    /// "승인만 다시 받기": drop the stored grant, keep the identity.
     func forgetGrant(for endpoint: OpenClawEndpoint) async {
         let scoped = GatewayScopedOpenClawDeviceCredentialStore(
             base: credentialStore,
