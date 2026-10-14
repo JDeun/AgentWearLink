@@ -11,7 +11,7 @@ import Foundation
 /// setup-pair-expired, setup-pair-failed, setup-pair-success,
 /// setup-practice-listening, setup-practice-matched,
 /// setup-practice-unmatched, home-ok, home-waiting, home-problem,
-/// home-revoked, home-speech, repair-<reason> (see `repairReasons`),
+/// home-revoked, home-speech, home-paused, repair-<reason> (see `repairReasons`),
 /// settings, settings-expanded, settings-reset, settings-reapprove,
 /// settings-diagnostics. `-AWLPreviewScroll bottom` renders the lower part
 /// of a tall screen. Fixtures freeze the signals and never write to the
@@ -26,6 +26,7 @@ enum CompanionPreviewFixture {
         var pairing: CompanionRuntime.PairingPhase = .idle
         var practice = CompanionRuntime.PracticeState()
         var listening = false
+        var pendingRequestID: String?
         var logLines: [String] = []
     }
 
@@ -146,7 +147,9 @@ enum CompanionPreviewFixture {
             }
             switch fixture {
             case "setup-mic": plan.signals.glasses = .waiting
-            case "setup-pair-waiting": plan.pairing = .waitingForApproval
+            case "setup-pair-waiting":
+                plan.pairing = .waitingForApproval
+                plan.pendingRequestID = "req-7f3a2c"
             case "setup-pair-expired": plan.pairing = .failed(.expiredCode)
             case "setup-pair-failed": plan.pairing = .failed(.network)
             case "setup-pair-success": plan.pairing = .succeeded
@@ -157,7 +160,7 @@ enum CompanionPreviewFixture {
                 plan.practice = .init(transcript: "Nova, 안녕", matched: true)
             case "setup-practice-unmatched":
                 plan.listening = true
-                plan.practice = .init(transcript: "오늘 날씨 어때", matched: false)
+                plan.practice = .init(transcript: "노바 안녕", matched: false)
             default: break
             }
             return plan
@@ -180,9 +183,16 @@ enum CompanionPreviewFixture {
             plan.listening = false
         case "home-speech":
             plan.signals.speechReady = false
+        case "home-paused":
+            plan.settings.listenEnabled = false
+            plan.signals.listenEnabled = false
+            plan.signals.listening = false
+            plan.signals.speechReady = false
+            plan.listening = false
         default:
             if let reason = repairReasons[fixture] {
                 apply(reason, to: &plan.signals)
+                if reason == .pairingPending { plan.pendingRequestID = "req-7f3a2c" }
             }
         }
         return plan

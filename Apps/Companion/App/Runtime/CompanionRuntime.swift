@@ -44,6 +44,9 @@ final class CompanionRuntime: ObservableObject {
     @Published private(set) var pairing: PairingPhase = .idle
     @Published private(set) var deviceID: String = ""
     @Published private(set) var practice = PracticeState()
+    /// The Gateway's pairing request id while approval is pending, so the
+    /// app can show the exact `openclaw devices approve <id>` command.
+    @Published private(set) var pendingRequestID: String?
     @Published private(set) var isChecking = false
     @Published private(set) var lastCheckAt: Date?
     @Published private(set) var log = ActivityLog()
@@ -58,6 +61,11 @@ final class CompanionRuntime: ObservableObject {
         HomeViewState(signals: signals, telegramConfigured: settings.isTelegramDeliveryConfigured)
     }
     /// Gateway hop name for the UI; "게이트웨이"/"Gateway" when unknown.
+    /// Agent name for the UI; "에이전트"/"Agent" when unknown.
+    var agentLabel: String {
+        let name = settings.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? String(localized: "에이전트") : name
+    }
     var gatewayLabel: String {
         let name = settings.gatewayDisplayName
         return name.isEmpty ? String(localized: "게이트웨이") : name
@@ -314,11 +322,37 @@ final class CompanionRuntime: ObservableObject {
     /// setup code expires. The one-time credential lives only in this task.
     /// Every state write is fenced by a generation so a cancelled or older
     /// attempt can never overwrite a newer one.
+    /// "다시 시도" after a failed pairing: the last attempt's parameters
+    /// live only in memory for this purpose.
+    private var lastPairingAttempt: (OpenClawEndpoint, OpenClawConnectCredentials, Date?)?
+
+    var canRetryPairing: Bool {
+        guard let attempt = lastPairingAttempt else { return false }
+        if let expiry = attempt.2, expiry <= Date() { return false }
+        return true
+    }
+
+    func retryPairing() {
+        guard let (endpoint, credentials, expiry) = lastPairingAttempt else {
+            pairing = .idle
+            return
+        }
+        runPairing(endpoint: endpoint, credentials: credentials, codeExpiresAt: expiry)
+    }
+
+    /// Back to the scanner, e.g. after an expired code.
+    func resetPairing() {
+        cancelPairing()
+        lastPairingAttempt = nil
+    }
+
     private func runPairing(
         endpoint: OpenClawEndpoint,
         credentials: OpenClawConnectCredentials,
         codeExpiresAt: Date?
     ) {
+        lastPairingAttempt = (endpoint, credentials, codeExpiresAt)
+        pendingRequestID = nil
         pairingTask?.cancel()
         pairingGeneration &+= 1
         let generation = pairingGeneration
@@ -372,6 +406,10 @@ final class CompanionRuntime: ObservableObject {
                     guard let runtime = current() else { return }
                     switch GatewayFailure.classify(error, usedStoredGrant: false) {
                     case .pairingPending:
+                        if case let OpenClawHandshakeError.pairingRequired(request) = error,
+                           let id = request.requestID, !id.isEmpty {
+                            runtime.pendingRequestID = id
+                        }
                         if runtime.pairing != .waitingForApproval {
                             runtime.record("waiting for approval on the host")
                         }
@@ -420,6 +458,28 @@ final class CompanionRuntime: ObservableObject {
         lastCheckAt = nil
         await restoreSetupProgress()
         record("reset")
+    }
+
+    /// "다시 시작": rebuild the voice session now.
+    func restartListening() {
+        signals.listenFailed = false
+        if !settings.listenEnabled {
+            settings.listenEnabled = true
+        } else if runtime != nil {
+            requestReconcile("restart requested", restartSession: true)
+        } else {
+            startRecovery("restart requested", immediate: true, restart: true)
+        }
+    }
+
+    /// Call practice: make what the recognizer heard a wake phrase, then
+    /// re-evaluate that utterance so the result shows right away.
+    func addPracticeWakePhrase(_ phrase: String) {
+        settings.addWakePhrase(phrase)
+        guard let transcript = practice.transcript else { return }
+        let decision = AWLWakePhraseGate(wakePhrases: settings.effectiveWakePhrases).evaluate(transcript)
+        practice.matched = decision != .ignore
+        record("wake phrase added from practice")
     }
 
     private func stopEverything() async {
@@ -605,6 +665,8 @@ final class CompanionRuntime: ObservableObject {
                 settle = true
                 guard !Task.isCancelled, self.wantsListening, self.runtime == nil else { break }
                 let outcome = await self.connectVoice()
+                // Glasses are on but no session came up: say so on Home.
+                self.signals.listenFailed = outcome == .retry && self.wearables.hasConnectedDevice
                 if outcome != .retry { break }
                 let delay = RecoveryPolicy.delay(afterFailedAttempt: attempt)
                 attempt += 1
@@ -717,6 +779,7 @@ final class CompanionRuntime: ObservableObject {
         record(speech ? "listening" : "connected without speech")
         signals.listening = true
         signals.speechReady = speech
+        signals.listenFailed = false
         if !speech {
             signals.microphone = await wearables.microphonePermission()
         }
@@ -892,6 +955,7 @@ final class CompanionRuntime: ObservableObject {
         pairing = plan.pairing
         practice = plan.practice
         previewListening = plan.listening
+        pendingRequestID = plan.pendingRequestID
         var log = ActivityLog()
         let base = Date().addingTimeInterval(-Double(plan.logLines.count) * 7)
         for (index, line) in plan.logLines.enumerated() {

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var runtime: CompanionRuntime
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showSettings = false
     @State private var repairProblem: AWLChainProblem?
 
@@ -10,14 +11,25 @@ struct HomeView: View {
         let state = runtime.homeState
         TimelineView(.periodic(from: .now, by: 5)) { _ in
             AnchoredScrollView(scrollsToBottom: !showSettings && repairProblem == nil) {
-                VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(verbatim: "Agent Wear Link")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(Theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
                     StatusBanner(
-                        banner: state.banner,
+                        state: state,
                         wakePhrase: runtime.settings.effectiveWakePhrases.first ?? "",
                         lastCheckAt: runtime.lastCheckAt,
                         gatewayName: runtime.gatewayLabel,
-                        onRepair: { repairProblem = $0 }
+                        agentName: runtime.agentLabel,
+                        onRepair: { repairProblem = $0 },
+                        onRestart: { runtime.restartListening() },
+                        onResume: { runtime.settings.listenEnabled = true }
                     )
+                    if case let .problem(problem) = state.banner,
+                       problem.reason == .pairingPending || problem.reason == .pairingRevoked {
+                        approvalCard(problem.reason)
+                    }
                     ChainListView(
                         rows: state.rows,
                         signals: runtime.signals,
@@ -26,12 +38,12 @@ struct HomeView: View {
                     )
                     tiles
                     if state.showsTelegramLink {
-                        Label("대화 기록은 텔레그램에서", systemImage: "paperplane")
+                        Label("대화 기록은 텔레그램에서 볼 수 있어요", systemImage: "paperplane")
                             .font(.footnote)
                             .foregroundStyle(Theme.secondary)
                             .frame(maxWidth: .infinity)
                     }
-                    VStack(spacing: 6) {
+                    VStack(spacing: 10) {
                         PrimaryButton(
                             title: "지금 다시 확인",
                             systemImage: "arrow.clockwise",
@@ -39,10 +51,21 @@ struct HomeView: View {
                         ) {
                             Task { await runtime.checkNow() }
                         }
-                        Text("에이전트에게 묻지 않는 점검이라 대화 기록에 남지 않습니다")
+                        Text("에이전트에게 묻지 않는 점검이라 대화 기록에 남지 않아요")
                             .font(.caption)
                             .foregroundStyle(Theme.tertiary)
                             .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                        if runtime.settings.listenEnabled {
+                            Button {
+                                runtime.settings.listenEnabled = false
+                            } label: {
+                                Label("듣기 일시정지", systemImage: "pause.circle")
+                                    .font(.subheadline)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                            .foregroundStyle(Theme.secondary)
+                        }
                     }
                     .padding(.top, 8)
                 }
@@ -51,7 +74,7 @@ struct HomeView: View {
             }
         }
         .background(Theme.background.ignoresSafeArea())
-        .navigationTitle("Agent Wear Link")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -74,20 +97,40 @@ struct HomeView: View {
         }
     }
 
-    private var tiles: some View {
-        HStack(spacing: 10) {
+    private func approvalCard(_ reason: AWLChainProblemReason) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                if reason == .pairingRevoked {
+                    Text("‘승인 다시 받기’를 누르면 게이트웨이 컴퓨터에 새 승인 요청이 가요.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                    PrimaryButton(title: "승인 다시 받기", systemImage: "checkmark.shield", prominent: true) {
+                        Task { await runtime.reapprove() }
+                    }
+                } else {
+                    ApprovalInstructions(
+                        fingerprint: DeviceFingerprint.short(runtime.deviceID),
+                        requestID: runtime.pendingRequestID
+                    )
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    @ViewBuilder private var tiles: some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+        layout {
             Tile(title: "마지막 대화") {
                 if let last = runtime.signals.lastReplyAt {
                     Text(RelativeTime.string(last))
                 } else {
-                    Text("아직 없음")
+                    Text("아직 없어요")
                 }
             } footnote: {
-                if let latency = runtime.signals.lastReplyLatency {
-                    Text("말 끝 → 답 시작 \(latency, format: .number.precision(.fractionLength(1)))초")
-                } else {
-                    Text("말 끝 → 답 시작 —")
-                }
+                EmptyView()
             }
             Tile(title: "안경 배터리") {
                 if let battery = runtime.signals.glassesBattery {
@@ -97,7 +140,7 @@ struct HomeView: View {
                 }
             } footnote: {
                 if runtime.signals.glassesBattery == nil {
-                    Text("안경을 쓰면 표시")
+                    Text("안경을 쓰면 보여요")
                 } else if runtime.signals.glassesCharging {
                     Text("충전 중")
                 } else {
@@ -138,31 +181,40 @@ private struct Tile<Value: View, Footnote: View>: View {
 }
 
 struct StatusBanner: View {
-    let banner: HomeViewState.Banner
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let state: HomeViewState
     let wakePhrase: String
     let lastCheckAt: Date?
     let gatewayName: String
+    let agentName: String
     let onRepair: (AWLChainProblem) -> Void
+    let onRestart: () -> Void
+    let onResume: () -> Void
 
     var body: some View {
         Card(background: palette.background, radius: 24) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 14) {
+                let layout = typeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+                    : AnyLayout(HStackLayout(spacing: 14))
+                layout {
                     Image(systemName: palette.icon)
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(palette.tint)
                         .frame(width: 44, height: 44)
                         .background(palette.inner, in: Circle())
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         headline.font(.title3.weight(.bold)).foregroundStyle(Theme.text)
                         subtitle.font(.footnote).foregroundStyle(Theme.secondary)
                     }
-                    Spacer(minLength: 0)
-                    if case .problem = banner {
+                    .fixedSize(horizontal: false, vertical: true)
+                    if problem != nil, !typeSize.isAccessibilitySize {
+                        Spacer(minLength: 0)
                         Image(systemName: "chevron.right").foregroundStyle(palette.tint)
                     }
                 }
-                if !wakePhrase.isEmpty, !isProblem {
+                if state.showsCallHint, !wakePhrase.isEmpty {
                     Text("안경에서 “\(wakePhrase), …” 하고 말하세요")
                         .font(.subheadline)
                         .foregroundStyle(Theme.text.opacity(0.9))
@@ -171,53 +223,62 @@ struct StatusBanner: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(palette.inner, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
+                if state.banner == .notListening {
+                    PrimaryButton(title: "다시 시작", systemImage: "arrow.clockwise", prominent: true, action: onRestart)
+                }
+                if state.banner == .listeningOff {
+                    PrimaryButton(title: "다시 듣기", systemImage: "play.fill", prominent: true, action: onResume)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 18)
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            if case let .problem(problem) = banner { onRepair(problem) }
+            if let problem { onRepair(problem) }
         }
-        .accessibilityAddTraits(isProblem ? .isButton : [])
+        .accessibilityAddTraits(problem != nil ? .isButton : [])
     }
 
-    private var isProblem: Bool {
-        if case .problem = banner { return true }
-        return false
+    private var problem: AWLChainProblem? {
+        if case let .problem(problem) = state.banner { return problem }
+        return nil
     }
 
     private var palette: (background: Color, inner: Color, tint: Color, icon: String) {
-        switch banner {
+        switch state.banner {
         case .allConnected: (Theme.okBackground, Theme.okInner, Theme.ok, "checkmark")
         case .waitingForGlasses: (Theme.waitingBackground, Theme.waitingInner, Theme.accent, "eyeglasses")
         case .listeningOff: (Theme.card, Theme.raised, Theme.secondary, "pause.fill")
-        case .problem: (Theme.problemBackground, Theme.problemInner, Theme.problem, "exclamationmark")
+        case .problem, .notListening: (Theme.problemBackground, Theme.problemInner, Theme.problem, "exclamationmark")
         case .checking: (Theme.card, Theme.raised, Theme.accent, "ellipsis")
         }
     }
 
     @ViewBuilder private var headline: some View {
-        switch banner {
+        switch state.banner {
         case .allConnected: Text("모두 연결됨")
-        case .waitingForGlasses: Text("안경 대기 중")
-        case .listeningOff: Text("안경 호출 꺼짐")
-        case let .problem(problem): ProblemHeadline(link: problem.link, gatewayName: gatewayName)
-        case .checking: Text("확인 중")
+        case .waitingForGlasses: Text("안경을 기다리고 있어요")
+        case .listeningOff: Text("듣기를 멈췄어요")
+        case .notListening: Text("지금 듣고 있지 않아요")
+        case let .problem(problem):
+            ProblemHeadline(reason: problem.reason, gatewayName: gatewayName, agentName: agentName)
+        case .checking: Text("확인하는 중")
         }
     }
 
     @ViewBuilder private var subtitle: some View {
-        switch banner {
+        switch state.banner {
         case let .allConnected(checkedAt):
             if let date = checkedAt ?? lastCheckAt {
                 Text("\(RelativeTime.string(date)) 확인")
             } else {
                 Text("방금 확인")
             }
-        case .waitingForGlasses: Text("쓰면 자동 연결")
-        case .listeningOff: Text("설정에서 다시 켤 수 있어요")
-        case let .problem(problem): ProblemText(reason: problem.reason)
+        case .waitingForGlasses: Text("안경을 쓰면 자동으로 연결돼요")
+        case .listeningOff: Text("다시 듣기를 누르면 이어서 들어요")
+        case .notListening: Text("안경 음성 인식이 시작되지 않았어요")
+        case let .problem(problem): ProblemReasonText(reason: problem.reason)
         case .checking: Text("연결 상태를 확인하고 있어요")
         }
     }
