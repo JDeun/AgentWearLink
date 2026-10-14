@@ -2,6 +2,7 @@ import AgentWearLinkAppleOutput
 import AgentWearLinkCore
 import AgentWearLinkMetaDATIntegration
 import AgentWearLinkOpenClaw
+import AVFoundation
 import Foundation
 import Network
 import SwiftUI
@@ -133,6 +134,7 @@ final class CompanionRuntime: ObservableObject {
         speaker.onEvent = { [weak self] line in self?.record(line) }
         speaker.onSilenced = { [weak self] in self?.signals.replyNotSpoken = true }
         speaker.onSpoken = { [weak self] in self?.signals.replyNotSpoken = false }
+        speaker.onIdle = { [weak self] in self?.replySpeechIdle() }
     }
 
     private var wantsListening: Bool {
@@ -951,10 +953,11 @@ final class CompanionRuntime: ObservableObject {
             if case let .forward(request) = decision { return request }
             return nil
         }
-        await device.setGlassesInputHandler { isSelect, _ in
+        await device.setGlassesInputHandler { [weak self] isSelect, _ in
             guard isSelect else { return }
             await gate.arm()
             log("armed by double tap")
+            await self?.playCue(.listening)
         }
     }
 
@@ -964,10 +967,12 @@ final class CompanionRuntime: ObservableObject {
         switch decision {
         case let .forward(request):
             latency.requestForwarded(at: Date())
+            startWaitingCues()
             // Only the length is logged; transcripts never enter the log.
             record("request forwarded (\(request.count) chars)")
         case .armed:
             record("armed by name")
+            playCue(.listening)
         case .ignore:
             break
         }
@@ -989,20 +994,77 @@ final class CompanionRuntime: ObservableObject {
             signals.lastReplyAt = now
             signals.agentFailing = false
             signals.checkedAt[.agent] = now
+            stopWaitingCues()
         case .turnCompleted:
             signals.agentFailing = false
             signals.checkedAt[.agent] = now
+            stopWaitingCues()
+            // Open the follow-up window once the reply has been spoken; all
+            // reply text is queued in the synthesizer by now.
+            followUpPending = settings.followUp
+            if !speaker.isSpeaking { replySpeechIdle() }
         case let .failed(id, error):
             if id == nil, case .device = error {
                 // Core retired the runtime after a terminal device failure.
+                stopWaitingCues()
                 Task { await retireAfterDeviceLoss(attempt: attempt) }
             } else if id != nil {
                 signals.agentFailing = true
                 signals.checkedAt[.agent] = now
                 record("turn failed")
+                stopWaitingCues()
+                playCue(.failed)
             }
         default:
             break
+        }
+    }
+
+    // MARK: Audio cues and follow-up
+
+    /// True from turn completion until the reply finished speaking.
+    private var followUpPending = false
+    private var thinkingTask: Task<Void, Never>?
+
+    /// Plays an earcon into the glasses only (never the iPhone speaker).
+    private func playCue(_ earcon: Earcon) {
+        guard settings.audioCues else { return }
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType).map(ReplySpeaker.kind)
+        guard AudioRoutePolicy.canSpeakAloud(outputs: outputs) else { return }
+        keepAlive.play(earcon)
+    }
+
+    private func startWaitingCues() {
+        followUpPending = false
+        thinkingTask?.cancel()
+        playCue(.accepted)
+        guard settings.audioCues else { return }
+        let ticks = ThinkingCueSchedule().tickTimes
+        thinkingTask = Task { [weak self] in
+            var elapsed: TimeInterval = 0
+            for tick in ticks {
+                try? await Task.sleep(for: .seconds(tick - elapsed))
+                elapsed = tick
+                guard !Task.isCancelled, let self else { return }
+                self.playCue(.thinking)
+            }
+        }
+    }
+
+    private func stopWaitingCues() {
+        thinkingTask?.cancel()
+        thinkingTask = nil
+    }
+
+    /// The synthesizer has nothing left to say. After a completed turn,
+    /// arm the gate so the wearer can continue without the wake phrase.
+    private func replySpeechIdle() {
+        guard followUpPending, let wakeGate else { return }
+        followUpPending = false
+        Task {
+            await wakeGate.arm()
+            record("follow-up window open (\(Int(FollowUpWindow.seconds)) s)")
+            playCue(.listening)
         }
     }
 
@@ -1030,6 +1092,8 @@ final class CompanionRuntime: ObservableObject {
     /// Note: the keep-alive is deliberately NOT stopped here; it follows
     /// whether listening is wanted, not whether a session is up.
     private func clearVoiceReferences() {
+        stopWaitingCues()
+        followUpPending = false
         runtime = nil
         device = nil
         voiceSession = nil

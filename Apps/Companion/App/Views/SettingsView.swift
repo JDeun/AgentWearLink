@@ -95,6 +95,18 @@ struct SettingsView: View {
                 detail: "두세 문장으로 답해요. 긴 답은 텔레그램에서 볼 수 있어요",
                 warning: "긴 답도 안경에서 끝까지 읽어요"
             )
+            SettingToggle(
+                isOn: binding(\.followUp),
+                title: "이어 말하기",
+                detail: "답이 끝나고 8초 안에 말하면 이름 없이 이어서 물어요",
+                warning: "매번 이름을 불러야 해요"
+            )
+            SettingToggle(
+                isOn: binding(\.audioCues),
+                title: "알림음",
+                detail: "요청을 받으면 '띵', 기다리는 동안 '톡톡', 이어 말할 수 있을 때 짧은 소리가 나요",
+                warning: "답이 올 때까지 아무 소리도 나지 않아요"
+            )
         } header: {
             Text("대화")
         }

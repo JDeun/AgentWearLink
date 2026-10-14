@@ -44,7 +44,10 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     /// Called when a reply could not be spoken because of the route.
     var onSilenced: (() -> Void)?
     var onSpoken: (() -> Void)?
+    /// The last queued utterance finished (nothing left to say).
+    var onIdle: (() -> Void)?
     var onEvent: ((String) -> Void)?
+    var isSpeaking: Bool { synthesizer.isSpeaking }
     /// EXPERIMENT (default off), see `ReplyDuckingMode`.
     var duckingMode: ReplyDuckingMode = .off {
         didSet {
@@ -118,6 +121,7 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
             onEvent?("reply end [\(duckingMode.rawValue)] otherAudio=\(AVAudioSession.sharedInstance().isOtherAudioPlaying)")
         }
         if duckingMode == .toggleDuckOthers { setDucking?(false) }
+        onIdle?()
     }
 
     static func kind(_ port: AVAudioSession.Port) -> AudioOutputKind {
@@ -151,6 +155,10 @@ final class SilentKeepAlive {
     enum Event { case interruptionEnded, mediaServicesReset, routeChanged }
 
     private var engine: AVAudioEngine?
+    /// Plays earcons through the same engine, so tones never need the audio
+    /// session to change while a DAT session is live (dat-ios #292).
+    private var cuePlayer: AVAudioPlayerNode?
+    private var cueFormat: AVAudioFormat?
     private var wanted = false
     private var categoryConfigured = false
     /// Our best knowledge of whether the session is active.
@@ -305,11 +313,31 @@ final class SilentKeepAlive {
         }
     }
 
+    /// Plays a short tone over whatever else is playing. Returns false when
+    /// the engine is not running (nothing is played).
+    @discardableResult
+    func play(_ earcon: Earcon) -> Bool {
+        guard isRunning, let player = cuePlayer, let format = cueFormat else { return false }
+        let mono = earcon.samples(sampleRate: format.sampleRate)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(mono.count)),
+              let channels = buffer.floatChannelData else { return false }
+        buffer.frameLength = AVAudioFrameCount(mono.count)
+        for channel in 0..<Int(format.channelCount) {
+            mono.withUnsafeBufferPointer { source in
+                channels[channel].update(from: source.baseAddress!, count: mono.count)
+            }
+        }
+        player.scheduleBuffer(buffer, completionHandler: nil)
+        if !player.isPlaying { player.play() }
+        return true
+    }
+
     /// Engine only: never touches the session.
     private func startEngine() {
         if isRunning { return }
         engine?.stop()
         engine = nil
+        cuePlayer = nil
         let engine = AVAudioEngine()
         var format = engine.mainMixerNode.outputFormat(forBus: 0)
         if format.sampleRate == 0 || format.channelCount == 0,
@@ -325,9 +353,15 @@ final class SilentKeepAlive {
         }
         engine.attach(source)
         engine.connect(source, to: engine.mainMixerNode, format: format)
+        let player = AVAudioPlayerNode()
+        let cueFormat = AVAudioFormat(standardFormatWithSampleRate: format.sampleRate, channels: format.channelCount)
+        engine.attach(player)
+        engine.connect(player, to: engine.mainMixerNode, format: cueFormat)
         do {
             try engine.start()
             self.engine = engine
+            self.cuePlayer = player
+            self.cueFormat = cueFormat
             onLog?("keep-alive engine on")
         } catch {
             onLog?("keep-alive engine start failed: \(error.localizedDescription)")

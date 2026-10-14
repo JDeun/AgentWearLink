@@ -1233,6 +1233,22 @@
         }
       }
     },
+    "답이 끝나고 8초 안에 말하면 이름 없이 이어서 물어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speak within 8 seconds after an answer to continue without the name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답이 끝나고 8초 안에 말하면 이름 없이 이어서 물어요"
+          }
+        }
+      }
+    },
     "답이 오지 않아요": {
       "localizations": {
         "en": {
@@ -1245,6 +1261,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "답이 오지 않아요"
+          }
+        }
+      }
+    },
+    "답이 올 때까지 아무 소리도 나지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing plays until the answer arrives"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답이 올 때까지 아무 소리도 나지 않아요"
           }
         }
       }
@@ -1517,6 +1549,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "말 끝 → 답 시작"
+          }
+        }
+      }
+    },
+    "매번 이름을 불러야 해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You need to say the name every time"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매번 이름을 불러야 해요"
           }
         }
       }
@@ -2593,6 +2641,22 @@
         }
       }
     },
+    "알림음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sound cues"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알림음"
+          }
+        }
+      }
+    },
     "암호화되지 않은 공개 주소는 쓸 수 없어요. Tailscale 주소를 입력해 주세요.": {
       "localizations": {
         "en": {
@@ -2993,6 +3057,22 @@
         }
       }
     },
+    "요청을 받으면 '띵', 기다리는 동안 '톡톡', 이어 말할 수 있을 때 짧은 소리가 나요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A chime when a request is heard, soft ticks while waiting, and a short tone when you can continue"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청을 받으면 '띵', 기다리는 동안 '톡톡', 이어 말할 수 있을 때 짧은 소리가 나요"
+          }
+        }
+      }
+    },
     "요청이 거절됐거나 권한이 부족해요. 다시 요청해 주세요.": {
       "localizations": {
         "en": {
@@ -3277,6 +3357,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "이렇게 해 보세요"
+          }
+        }
+      }
+    },
+    "이어 말하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow-up without the name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이어 말하기"
           }
         }
       }

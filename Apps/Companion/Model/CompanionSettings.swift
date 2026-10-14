@@ -43,6 +43,10 @@ public struct CompanionSettings: Equatable, Sendable {
     /// Optional OpenClaw session key; empty uses the agent's main session.
     public var sessionKey: String = ""
     public var replyDucking: ReplyDuckingMode = .off
+    /// "알림음": tones for accepted, waiting, failed and listening.
+    public var audioCues = true
+    /// "이어 말하기": after a reply, talk again without the wake phrase.
+    public var followUp = true
     /// Wall-clock time of the last spoken reply, for "마지막 대화 N분 전".
     public var lastReplyAt: Date?
     /// Speech end → first reply text, seconds.
@@ -98,13 +102,15 @@ public struct CompanionSettingsStore {
         public static let voiceStyle = "awl.companion.voiceStyle"
         public static let sessionKey = "awl.companion.sessionKey"
         public static let replyDucking = "awl.companion.replyDucking"
+        public static let audioCues = "awl.companion.audioCues"
+        public static let followUp = "awl.companion.followUp"
         public static let lastReplyAt = "awl.companion.lastReplyAt"
         public static let lastReplyLatency = "awl.companion.lastReplyLatency"
 
         static let all = [
             setupCompleted, gatewayURL, gatewayName, agentName, wakePhrases, spokenName, listenEnabled,
             telegramEnabled, telegramChatID, voiceStyle, sessionKey, replyDucking,
-            lastReplyAt, lastReplyLatency,
+            audioCues, followUp, lastReplyAt, lastReplyLatency,
         ]
     }
 
@@ -129,6 +135,8 @@ public struct CompanionSettingsStore {
         settings.sessionKey = defaults.string(forKey: Key.sessionKey) ?? ""
         settings.replyDucking = defaults.string(forKey: Key.replyDucking)
             .flatMap(ReplyDuckingMode.init(rawValue:)) ?? .off
+        settings.audioCues = defaults.object(forKey: Key.audioCues) as? Bool ?? true
+        settings.followUp = defaults.object(forKey: Key.followUp) as? Bool ?? true
         settings.lastReplyAt = defaults.object(forKey: Key.lastReplyAt) as? Date
         settings.lastReplyLatency = defaults.object(forKey: Key.lastReplyLatency) as? Double
         // Never trust a "completed" flag without an endpoint to connect to.
@@ -149,6 +157,8 @@ public struct CompanionSettingsStore {
         defaults.set(settings.voiceStyle, forKey: Key.voiceStyle)
         defaults.set(settings.sessionKey, forKey: Key.sessionKey)
         defaults.set(settings.replyDucking.rawValue, forKey: Key.replyDucking)
+        defaults.set(settings.audioCues, forKey: Key.audioCues)
+        defaults.set(settings.followUp, forKey: Key.followUp)
         defaults.set(settings.lastReplyAt, forKey: Key.lastReplyAt)
         defaults.set(settings.lastReplyLatency, forKey: Key.lastReplyLatency)
     }
