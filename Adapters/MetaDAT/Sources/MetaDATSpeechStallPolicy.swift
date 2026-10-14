@@ -15,6 +15,23 @@ public enum MetaDATSpeechStallPolicy {
     /// with 180 s, Speech that went deaf after the glasses were put back on
     /// ignored "알프레드, 지금 몇 시야" for minutes; 20 s recovered it.
     public static let emptyOnlyLimit: TimeInterval = 20
+    /// Backoff for the empty-only rule: each empty-only restart in a row
+    /// doubles the limit up to this cap, and a non-empty transcript resets
+    /// it. A quiet room otherwise restarts Speech every 20 s all day
+    /// (~180 restarts an hour) while the glasses ASR keeps running.
+    public static let emptyOnlyCap: TimeInterval = 300
+    /// Right after Speech starts fresh (connect, re-wear, unfold, session
+    /// resume) deafness is most likely (field log 2026-10-14), so the 20 s
+    /// limit applies for this long regardless of backoff.
+    public static let freshStartWindow: TimeInterval = 60
+
+    /// The empty-only limit for the current state.
+    public static func emptyOnlyLimit(consecutiveEmptyRestarts: Int, sinceFreshStart: TimeInterval?) -> TimeInterval {
+        if let sinceFreshStart, sinceFreshStart < freshStartWindow { return emptyOnlyLimit }
+        let factor = pow(2, Double(min(max(consecutiveEmptyRestarts, 0), 10)))
+        return min(emptyOnlyLimit * factor, emptyOnlyCap)
+    }
+
     /// Pause between stop() and start() of a stall restart.
     public static let restartGap: Duration = .milliseconds(600)
     /// How often the adapter checks.
@@ -44,11 +61,12 @@ public enum MetaDATSpeechStallPolicy {
         sinceNonEmpty: TimeInterval?,
         speechStarted: Bool,
         sessionStarted: Bool,
-        pausedByHost: Bool
+        pausedByHost: Bool,
+        emptyOnlyLimit limit: TimeInterval = emptyOnlyLimit
     ) -> Action {
         guard speechStarted, sessionStarted, !pausedByHost else { return .none }
         if let sinceAnyEvent, sinceAnyEvent > noEventLimit { return .restart(.noEvents) }
-        if let sinceNonEmpty, sinceNonEmpty > emptyOnlyLimit { return .restart(.emptyOnly) }
+        if let sinceNonEmpty, sinceNonEmpty > limit { return .restart(.emptyOnly) }
         return .none
     }
 

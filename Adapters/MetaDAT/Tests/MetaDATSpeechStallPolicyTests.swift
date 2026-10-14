@@ -43,4 +43,29 @@ final class MetaDATSpeechStallPolicyTests: XCTestCase {
         XCTAssertEqual(MetaDATSpeechStallPolicy.noEventLimit, 4)
         XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit, 20)
     }
+
+    func testEmptyOnlyLimitBacksOffAndCaps() {
+        XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit(consecutiveEmptyRestarts: 0, sinceFreshStart: nil), 20)
+        XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit(consecutiveEmptyRestarts: 1, sinceFreshStart: 120), 40)
+        XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit(consecutiveEmptyRestarts: 3, sinceFreshStart: 120), 160)
+        XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit(consecutiveEmptyRestarts: 9, sinceFreshStart: 120), 300)
+    }
+
+    func testFreshStartKeepsTwentySeconds() {
+        XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit(consecutiveEmptyRestarts: 4, sinceFreshStart: 10), 20)
+        XCTAssertEqual(MetaDATSpeechStallPolicy.emptyOnlyLimit(consecutiveEmptyRestarts: 4, sinceFreshStart: 61), 300)
+    }
+
+    func testActionUsesTheGivenLimit() {
+        XCTAssertEqual(
+            MetaDATSpeechStallPolicy.action(sinceAnyEvent: 0.3, sinceNonEmpty: 30, speechStarted: true,
+                                            sessionStarted: true, pausedByHost: false, emptyOnlyLimit: 40),
+            .none
+        )
+        XCTAssertEqual(
+            MetaDATSpeechStallPolicy.action(sinceAnyEvent: 0.3, sinceNonEmpty: 41, speechStarted: true,
+                                            sessionStarted: true, pausedByHost: false, emptyOnlyLimit: 40),
+            .restart(.emptyOnly)
+        )
+    }
 }

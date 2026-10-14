@@ -193,6 +193,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var speechStallTask: Task<Void, Never>?
     private var speechStallRestarting = false
     private var speechStallRestarts = 0
+    /// Empty-only restarts since the last non-empty transcript (backoff).
+    private var emptyOnlyRestartsInARow = 0
+    /// Last fresh Speech start (connect, resume, session resume).
+    private var speechFreshStartAt: ContinuousClock.Instant?
     private var sessionIsStarted = true
     private var inputs: Inputs?
     private var inputsTask: Task<Void, Never>?
@@ -739,6 +743,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         self.speech = speech
         speech.start()
         markSpeechRestarted()
+        markSpeechFreshStart()
         startSpeechStallWatchdog(generation: generation)
 
         guard generationFence.owns(generation), !stopping else {
@@ -760,6 +765,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         if !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lastNonEmptyTranscriptAt = now
             speechNonEmptyCount += 1
+            emptyOnlyRestartsInARow = 0
         }
 
         let accepted = await transcriptDeduplicator.accept(
@@ -790,6 +796,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             generation: generation
         ))
         yieldEvent(event)
+    }
+
+    private func markSpeechFreshStart() {
+        speechFreshStartAt = ContinuousClock.now
+        emptyOnlyRestartsInARow = 0
     }
 
     private func markSpeechRestarted() {
@@ -832,10 +843,15 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             sinceNonEmpty: seconds(lastNonEmptyTranscriptAt),
             speechStarted: speech.state == .started,
             sessionStarted: sessionIsStarted,
-            pausedByHost: speechPaused || speechStallRestarting
+            pausedByHost: speechPaused || speechStallRestarting,
+            emptyOnlyLimit: MetaDATSpeechStallPolicy.emptyOnlyLimit(
+                consecutiveEmptyRestarts: emptyOnlyRestartsInARow,
+                sinceFreshStart: seconds(speechFreshStartAt)
+            )
         )
         guard case let .restart(reason) = action else { return true }
         speechStallRestarts += 1
+        if reason == .emptyOnly { emptyOnlyRestartsInARow += 1 }
         activityLogger?("speech stall restart \(speechStallRestarts) (\(reason.rawValue))")
         speechStallRestarting = true
         speech.stop()
@@ -860,6 +876,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         activityLogger?("speech restarted after session resumed")
         speechRestartAttempts = 0
         markSpeechRestarted()
+        markSpeechFreshStart()
         speech.start()
     }
 
@@ -895,6 +912,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         speechPaused = false
         speechRestartAttempts = 0
         activityLogger?("speech resumed")
+        markSpeechRestarted()
+        markSpeechFreshStart()
         speech.start()
     }
 
