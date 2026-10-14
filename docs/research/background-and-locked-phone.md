@@ -33,3 +33,29 @@ A keep-alive audio session that plays nothing audible is a known App Store revie
 3. Stay silent for 5–10 min. Record automatic stops and confirm a restart needs no user action.
 4. Fold and unfold, take the glasses off and put them back on, and take a phone call. Check that recovery is automatic.
 5. Log `batteryLevel` and `thermalLevel` over one hour.
+
+## Code-level comparison (2026-10-14)
+
+We read the actual code of every reference that claims to work with the phone locked:
+
+| Reference | Public code | Keep-alive | DAT link while locked |
+| --- | --- | --- | --- |
+| dashhound (dat-ios #322) | **Yes**, with measured logs (2 min 53 s locked, zero suspensions) | `.playback` + `.mixWithOthers`, default mode; AVAudioEngine source node writing zeros; 3 s watchdog | hvc1 camera stream |
+| Lore (dat-ios #326) | No (prose only); only the "microphone from camera audio" part is in a public fork | silent output "from launch" | camera stream with PCM audio |
+| Meta background streaming guide (#142) | Guide only; its sample is not public | active session, no-op on background | camera stream |
+| BirdSpotter (Meta sample) | Yes | none (session held app-wide) | hvc1 7 fps "spine": "a raw stream would be a session that goes deaf when the phone is locked" |
+
+**No public code shows a Speech-only session surviving a locked phone.** The camera "spine" works but turns the capture LED on and stops music (see [Hands-free alternatives](hands-free-alternatives.md)).
+
+## Rules learned the hard way
+
+| Rule | Label |
+| --- | --- |
+| Configure the AVAudioSession **once**, before the DAT session. Re-applying `setCategory`/`setActive`/`setPreferredInput` while a session is held made the glasses end it ("Session ended by device") 170–300 ms later, 3 times out of 3. | Reported: [dat-ios #292](https://github.com/facebook/meta-wearables-dat-ios/issues/292) |
+| HFP coming up or changing during a session also ended it. HFP that was already stable before `start()` was fine. | Reported: dat-ios #292 |
+| Do not tear the session down when the glasses are taken off or folded. After the link dropped (~8 s), every new `start()` was refused with "Device unavailable" until a power-switch cycle. Stop Speech instead and keep the session. | Reported: dat-ios #292 |
+| iOS won't **start** recording (`'what'`) or playback (`'!pla'`) from the background. Start the keep-alive in the foreground and never stop it. | Reported: dat-ios discussion #326 |
+| While the glasses consider a call active (including CallKit, FaceTime and WhatsApp), firmware 129 ends DAT sessions and declines new ones. Don't retry in a quick loop; recover when the call ends. | Verified: Meta staff, dat-ios #332 |
+| A single tap pauses a session, and only a second single tap resumes it. | Verified: Meta staff, dat-ios #312 |
+| On iOS 27.0.1, opening Notification Center paused `.playback` and suspended the app ~5 s later (AVPlayer + Picture-in-Picture report; relevance to audio-only keep-alive unverified). | Reported: Apple Developer Forums thread 838683 |
+| App Store distribution is not possible for DAT apps today, so silent-audio review risk is moot for development-signed builds. | Verified: Wearables docs |

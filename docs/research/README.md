@@ -22,6 +22,8 @@
 | Talking to your own agent without saying "Hey Meta" | [Hands-free speech](hands-free-speech.md) |
 | Keeping a session alive with the phone locked | [Background and locked phone](background-and-locked-phone.md) |
 | Getting the reply back to the glasses | [Audio output](audio-output.md) |
+| Every hands-free approach ranked (phone locked, music, phone away) | [Hands-free alternatives](hands-free-alternatives.md) |
+| Other open-source glasses-to-agent projects and their field lessons | [Other projects](other-projects.md) |
 | What a companion app can and cannot know or do on iOS | [Companion app constraints](companion-app-constraints.md) |
 | OpenClaw Gateway behaviour learned on a real deployment | [OpenClaw integration findings](openclaw-integration-findings.md) |
 | Physical bring-up log (October 2026) | [Validation log](validation-log-2026-10.md) |

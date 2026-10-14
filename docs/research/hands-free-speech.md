@@ -50,3 +50,15 @@ Meta's own sample, **BirdSpotter**, follows this pattern: "A run with the glasse
 | "Hey Meta" is a system-owned transaction. A system gesture that opens another experience changes the app's session state. | Verified: session-lifecycle skill |
 | Only one DAT app can use the glasses at a time. | Verified: BirdSpotter README |
 | Whether Speech also transcribes "Hey Meta …", and whether the session pauses or stops, is not documented. | Unverified (test on hardware) |
+
+## Additional findings (2026-10-14)
+
+| Finding | Label |
+| --- | --- |
+| A Korean recognizer writes a Latin agent name in Hangul with variants (e.g. "avenkin" → "아벤킨"). Match the wake phrase with jamo-level fuzzy matching and tolerate particles (야, 아, 님). | Reported: OpenGlasses PR #699 (Korean tester) |
+| Transcription follows the glasses' language. `locale` is read-only and can be empty. | Reported: hey-casa (Android); dat-android #210 |
+| Speech "can also stop without an error"; glance-qm restarts after 400 ms and gives up after 3 quick stops. | Verified: Speech docs; glance-qm source |
+| Call `addSpeech()` only from the same session's `.started` event; otherwise it returns nil. | Verified: Meta staff, dat-ios #336 |
+| No public battery figure for continuous Speech. Ray-Ban Meta Gen 2 is "up to eight hours with typical use". Stop Speech when the glasses are taken off or folded (`donState`, `hingeState`), and shed it at thermal SEVERE. | Verified (spec, thermal table) / Unverified (drain) |
+| No documented bystander indicator for Speech; the capture LED is tied to the camera. | Verified: Meta staff dat-ios #318; Meta privacy page |
+| The Acceptable Use Policy forbids surreptitious collection of recognizable audio of the user or others. Forward only utterances addressed to the agent, discard everything else in memory, and never log raw transcripts. | Verified: [Acceptable use policy](https://wearables.developer.meta.com/acceptable-use-policy) |
