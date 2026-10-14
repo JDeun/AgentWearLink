@@ -183,8 +183,6 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var transcriptGate: (@Sendable (String) async -> String?)?
     private var glassesInputHandler: (@Sendable (_ isSelect: Bool, _ description: String) async -> Void)?
     private var activityLogger: (@Sendable (String) -> Void)?
-    static let speechRestartLimit = 3
-    static let speechRestartDelay: Duration = .milliseconds(750)
     private let speechTranscriptStream = MetaDATSpeechTranscriptStream()
     private let transcriptDeduplicator = MetaDATFinalTranscriptDeduplicator()
     private let finalTranscriptFilter = MetaDATFinalTranscriptFilter()
@@ -763,22 +761,24 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private func handleSpeechState(_ state: SpeechState, generation: UInt64) async {
         guard !stopping, generationFence.owns(generation), let speech else { return }
         activityLogger?("speech \(state)")
+        let observed: MetaDATSpeechRestartPolicy.ObservedState
         switch state {
-        case .started:
+        case .started: observed = .started
+        case .stopped: observed = .stopped
+        default: observed = .transitioning
+        }
+        switch MetaDATSpeechRestartPolicy.action(for: observed, attempts: speechRestartAttempts) {
+        case .resetAttempts:
             speechRestartAttempts = 0
-        case .stopped:
-            // Speech may stop on inactivity or a timeout; Meta's BirdSpotter
-            // sample revives it a few times before giving up.
-            guard speechRestartAttempts < Self.speechRestartLimit else {
-                activityLogger?("speech restart limit reached")
-                return
-            }
-            speechRestartAttempts += 1
-            try? await Task.sleep(for: Self.speechRestartDelay)
+        case let .restart(attempt):
+            speechRestartAttempts = attempt
+            try? await Task.sleep(for: MetaDATSpeechRestartPolicy.delay)
             guard !stopping, generationFence.owns(generation), self.speech === speech else { return }
-            activityLogger?("speech restart \(speechRestartAttempts)")
+            activityLogger?("speech restart \(attempt)")
             speech.start()
-        default:
+        case .giveUp:
+            activityLogger?("speech restart limit reached")
+        case .none:
             break
         }
     }
