@@ -159,7 +159,17 @@ def verify() -> None:
         "export const AgentParamsSchema",
         "export const AgentIdentityParamsSchema",
     )
-    for field in ["message:", "sessionKey:", "attachments:", "idempotencyKey:"]:
+    for field in [
+        "message:",
+        "sessionKey:",
+        "attachments:",
+        "idempotencyKey:",
+        "deliver:",
+        "channel:",
+        "to:",
+        "accountId:",
+        "extraSystemPrompt:",
+    ]:
         require(agent_params, field, "agent request")
 
     wait_params = section(
