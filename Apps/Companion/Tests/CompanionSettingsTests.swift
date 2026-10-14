@@ -28,6 +28,7 @@ final class CompanionSettingsTests: XCTestCase {
         settings.gatewayURL = "wss://gateway.example.ts.net"
         settings.agentName = "Nova"
         settings.gatewayName = "Studio"
+        settings.spokenName = "노바"
         settings.wakePhrases = ["Nova", "노바"]
         settings.listenEnabled = false
         settings.telegramEnabled = true
@@ -55,6 +56,8 @@ final class CompanionSettingsTests: XCTestCase {
         var settings = CompanionSettings()
         settings.agentName = "Nova"
         XCTAssertEqual(settings.effectiveWakePhrases.first, "Nova")
+        settings.spokenName = "노바"
+        XCTAssertEqual(settings.effectiveWakePhrases(korean: true), ["Nova", "hey Nova", "노바", "노바야", "헤이 노바"])
         settings.wakePhrases = ["  ", "Hey Nova"]
         XCTAssertEqual(settings.effectiveWakePhrases, ["Hey Nova"])
     }

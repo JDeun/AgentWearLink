@@ -15,6 +15,9 @@ public struct CompanionSettings: Equatable, Sendable {
     public var gatewayName: String = ""
     /// Agent display name reported by the Gateway (`agent.identity.get`).
     public var agentName: String = ""
+    /// How the user pronounces a non-Korean agent name in Korean
+    /// (e.g. "알프레드"), added to the default wake phrases. Optional.
+    public var spokenName: String = ""
     /// Phrases that start a request. Empty means "derive from the agent name".
     public var wakePhrases: [String] = []
     /// "안경 호출 받기": listen for the glasses at all.
@@ -36,8 +39,20 @@ public struct CompanionSettings: Equatable, Sendable {
     /// The wake phrases actually used: the user's list, or the defaults for
     /// the agent name when the user has not edited them.
     public var effectiveWakePhrases: [String] {
+        effectiveWakePhrases(korean: WakePhrases.prefersKorean)
+    }
+
+    public func effectiveWakePhrases(korean: Bool) -> [String] {
         let custom = WakePhrases.normalized(wakePhrases)
-        return custom.isEmpty ? WakePhrases.defaults(forAgentName: agentName) : custom
+        return custom.isEmpty
+            ? WakePhrases.defaults(agentName: agentName, spokenName: spokenName, korean: korean)
+            : custom
+    }
+
+    /// Adds a phrase (e.g. what the recognizer heard in call practice),
+    /// keeping the current effective list.
+    public mutating func addWakePhrase(_ phrase: String, korean: Bool = WakePhrases.prefersKorean) {
+        wakePhrases = WakePhrases.normalized(effectiveWakePhrases(korean: korean) + [phrase])
     }
 
     /// Name shown for the Gateway hop: the user's name, else the first DNS
@@ -62,6 +77,7 @@ public struct CompanionSettingsStore {
         public static let agentName = "awl.companion.agentName"
         public static let gatewayName = "awl.companion.gatewayName"
         public static let wakePhrases = "awl.companion.wakePhrases"
+        public static let spokenName = "awl.companion.spokenName"
         public static let listenEnabled = "awl.companion.listenEnabled"
         public static let telegramEnabled = "awl.companion.telegramEnabled"
         public static let telegramChatID = "awl.companion.telegramChatID"
@@ -71,7 +87,7 @@ public struct CompanionSettingsStore {
         public static let lastReplyLatency = "awl.companion.lastReplyLatency"
 
         static let all = [
-            setupCompleted, gatewayURL, gatewayName, agentName, wakePhrases, listenEnabled,
+            setupCompleted, gatewayURL, gatewayName, agentName, wakePhrases, spokenName, listenEnabled,
             telegramEnabled, telegramChatID, voiceStyle, sessionKey,
             lastReplyAt, lastReplyLatency,
         ]
@@ -90,6 +106,7 @@ public struct CompanionSettingsStore {
         settings.agentName = defaults.string(forKey: Key.agentName) ?? ""
         settings.gatewayName = defaults.string(forKey: Key.gatewayName) ?? ""
         settings.wakePhrases = defaults.stringArray(forKey: Key.wakePhrases) ?? []
+        settings.spokenName = defaults.string(forKey: Key.spokenName) ?? ""
         settings.listenEnabled = defaults.object(forKey: Key.listenEnabled) as? Bool ?? true
         settings.telegramEnabled = defaults.bool(forKey: Key.telegramEnabled)
         settings.telegramChatID = defaults.string(forKey: Key.telegramChatID) ?? ""
@@ -108,6 +125,7 @@ public struct CompanionSettingsStore {
         defaults.set(settings.agentName, forKey: Key.agentName)
         defaults.set(settings.gatewayName, forKey: Key.gatewayName)
         defaults.set(settings.wakePhrases, forKey: Key.wakePhrases)
+        defaults.set(settings.spokenName, forKey: Key.spokenName)
         defaults.set(settings.listenEnabled, forKey: Key.listenEnabled)
         defaults.set(settings.telegramEnabled, forKey: Key.telegramEnabled)
         defaults.set(settings.telegramChatID, forKey: Key.telegramChatID)

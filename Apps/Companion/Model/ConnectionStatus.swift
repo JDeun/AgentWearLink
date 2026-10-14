@@ -31,6 +31,9 @@ public struct ConnectionSignals: Equatable, Sendable {
     /// DAT Speech actually started on the glasses. A runtime can run without
     /// it (e.g. microphone not granted), and then nothing hears the wearer.
     public var speechReady = false
+    /// A connect attempt failed while the glasses were connected (e.g. DAT
+    /// refused the session): nothing is listening and recovery is retrying.
+    public var listenFailed = false
     public var network: Reachability = .unknown
     public var gateway: Gateway = .unknown
     public var agentFailing = false
@@ -62,7 +65,8 @@ public struct ConnectionSignals: Equatable, Sendable {
 
         if microphone == .denied {
             result[.phone] = .broken(.microphoneDenied)
-        } else if listenEnabled, glasses == .connected, !(listening && speechReady) {
+        } else if listenEnabled, glasses == .connected, !(listening && speechReady),
+                  !upstreamOfPhoneBlocksListening {
             // Glasses are here but nothing is listening yet (connecting, or
             // Speech failed to start): do not claim the phone hop is fine.
         } else {
@@ -92,6 +96,20 @@ public struct ConnectionSignals: Equatable, Sendable {
         return result
     }
 
+    /// A known network/gateway problem explains why nothing listens, so the
+    /// phone hop must not also claim to be "connecting to the glasses".
+    var upstreamOfPhoneBlocksListening: Bool {
+        network == .unreachable
+            || [.unreachable, .pairingPending, .pairingRevoked].contains(gateway)
+    }
+
+    /// Glasses are on, nothing upstream is broken, but nothing is listening.
+    public var isNotListening: Bool {
+        listenEnabled && glasses == .connected && microphone != .denied
+            && !upstreamOfPhoneBlocksListening
+            && ((listening && !speechReady) || (!listening && listenFailed))
+    }
+
     public var chain: AWLConnectionChain {
         AWLConnectionChain(observations: observations)
     }
@@ -103,6 +121,9 @@ public struct HomeViewState: Equatable, Sendable {
         case allConnected(checkedAt: Date?)
         /// "안경 대기 중 · 쓰면 자동 연결": NOT an error.
         case waitingForGlasses
+        /// Glasses on but Speech is not running: a problem with one action
+        /// ("다시 시작").
+        case notListening
         case listeningOff
         case problem(AWLChainProblem)
         case checking
@@ -112,6 +133,8 @@ public struct HomeViewState: Equatable, Sendable {
         case ok
         case problem(AWLChainProblemReason)
         case waiting
+        /// The phone hop when Speech is not running.
+        case notListening
         /// Not observed yet.
         case checking
         /// Cannot be observed because an earlier hop is broken.
@@ -147,6 +170,9 @@ public struct HomeViewState: Equatable, Sendable {
                 }
             }
             if case .broken = link.status { upstreamBroken = true }
+            if link.id == .phone, state == .checking, signals.isNotListening {
+                return Row(id: link.id, state: .notListening, checkedAt: signals.checkedAt[link.id])
+            }
             return Row(id: link.id, state: state, checkedAt: signals.checkedAt[link.id])
         }
 
@@ -155,6 +181,8 @@ public struct HomeViewState: Equatable, Sendable {
             banner = .problem(problem)
         } else if !signals.listenEnabled {
             banner = .listeningOff
+        } else if signals.isNotListening {
+            banner = .notListening
         } else if signals.glasses == .waiting,
                   throughGateway.allSatisfy({ $0.state == .ok || $0.state == .checking }) {
             banner = .waitingForGlasses
@@ -165,6 +193,40 @@ public struct HomeViewState: Equatable, Sendable {
             banner = .checking
         }
         showsTelegramLink = telegramConfigured
+    }
+
+    /// The call hint ("안경에서 '…' 하고 말하세요") is only true while
+    /// something is actually listening.
+    public var showsCallHint: Bool {
+        if case .allConnected = banner { return true }
+        return false
+    }
+
+    /// Specific status words; there is no generic "broken".
+    public enum StatusLabel: Equatable, Sendable {
+        case connected, answered, waiting, checking, notCheckable
+        case disconnected, needsApproval, needsCharging, updateNeeded
+        case notResponding, needsPermission, needsRegistration, notListening
+    }
+
+    public static func statusLabel(for row: Row) -> StatusLabel {
+        switch row.state {
+        case .ok: return row.id == .agent ? .answered : .connected
+        case .waiting: return .waiting
+        case .checking: return .checking
+        case .notCheckable: return .notCheckable
+        case .notListening: return .notListening
+        case let .problem(reason):
+            switch reason {
+            case .glassesNotConnected, .networkUnreachable, .appNotRunning: return .disconnected
+            case .glassesBatteryCritical: return .needsCharging
+            case .glassesUpdateRequired: return .updateNeeded
+            case .metaRegistrationMissing: return .needsRegistration
+            case .microphoneDenied: return .needsPermission
+            case .gatewayUnreachable, .agentNotResponding: return .notResponding
+            case .pairingPending, .pairingRevoked: return .needsApproval
+            }
+        }
     }
 }
 

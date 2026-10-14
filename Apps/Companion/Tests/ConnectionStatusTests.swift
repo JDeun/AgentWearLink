@@ -95,8 +95,50 @@ final class ConnectionStatusTests: XCTestCase {
         var signals = healthy()
         signals.speechReady = false
         let state = HomeViewState(signals: signals, telegramConfigured: false)
-        XCTAssertEqual(state.rows[1].state, .checking)
-        XCTAssertEqual(state.banner, .checking)
+        XCTAssertEqual(state.rows[1].state, .notListening)
+        XCTAssertEqual(state.banner, .notListening)
+        XCTAssertFalse(state.showsCallHint)
+    }
+
+    func testFailedConnectWithGlassesOnIsNotListening() {
+        var signals = healthy()
+        signals.listening = false
+        signals.speechReady = false
+        XCTAssertEqual(HomeViewState(signals: signals, telegramConfigured: false).banner, .checking)
+        signals.listenFailed = true
+        XCTAssertEqual(HomeViewState(signals: signals, telegramConfigured: false).banner, .notListening)
+    }
+
+    func testRevokedGrantDoesNotClaimThePhoneIsConnecting() {
+        var signals = healthy()
+        signals.listening = false
+        signals.speechReady = false
+        signals.gateway = .pairingRevoked
+        let state = HomeViewState(signals: signals, telegramConfigured: false)
+        XCTAssertEqual(state.rows[1].state, .ok)
+        XCTAssertEqual(state.rows[3].state, .problem(.pairingRevoked))
+        guard case .problem = state.banner else { return XCTFail("\(state.banner)") }
+    }
+
+    func testCallHintOnlyWhileListening() {
+        XCTAssertTrue(HomeViewState(signals: healthy(), telegramConfigured: false).showsCallHint)
+        var waiting = healthy()
+        waiting.glasses = .waiting
+        XCTAssertFalse(HomeViewState(signals: waiting, telegramConfigured: false).showsCallHint)
+    }
+
+    func testStatusLabelsAreSpecific() {
+        func label(_ id: AWLChainLinkID, _ state: HomeViewState.RowState) -> HomeViewState.StatusLabel {
+            HomeViewState.statusLabel(for: .init(id: id, state: state, checkedAt: nil))
+        }
+        XCTAssertEqual(label(.gateway, .problem(.pairingPending)), .needsApproval)
+        XCTAssertEqual(label(.gateway, .problem(.pairingRevoked)), .needsApproval)
+        XCTAssertEqual(label(.glasses, .problem(.glassesBatteryCritical)), .needsCharging)
+        XCTAssertEqual(label(.glasses, .problem(.glassesUpdateRequired)), .updateNeeded)
+        XCTAssertEqual(label(.network, .problem(.networkUnreachable)), .disconnected)
+        XCTAssertEqual(label(.agent, .problem(.agentNotResponding)), .notResponding)
+        XCTAssertEqual(label(.agent, .ok), .answered)
+        XCTAssertEqual(label(.glasses, .waiting), .waiting)
     }
 
     func testGlassesConnectedButRuntimeNotUpYetIsChecking() {
