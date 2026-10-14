@@ -41,6 +41,7 @@ enum CompanionPreviewFixture {
             signals.glasses = .connected
             signals.glassesBattery = 72
             signals.listening = true
+            signals.speechReady = true
         case "home-problem":
             signals.glasses = .connected
             signals.glassesBattery = 72

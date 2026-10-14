@@ -14,12 +14,6 @@ final class WearablesLink {
         case failed
     }
 
-    struct GlassesSnapshot: Equatable {
-        var glasses: ConnectionSignals.Glasses
-        var battery: Int?
-        var charging: Bool
-    }
-
     private(set) var configuration: Configuration?
     private var observers: [Task<Void, Never>] = []
     private var deviceTokens: [any AnyListenerToken] = []
@@ -91,35 +85,31 @@ final class WearablesLink {
     // MARK: Glasses state
 
     func snapshot() -> GlassesSnapshot {
-        guard isConfigured else {
-            return GlassesSnapshot(glasses: .registrationRequired, battery: nil, charging: false)
-        }
+        GlassesStateMapper.snapshot(registered: isRegistered, devices: observations())
+    }
+
+    var hasConnectedDevice: Bool {
+        GlassesStateMapper.hasConnectedDevice(observations())
+    }
+
+    private func observations() -> [GlassesDeviceObservation] {
+        guard isConfigured else { return [] }
         let wearables = Wearables.shared
-        guard wearables.registrationState == .registered else {
-            return GlassesSnapshot(glasses: .registrationRequired, battery: nil, charging: false)
+        return wearables.devices.compactMap { wearables.deviceForIdentifier($0) }.map { device in
+            let link: GlassesDeviceObservation.Link
+            switch device.linkState {
+            case .connected: link = .connected
+            case .connecting: link = .connecting
+            default: link = .disconnected
+            }
+            let compatibility = device.compatibility()
+            return GlassesDeviceObservation(
+                link: link,
+                updateRequired: compatibility == .deviceUpdateRequired || compatibility == .sdkUpdateRequired,
+                battery: device.batteryLevel,
+                charging: device.chargingState == .charging
+            )
         }
-        let devices = wearables.devices.compactMap { wearables.deviceForIdentifier($0) }
-        guard let device = devices.first(where: { $0.linkState == .connected }) ?? devices.first else {
-            return GlassesSnapshot(glasses: .waiting, battery: nil, charging: false)
-        }
-        let charging = device.chargingState == .charging
-        switch device.compatibility() {
-        case .deviceUpdateRequired, .sdkUpdateRequired:
-            return GlassesSnapshot(glasses: .updateRequired, battery: device.batteryLevel, charging: charging)
-        default:
-            break
-        }
-        let glasses: ConnectionSignals.Glasses
-        switch device.linkState {
-        case .connected: glasses = .connected
-        case .connecting: glasses = .connecting
-        default: glasses = .waiting
-        }
-        return GlassesSnapshot(
-            glasses: glasses,
-            battery: glasses == .connected ? device.batteryLevel : nil,
-            charging: charging
-        )
     }
 
     /// Checks silently; never switches to the Meta AI app.
@@ -187,12 +177,15 @@ final class WearablesLink {
         }
     }
 
-    /// Returns once the SDK lists at least one device (glasses unfolded and
-    /// near the phone). The first stream value arrives immediately.
-    func waitForDevice() async {
+    /// Returns once registered glasses are actually connected (unfolded and
+    /// near the phone). Paired glasses in the case are listed by the SDK but
+    /// not connected, so the device list alone is not enough. Polls a local
+    /// SDK property; cancellable.
+    func waitForConnectedDevice(pollInterval: Duration = .seconds(2)) async {
         guard isConfigured else { return }
-        for await identifiers in Wearables.shared.devicesStream() {
-            if Task.isCancelled || !identifiers.isEmpty { return }
+        while !Task.isCancelled {
+            if isRegistered, hasConnectedDevice { return }
+            try? await Task.sleep(for: pollInterval)
         }
     }
 }

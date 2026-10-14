@@ -198,7 +198,16 @@ struct ChainRowView: View {
         case let .problem(reason): ProblemText(reason: reason)
         case .waiting: Text("쓰면 자동으로 연결돼요")
         case .checking:
-            if row.id == .agent { Text("아직 대화 없음") } else { Text("확인 중") }
+            switch row.id {
+            case .agent: Text("아직 대화 없음")
+            case .phone:
+                if signals.listening && !signals.speechReady {
+                    Text("음성 인식이 시작되지 않음")
+                } else {
+                    Text("안경과 연결하는 중")
+                }
+            default: Text("확인 중")
+            }
         case .ok:
             switch row.id {
             case .glasses:
@@ -208,7 +217,7 @@ struct ChainRowView: View {
                     Text("연결됨")
                 }
             case .phone:
-                signals.listening ? Text("듣는 중") : Text("앱 실행 중")
+                signals.listening && signals.speechReady ? Text("듣는 중") : Text("앱 실행 중")
             case .network:
                 Text("Tailscale로 게이트웨이 응답")
             case .gateway:

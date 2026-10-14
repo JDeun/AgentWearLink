@@ -8,6 +8,10 @@ struct SettingsView: View {
     @State private var versionTaps = 0
     @State private var showDiagnostics = false
     @State private var showFullFingerprint = false
+    /// Edited locally and committed on submit or focus loss: every change
+    /// restarts the voice session, so it must not follow each keystroke.
+    @State private var chatIDDraft = ""
+    @FocusState private var chatIDFocused: Bool
 
     var body: some View {
         Form {
@@ -29,9 +33,13 @@ struct SettingsView: View {
                         Text("텔레그램 채팅 ID")
                             .font(.subheadline.weight(.semibold))
                         // Numbers-first keyboard: group chat ids start with "-".
-                        TextField(text: binding(\.telegramChatID), prompt: Text(verbatim: "123456789")) {
+                        TextField(text: $chatIDDraft, prompt: Text(verbatim: "123456789")) {
                             Text("텔레그램 채팅 ID")
                         }
+                        .focused($chatIDFocused)
+                        .submitLabel(.done)
+                        .onSubmit(commitChatID)
+                        .onChange(of: chatIDFocused) { _, focused in if !focused { commitChatID() } }
                         .keyboardType(.numbersAndPunctuation)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -41,8 +49,7 @@ struct SettingsView: View {
                         Text("에이전트 답을 받을 텔레그램 채팅의 숫자 ID")
                             .font(.caption)
                             .foregroundStyle(Theme.secondary)
-                        if !runtime.settings.telegramChatID.isEmpty,
-                           !CompanionTurnOptions.isTelegramChatID(runtime.settings.telegramChatID) {
+                        if !chatIDDraft.isEmpty, !CompanionTurnOptions.isTelegramChatID(chatIDDraft) {
                             Text("숫자로 된 채팅 ID를 입력해 주세요")
                                 .font(.caption)
                                 .foregroundStyle(Theme.problem)
@@ -157,7 +164,9 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(Text("설정"))
+        .onDisappear(perform: commitChatID)
         .onAppear {
+            chatIDDraft = runtime.settings.telegramChatID
             phrasesText = runtime.settings.effectiveWakePhrases.joined(separator: ", ")
         }
         .confirmationDialog(Text("승인만 다시 받기"), isPresented: $confirmReapprove, titleVisibility: .visible) {
@@ -176,6 +185,11 @@ struct SettingsView: View {
     private var defaultGatewayName: String {
         let derived = GatewayAddress.defaultName(forGatewayURL: runtime.settings.gatewayURL)
         return derived.isEmpty ? String(localized: "게이트웨이") : derived
+    }
+
+    private func commitChatID() {
+        let trimmed = chatIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed != runtime.settings.telegramChatID { runtime.settings.telegramChatID = trimmed }
     }
 
     private func savePhrases() {

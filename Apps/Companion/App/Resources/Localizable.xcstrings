@@ -1761,6 +1761,22 @@
         }
       }
     },
+    "안경과 연결하는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to the glasses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경과 연결하는 중"
+          }
+        }
+      }
+    },
     "안경에서 “%@, …” 하고 말하세요": {
       "localizations": {
         "en": {
@@ -2253,6 +2269,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "완료"
+          }
+        }
+      }
+    },
+    "음성 인식이 시작되지 않음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition didn't start"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 인식이 시작되지 않음"
           }
         }
       }

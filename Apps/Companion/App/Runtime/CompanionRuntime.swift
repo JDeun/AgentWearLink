@@ -12,7 +12,8 @@ import UIKit
 /// It configures Meta Wearables, pairs once with the Gateway (setup code or
 /// manual address), then keeps a voice session alive with the stored device
 /// grant: auto-connect on launch, silent recovery with backoff, no
-/// notifications. A user turning "안경 호출 받기" off stops recovery.
+/// notifications. Whether listening is wanted at all is reconciled in one
+/// serialized place, so quick toggles cannot leave it in a stale state.
 @MainActor
 final class CompanionRuntime: ObservableObject {
     enum PairingPhase: Equatable {
@@ -48,16 +49,17 @@ final class CompanionRuntime: ObservableObject {
     @Published private(set) var log = ActivityLog()
 
     var isListening: Bool { runtime != nil }
+    var homeState: HomeViewState {
+        HomeViewState(signals: signals, telegramConfigured: settings.isTelegramDeliveryConfigured)
+    }
     /// Gateway hop name for the UI; "게이트웨이"/"Gateway" when unknown.
     var gatewayLabel: String {
         let name = settings.gatewayDisplayName
         return name.isEmpty ? String(localized: "게이트웨이") : name
     }
-    var homeState: HomeViewState {
-        HomeViewState(signals: signals, telegramConfigured: settings.isTelegramDeliveryConfigured)
-    }
 
     private let store: CompanionSettingsStore
+    private let startRequest = StartRequestFlag()
     private let wearables = WearablesLink()
     private let gatewayLink = GatewayLink()
     private let keepAlive = SilentKeepAlive()
@@ -65,16 +67,26 @@ final class CompanionRuntime: ObservableObject {
     private let diagnostics = AWLDiagnosticRecorder(capacity: 256)
     private let pathMonitor = NWPathMonitor()
     private var pathSatisfied: Bool?
+    private var appActive = true
 
     private var runtime: AgentWearLinkRuntime?
     private var device: MetaDATDeviceAdapter?
+    /// Set only after the runtime started, so health checks never use a
+    /// session whose dispatcher is not ready yet.
     private var voiceSession: GatewaySession?
+    private var voiceConnecting = false
     private var wakeGate: WakeGateBox?
     private var latency = TurnLatencyTracker()
     private var connectionFence = AWLConnectionAttemptFence()
     private var disconnectInProgress = false
+
     private var recoveryTask: Task<Void, Never>?
+    private var recoveryGeneration: UInt64 = 0
+    private var reconcileChain: Task<Void, Never>?
+    private var restartDebounce: Task<Void, Never>?
+    private var watchTask: Task<Void, Never>?
     private var pairingTask: Task<Void, Never>?
+    private var pairingGeneration: UInt64 = 0
     private var periodicCheckTask: Task<Void, Never>?
     private var started = false
     /// DEBUG screenshot fixtures freeze the signals.
@@ -90,9 +102,18 @@ final class CompanionRuntime: ObservableObject {
         if loaded.setupCompleted {
             setup = SetupProgress(completed: Set(SetupStep.allCases))
         }
+        keepAlive.onEvent = { [weak self] line in self?.record(line) }
     }
 
-    // MARK: Launch
+    private var wantsListening: Bool {
+        ListeningPolicy.wantsListening(
+            setupCompleted: settings.setupCompleted,
+            listenEnabled: settings.listenEnabled,
+            practicing: !settings.setupCompleted && setup.current == .practice
+        )
+    }
+
+    // MARK: Launch and app phase
 
     /// Called once from the app's `.task`.
     func start() async {
@@ -110,28 +131,34 @@ final class CompanionRuntime: ObservableObject {
         refreshGlasses()
         signals.microphone = await wearables.microphonePermission()
 
-        if settings.setupCompleted {
-            if settings.listenEnabled { scheduleRecovery(reason: "launch", immediate: true) }
-        } else {
-            await restoreSetupProgress()
+        if startRequest.consume(), settings.setupCompleted, !settings.listenEnabled {
+            // A Start Listening intent that arrived before the UI subscribed.
+            settings.listenEnabled = true
         }
+        if !settings.setupCompleted { await restoreSetupProgress() }
+        requestReconcile("launch", immediate: true)
         await checkNow()
         startPeriodicChecks()
     }
 
+    /// The Meta lifecycle stays in the foreground phase while listening is
+    /// wanted: the product promise is a voice session that survives the
+    /// screen turning off. It follows the real app phase otherwise.
     func scenePhaseChanged(_ phase: ScenePhase) {
+        guard phase != .inactive else { return }
+        appActive = phase == .active
         Task {
-            if phase == .active {
+            guard started, !signalsFrozen else { return }
+            if appActive {
                 await lifecycle.transition(to: .foreground)
-                guard started, !signalsFrozen else { return }
                 refreshGlasses()
-                if settings.setupCompleted, settings.listenEnabled, runtime == nil {
-                    scheduleRecovery(reason: "foreground", immediate: true)
+                if wantsListening {
+                    // iOS only lets playback start in the foreground.
+                    keepAlive.start()
+                    if runtime == nil { startRecovery("foreground", immediate: true, restart: true) }
                 }
                 await checkNow()
-            } else if phase == .background, runtime == nil {
-                // A live voice session is deliberately NOT retired in the
-                // background: the wearer talks with the phone locked.
+            } else if !wantsListening {
                 await lifecycle.transition(to: .background)
             }
         }
@@ -149,9 +176,42 @@ final class CompanionRuntime: ObservableObject {
 
     /// "Start listening" App Intent / App Shortcut.
     func startListeningFromIntent() {
-        guard settings.setupCompleted else { return }
+        _ = startRequest.consume()
+        guard started, settings.setupCompleted else { return }
         if !settings.listenEnabled { settings.listenEnabled = true }
-        scheduleRecovery(reason: "start listening intent", immediate: true)
+        if runtime == nil { startRecovery("start listening intent", immediate: true, restart: true) }
+    }
+
+    // MARK: Listening reconciliation
+
+    /// Serializes start/stop so an off→on toggle during an in-flight stop
+    /// still ends up listening.
+    private func requestReconcile(_ reason: String, immediate: Bool = true, restartSession: Bool = false) {
+        let previous = reconcileChain
+        reconcileChain = Task { [weak self] in
+            await previous?.value
+            await self?.reconcile(reason, immediate: immediate, restartSession: restartSession)
+        }
+    }
+
+    private func reconcile(_ reason: String, immediate: Bool, restartSession: Bool) async {
+        guard !signalsFrozen else { return }
+        if wantsListening {
+            if appActive { keepAlive.start() }
+            if restartSession, runtime != nil {
+                record("restart: \(reason)")
+                await disconnectVoice()
+                // A new DAT session too soon after a stop fails (dat-ios #231).
+                startRecovery(reason, immediate: false, restart: true)
+            } else if runtime == nil {
+                startRecovery(reason, immediate: immediate, restart: false)
+            }
+        } else {
+            cancelRecovery()
+            await disconnectVoice()
+            keepAlive.stop()
+            if !appActive { await lifecycle.transition(to: .background) }
+        }
     }
 
     // MARK: Setup
@@ -160,8 +220,7 @@ final class CompanionRuntime: ObservableObject {
         var progress = SetupProgress()
         if wearables.isRegistered { progress.complete(.metaRegistration) }
         if signals.microphone == .granted { progress.complete(.microphone) }
-        if let endpoint = try? GatewayAddress.endpoint(fromUserInput: settings.gatewayURL),
-           await gatewayLink.hasWriteGrant(for: endpoint) {
+        if let endpoint = currentEndpoint, await gatewayLink.grantStatus(for: endpoint) == .approved {
             progress.complete(.tailscale)
             progress.complete(.gateway)
         }
@@ -187,7 +246,10 @@ final class CompanionRuntime: ObservableObject {
 
     func completeStep(_ step: SetupStep) {
         setup.complete(step)
-        if step == .gateway { startPracticeIfPossible() }
+        if step == .gateway {
+            practice = PracticeState()
+            requestReconcile("call practice")
+        }
     }
 
     func skipStep(_ step: SetupStep) {
@@ -199,13 +261,8 @@ final class CompanionRuntime: ObservableObject {
         setup = SetupProgress(completed: Set(SetupStep.allCases))
         settings.setupCompleted = true
         practice = PracticeState()
-        if settings.listenEnabled { scheduleRecovery(reason: "setup finished", immediate: true) }
+        requestReconcile("setup finished")
         Task { await checkNow() }
-    }
-
-    private func startPracticeIfPossible() {
-        practice = PracticeState()
-        scheduleRecovery(reason: "call practice", immediate: true)
     }
 
     // MARK: Pairing
@@ -214,7 +271,11 @@ final class CompanionRuntime: ObservableObject {
         do {
             let code = try OpenClawSetupCode(raw)
             let endpoint = try GatewayAddress.endpoint(for: code.url)
-            runPairing(endpoint: endpoint, credentials: .init(bootstrapToken: code.bootstrapToken))
+            runPairing(
+                endpoint: endpoint,
+                credentials: .init(bootstrapToken: code.bootstrapToken),
+                codeExpiresAt: code.expiresAt
+            )
         } catch OpenClawSetupCodeError.expired {
             pairing = .failed(.expiredCode)
         } catch GatewayAddressError.insecure {
@@ -228,7 +289,7 @@ final class CompanionRuntime: ObservableObject {
         let token = oneTimeToken.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             let endpoint = try GatewayAddress.endpoint(fromUserInput: address)
-            runPairing(endpoint: endpoint, credentials: .init(token: token.isEmpty ? nil : token))
+            runPairing(endpoint: endpoint, credentials: .init(token: token.isEmpty ? nil : token), codeExpiresAt: nil)
         } catch GatewayAddressError.insecure {
             pairing = .failed(.insecureAddress)
         } catch {
@@ -237,29 +298,48 @@ final class CompanionRuntime: ObservableObject {
     }
 
     func cancelPairing() {
+        pairingGeneration &+= 1
         pairingTask?.cancel()
         pairingTask = nil
         pairing = .idle
     }
 
     /// Connects, and while the Gateway answers "pairing required" keeps
-    /// retrying quietly until the device is approved on the host. The
-    /// one-time credential lives only inside this task.
-    private func runPairing(endpoint: OpenClawEndpoint, credentials: OpenClawConnectCredentials) {
+    /// retrying quietly until the device is approved on the host or the
+    /// setup code expires. The one-time credential lives only in this task.
+    /// Every state write is fenced by a generation so a cancelled or older
+    /// attempt can never overwrite a newer one.
+    private func runPairing(
+        endpoint: OpenClawEndpoint,
+        credentials: OpenClawConnectCredentials,
+        codeExpiresAt: Date?
+    ) {
         pairingTask?.cancel()
+        pairingGeneration &+= 1
+        let generation = pairingGeneration
         pairing = .connecting
         record("pairing started (\(endpoint.exposure.rawValue))")
         pairingTask = Task { [weak self] in
-            guard let self else { return }
-            let deadline = Date().addingTimeInterval(10 * 60)
-            while !Task.isCancelled {
-                guard Date() < deadline else {
-                    self.pairing = .failed(.timedOut)
+            let startedAt = Date()
+            @MainActor func current() -> CompanionRuntime? {
+                guard let self, !Task.isCancelled, self.pairingGeneration == generation else { return nil }
+                return self
+            }
+            while let runtime = current() {
+                switch PairingRetry.next(now: Date(), startedAt: startedAt, codeExpiresAt: codeExpiresAt) {
+                case .codeExpired:
+                    runtime.record("pairing stopped: setup code expired")
+                    runtime.pairing = .failed(.expiredCode)
                     return
+                case .timedOut:
+                    runtime.pairing = .failed(.timedOut)
+                    return
+                case .retry:
+                    break
                 }
                 do {
-                    let session = try self.gatewayLink.makeSession(
-                        endpoint: endpoint, credentials: credentials, diagnostics: self.diagnostics
+                    let session = try runtime.gatewayLink.makeSession(
+                        endpoint: endpoint, credentials: credentials, diagnostics: runtime.diagnostics
                     )
                     do {
                         try await session.supervisor.start()
@@ -267,40 +347,41 @@ final class CompanionRuntime: ObservableObject {
                         await session.supervisor.stop()
                         throw error
                     }
-                    let name = await session.agentName(sessionKey: self.sessionKeyOrNil)
+                    let name = await session.agentName(sessionKey: runtime.sessionKeyOrNil)
                     await session.supervisor.stop()
-                    guard !Task.isCancelled else { return }
-                    guard await self.gatewayLink.hasWriteGrant(for: endpoint) else {
-                        self.record("pairing finished without a write grant")
-                        self.pairing = .failed(.rejected)
+                    let grant = await runtime.gatewayLink.grantStatus(for: endpoint)
+                    guard let runtime = current() else { return }
+                    guard grant == .approved else {
+                        runtime.record("pairing finished without a write grant")
+                        runtime.pairing = .failed(.rejected)
                         return
                     }
-                    self.settings.gatewayURL = endpoint.gatewayURL.absoluteString
-                    if let name, !name.isEmpty { self.settings.agentName = name }
-                    self.pairing = .succeeded
-                    self.signals.network = .reachable
-                    self.signals.gateway = .ok
-                    self.record("pairing approved")
+                    runtime.settings.gatewayURL = endpoint.gatewayURL.absoluteString
+                    if let name, !name.isEmpty { runtime.settings.agentName = name }
+                    runtime.pairing = .succeeded
+                    runtime.signals.network = .reachable
+                    runtime.signals.gateway = .ok
+                    runtime.record("pairing approved")
                     return
                 } catch {
-                    let failure = GatewayFailure.classify(error, usedStoredGrant: false)
-                    switch failure {
+                    guard let runtime = current() else { return }
+                    switch GatewayFailure.classify(error, usedStoredGrant: false) {
                     case .pairingPending:
-                        if self.pairing != .waitingForApproval {
-                            self.record("waiting for approval on the host")
+                        if runtime.pairing != .waitingForApproval {
+                            runtime.record("waiting for approval on the host")
                         }
-                        self.pairing = .waitingForApproval
-                        try? await Task.sleep(for: .seconds(3))
+                        runtime.pairing = .waitingForApproval
+                        try? await Task.sleep(for: .seconds(PairingRetry.interval))
                     case .networkUnreachable:
-                        self.record("pairing failed: network")
-                        self.pairing = .failed(.network)
+                        runtime.record("pairing failed: network")
+                        runtime.pairing = .failed(.network)
                         return
                     case .pairingRevoked:
-                        self.pairing = .failed(.rejected)
+                        runtime.pairing = .failed(.rejected)
                         return
                     case .gatewayUnreachable:
-                        self.record("pairing failed: gateway")
-                        self.pairing = .failed(.gateway)
+                        runtime.record("pairing failed: gateway")
+                        runtime.pairing = .failed(.gateway)
                         return
                     }
                 }
@@ -312,7 +393,7 @@ final class CompanionRuntime: ObservableObject {
 
     /// "승인만 다시 받기".
     func reapprove() async {
-        await stopListening(userInitiated: true)
+        await stopEverything()
         if let endpoint = currentEndpoint { await gatewayLink.forgetGrant(for: endpoint) }
         settings.setupCompleted = false
         setup.restartGatewayApproval()
@@ -323,7 +404,7 @@ final class CompanionRuntime: ObservableObject {
 
     /// "모두 지우고 처음부터".
     func resetEverything() async {
-        await stopListening(userInitiated: true)
+        await stopEverything()
         await gatewayLink.forgetEverything(endpoint: currentEndpoint)
         store.reset()
         settings = store.load()
@@ -334,6 +415,14 @@ final class CompanionRuntime: ObservableObject {
         lastCheckAt = nil
         await restoreSetupProgress()
         record("reset")
+    }
+
+    private func stopEverything() async {
+        cancelRecovery()
+        restartDebounce?.cancel()
+        await reconcileChain?.value
+        await disconnectVoice()
+        keepAlive.stop()
     }
 
     func copyDiagnostics() {
@@ -352,12 +441,8 @@ final class CompanionRuntime: ObservableObject {
         guard !signalsFrozen else { return }
         store.save(settings)
         guard started else { return }
-        if old.listenEnabled != settings.listenEnabled {
-            if settings.listenEnabled {
-                if settings.setupCompleted { scheduleRecovery(reason: "listening on", immediate: true) }
-            } else {
-                Task { await stopListening(userInitiated: true) }
-            }
+        if old.listenEnabled != settings.listenEnabled || old.setupCompleted != settings.setupCompleted {
+            requestReconcile(settings.listenEnabled ? "listening on" : "listening off")
         }
         if old.effectiveWakePhrases != settings.effectiveWakePhrases, let wakeGate {
             let phrases = settings.effectiveWakePhrases
@@ -366,9 +451,12 @@ final class CompanionRuntime: ObservableObject {
         let turnOptionsChanged = CompanionTurnOptions.make(from: old) != CompanionTurnOptions.make(from: settings)
             || old.sessionKey != settings.sessionKey
         if turnOptionsChanged, runtime != nil {
-            Task {
-                await stopListening(userInitiated: false)
-                scheduleRecovery(reason: "turn options changed", immediate: true)
+            // Coalesce bursts of edits into one restart.
+            restartDebounce?.cancel()
+            restartDebounce = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                self?.requestReconcile("turn options changed", restartSession: true)
             }
         }
     }
@@ -386,24 +474,29 @@ final class CompanionRuntime: ObservableObject {
         if microphone != .unknown { signals.microphone = microphone }
         let now = Date()
         signals.checkedAt[.phone] = now
+        defer { lastCheckAt = Date() }
 
-        guard let endpoint = currentEndpoint else {
-            lastCheckAt = now
-            return
-        }
+        guard let endpoint = currentEndpoint else { return }
         if pathSatisfied == false {
             GatewayFailure.networkUnreachable.apply(to: &signals, at: now)
-            lastCheckAt = now
             return
         }
+        // A voice session is starting: its own result will update the
+        // Gateway hops. Never race it with a second session.
+        if voiceConnecting { return }
         do {
             if let voiceSession {
                 try await voiceSession.health()
             } else {
-                guard await gatewayLink.hasWriteGrant(for: endpoint) else {
+                switch await gatewayLink.grantStatus(for: endpoint) {
+                case .missing:
                     GatewayFailure.pairingRevoked.apply(to: &signals, at: now)
-                    lastCheckAt = now
                     return
+                case .unavailable:
+                    record("check: keychain unavailable, retry later")
+                    return
+                case .approved:
+                    break
                 }
                 let session = try gatewayLink.makeSession(
                     endpoint: endpoint, credentials: .init(), diagnostics: diagnostics
@@ -421,16 +514,19 @@ final class CompanionRuntime: ObservableObject {
                     throw error
                 }
             }
-            signals.network = .reachable
-            signals.gateway = .ok
-            signals.checkedAt[.network] = Date()
-            signals.checkedAt[.gateway] = Date()
+            markGatewayHealthy()
         } catch {
             let failure = GatewayFailure.classify(error, usedStoredGrant: true)
             record("check: \(failure.rawValue)")
             failure.apply(to: &signals, at: Date())
         }
-        lastCheckAt = Date()
+    }
+
+    private func markGatewayHealthy() {
+        signals.network = .reachable
+        signals.gateway = .ok
+        signals.checkedAt[.network] = Date()
+        signals.checkedAt[.gateway] = Date()
     }
 
     private func startPeriodicChecks() {
@@ -439,7 +535,7 @@ final class CompanionRuntime: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, !Task.isCancelled else { return }
-                if UIApplication.shared.applicationState == .active { await self.checkNow() }
+                if self.appActive { await self.checkNow() }
             }
         }
     }
@@ -464,7 +560,7 @@ final class CompanionRuntime: ObservableObject {
         }
     }
 
-    // MARK: Voice session
+    // MARK: Recovery
 
     private var currentEndpoint: OpenClawEndpoint? {
         try? GatewayAddress.endpoint(fromUserInput: settings.gatewayURL)
@@ -475,131 +571,195 @@ final class CompanionRuntime: ObservableObject {
         return key.isEmpty ? nil : key
     }
 
-    /// Waits quietly for the glasses, settles, then connects with the stored
-    /// grant, backing off on failures. Never notifies; glasses off or charging
-    /// is a normal waiting state.
-    private func scheduleRecovery(reason: String, immediate: Bool) {
-        guard wearables.isConfigured, recoveryTask == nil, runtime == nil else { return }
+    private enum ConnectOutcome { case connected, retry, needsApproval }
+
+    /// Waits quietly until the glasses are actually connected (not merely
+    /// paired and folded in the case), settles, then connects with the stored
+    /// grant, backing off on failures. Never notifies the user.
+    /// - Parameter restart: replace a running recovery loop (e.g. returning
+    ///   to the foreground should not wait out a 60 s backoff).
+    private func startRecovery(_ reason: String, immediate: Bool, restart: Bool) {
+        guard wearables.isConfigured, runtime == nil else { return }
+        if recoveryTask != nil {
+            guard restart else { return }
+            recoveryTask?.cancel()
+        }
+        recoveryGeneration &+= 1
+        let generation = recoveryGeneration
         record("recovery: \(reason)")
         recoveryTask = Task { [weak self] in
             var attempt = 0
-            var first = immediate
+            var settle = !immediate
             while !Task.isCancelled {
                 guard let self else { return }
-                await self.wearables.waitForDevice()
-                if Task.isCancelled { return }
-                if !first {
+                await self.wearables.waitForConnectedDevice()
+                if Task.isCancelled { break }
+                if settle {
                     try? await Task.sleep(for: .seconds(RecoveryPolicy.settleDelay))
                 }
-                first = false
-                guard !Task.isCancelled, self.settings.listenEnabled else { break }
-                await self.connectVoice()
-                if self.runtime != nil { break }
+                settle = true
+                guard !Task.isCancelled, self.wantsListening, self.runtime == nil else { break }
+                let outcome = await self.connectVoice()
+                if outcome != .retry { break }
                 let delay = RecoveryPolicy.delay(afterFailedAttempt: attempt)
                 attempt += 1
                 try? await Task.sleep(for: .seconds(delay))
             }
-            self?.recoveryTask = nil
+            // Only the loop that is still current may clear the slot.
+            if let self, self.recoveryGeneration == generation { self.recoveryTask = nil }
         }
     }
 
-    /// Stops the voice session. A user-initiated stop also ends recovery.
-    func stopListening(userInitiated: Bool) async {
-        if userInitiated {
-            recoveryTask?.cancel()
-            recoveryTask = nil
-        }
-        await disconnectVoice()
+    private func cancelRecovery() {
+        recoveryGeneration &+= 1
+        recoveryTask?.cancel()
+        recoveryTask = nil
     }
 
-    private func connectVoice() async {
+    // MARK: Voice session
+
+    private func connectVoice() async -> ConnectOutcome {
         guard runtime == nil, !connectionFence.isStarting, !disconnectInProgress,
-              wearables.isRegistered, let endpoint = currentEndpoint else { return }
-        guard await gatewayLink.hasWriteGrant(for: endpoint) else {
+              wearables.isRegistered, let endpoint = currentEndpoint else { return .retry }
+        switch await gatewayLink.grantStatus(for: endpoint) {
+        case .missing:
             signals.gateway = .pairingRevoked
-            record("connect skipped: no approved grant")
-            return
+            signals.checkedAt[.gateway] = Date()
+            record("connect stopped: no approved grant")
+            return .needsApproval
+        case .unavailable:
+            record("connect deferred: keychain unavailable")
+            return .retry
+        case .approved:
+            break
         }
-        guard let attempt = connectionFence.begin() else { return }
-        defer { connectionFence.finish(attempt) }
+        guard let attempt = connectionFence.begin() else { return .retry }
+        voiceConnecting = true
+        defer {
+            voiceConnecting = false
+            connectionFence.finish(attempt)
+        }
 
+        let session: GatewaySession
         do {
-            let session = try gatewayLink.makeSession(
-                endpoint: endpoint, credentials: .init(), diagnostics: diagnostics
+            session = try gatewayLink.makeSession(endpoint: endpoint, credentials: .init(), diagnostics: diagnostics)
+        } catch {
+            record("connect failed: invalid endpoint")
+            return .needsApproval
+        }
+        let agent = OpenClawNativeAgentAdapter(
+            supervisor: session.supervisor,
+            dispatcher: session.dispatcher,
+            runClient: OpenClawAgentRunClient(dispatcher: session.dispatcher),
+            sessionKey: sessionKeyOrNil,
+            turnOptions: CompanionTurnOptions.make(from: settings)
+        )
+        let concreteDevice = MetaDATDeviceAdapter(applicationLifecycle: lifecycle, diagnostics: diagnostics)
+        let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
+        let sink = AppleSpeechOutput(
+            synthesizer: EchoGuardSynthesizer(
+                inner: AVSpeechSynthesizerBridge(language: Self.speechLanguage),
+                gate: gate
             )
-            let agent = OpenClawNativeAgentAdapter(
-                supervisor: session.supervisor,
-                dispatcher: session.dispatcher,
-                runClient: OpenClawAgentRunClient(dispatcher: session.dispatcher),
-                sessionKey: sessionKeyOrNil,
-                turnOptions: CompanionTurnOptions.make(from: settings)
-            )
-            let concreteDevice = MetaDATDeviceAdapter(
-                applicationLifecycle: lifecycle,
-                diagnostics: diagnostics
-            )
-            let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
-            let sink = AppleSpeechOutput(
-                synthesizer: EchoGuardSynthesizer(
-                    inner: AVSpeechSynthesizerBridge(language: Self.speechLanguage),
-                    gate: gate
-                )
-            )
-            await configureDevice(concreteDevice, gate: gate)
+        )
+        await configureDevice(concreteDevice, gate: gate)
 
-            let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
-                await sink.consume(event)
-                await self?.observeOutput(event, attempt: attempt)
+        let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
+            await sink.consume(event)
+            await self?.observeOutput(event, attempt: attempt)
+        }
+        // Device first: if the glasses dropped again, fail there without
+        // dialling the Gateway.
+        let composed = AgentWearLinkRuntime(
+            device: concreteDevice,
+            agent: agent,
+            connectionOrder: .deviceFirst,
+            diagnostics: diagnostics,
+            output: output
+        )
+        runtime = composed
+        device = concreteDevice
+        wakeGate = gate
+        do {
+            try await composed.start()
+            guard connectionFence.isCurrent(attempt) else {
+                await composed.stop()
+                clearVoiceReferences()
+                return .retry
             }
-            let composed = AgentWearLinkRuntime(
-                device: concreteDevice,
-                agent: agent,
-                connectionOrder: .agentFirst,
-                diagnostics: diagnostics,
-                output: output
-            )
-            runtime = composed
-            device = concreteDevice
-            voiceSession = session
-            wakeGate = gate
-            do {
-                try await composed.start()
-                guard connectionFence.isCurrent(attempt) else {
-                    await composed.stop()
-                    clearVoiceReferences()
-                    return
-                }
-                await concreteDevice.startVoiceInvocationListening()
-                guard connectionFence.isCurrent(attempt) else {
-                    await concreteDevice.stopVoiceInvocationListening()
-                    await composed.stop()
-                    clearVoiceReferences()
-                    return
-                }
-                let speech = concreteDevice.capabilities.contains(.speechInput)
-                record(speech ? "listening" : "connected without speech")
-                if !speech, signals.microphone != .granted {
-                    signals.microphone = await wearables.microphonePermission()
-                }
-                if keepAlive.start() { record("keep-alive on") }
-                signals.listening = true
-                signals.network = .reachable
-                signals.gateway = .ok
-                signals.checkedAt[.network] = Date()
-                signals.checkedAt[.gateway] = Date()
-                refreshGlasses()
-            } catch {
+            await concreteDevice.startVoiceInvocationListening()
+            guard connectionFence.isCurrent(attempt) else {
                 await concreteDevice.stopVoiceInvocationListening()
                 await composed.stop()
                 clearVoiceReferences()
-                let failure = GatewayFailure.classify(error, usedStoredGrant: true)
-                record("connect failed: \(failure.rawValue)")
-                // A device-side failure (glasses folded mid-connect) is not a
-                // network fact; only record Gateway categories we can trust.
-                if !(error is AWLError) { failure.apply(to: &signals, at: Date()) }
+                return .retry
             }
         } catch {
-            record("connect failed: invalid endpoint")
+            await concreteDevice.stopVoiceInvocationListening()
+            await composed.stop()
+            clearVoiceReferences()
+            let failure = GatewayFailure.classify(error, usedStoredGrant: true)
+            record("connect failed: \(failure.rawValue)")
+            // A device-side failure (glasses folded mid-connect) is not a
+            // network fact; only record Gateway categories we can trust.
+            if !(error is AWLError) { failure.apply(to: &signals, at: Date()) }
+            if failure == .pairingRevoked { return .needsApproval }
+            return .retry
+        }
+
+        voiceSession = session
+        let speech = concreteDevice.capabilities.contains(.speechInput)
+        record(speech ? "listening" : "connected without speech")
+        signals.listening = true
+        signals.speechReady = speech
+        if !speech {
+            signals.microphone = await wearables.microphonePermission()
+        }
+        markGatewayHealthy()
+        refreshGlasses()
+        startWatch(session: session, attempt: attempt)
+        return .connected
+    }
+
+    /// Watches a live session: a supervisor that stopped for good (e.g. a
+    /// revoked grant) never retires the runtime by itself.
+    private func startWatch(session: GatewaySession, attempt: UInt64) {
+        watchTask?.cancel()
+        watchTask = Task { [weak self] in
+            var failures = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard let self, !Task.isCancelled, self.connectionFence.ownsRuntime(attempt) else { return }
+                let connection = await session.connectionState()
+                var failure: GatewayFailure?
+                if connection == .ready {
+                    do {
+                        try await session.health()
+                    } catch {
+                        failure = GatewayFailure.classify(error, usedStoredGrant: true)
+                    }
+                }
+                guard !Task.isCancelled, self.connectionFence.ownsRuntime(attempt) else { return }
+                failures = (failure == nil && connection == .ready) ? 0 : failures + 1
+                if failure == nil, connection == .ready { self.markGatewayHealthy() }
+                switch VoiceSessionWatch.decide(
+                    connection: connection, healthFailure: failure, consecutiveFailures: failures
+                ) {
+                case .keep:
+                    continue
+                case .reconnect:
+                    self.record("watch: session replaced")
+                    await self.disconnectVoice()
+                    self.startRecovery("session watch", immediate: false, restart: true)
+                    return
+                case .stopNeedsApproval:
+                    self.record("watch: approval revoked")
+                    self.cancelRecovery()
+                    await self.disconnectVoice()
+                    GatewayFailure.pairingRevoked.apply(to: &self.signals, at: Date())
+                    return
+                }
+            }
         }
     }
 
@@ -622,6 +782,8 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private func observeTranscript(_ text: String, decision: AWLWakePhraseGate.Decision) {
+        // A transcript proves Speech is running.
+        signals.speechReady = true
         switch decision {
         case let .forward(request):
             latency.requestForwarded(at: Date())
@@ -672,7 +834,8 @@ final class CompanionRuntime: ObservableObject {
         await disconnectVoice()
         record("device session lost")
         refreshGlasses()
-        if settings.listenEnabled { scheduleRecovery(reason: "device session lost", immediate: false) }
+        // The keep-alive keeps running, so this loop survives a locked phone.
+        if wantsListening { startRecovery("device session lost", immediate: false, restart: true) }
     }
 
     private func disconnectVoice() async {
@@ -680,18 +843,22 @@ final class CompanionRuntime: ObservableObject {
         disconnectInProgress = true
         defer { disconnectInProgress = false }
         connectionFence.invalidate()
+        watchTask?.cancel()
+        watchTask = nil
         if let device { await device.stopVoiceInvocationListening() }
         if let runtime { await runtime.stop() }
         clearVoiceReferences()
     }
 
+    /// Note: the keep-alive is deliberately NOT stopped here; it follows
+    /// whether listening is wanted, not whether a session is up.
     private func clearVoiceReferences() {
-        keepAlive.stop()
         runtime = nil
         device = nil
         voiceSession = nil
         wakeGate = nil
         signals.listening = false
+        signals.speechReady = false
     }
 
     private static var speechLanguage: String {

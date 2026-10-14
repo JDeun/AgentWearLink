@@ -6,7 +6,12 @@ import Foundation
 struct GatewaySession: Sendable {
     let supervisor: OpenClawGatewaySupervisor
     let dispatcher: OpenClawRPCDispatcher
+    let state: OpenClawGatewayState
     let usedStoredGrant: Bool
+
+    func connectionState() async -> GatewayConnectionState {
+        await state.connectionState
+    }
 
     func health() async throws {
         let response = try await dispatcher.request(method: "health", params: EmptyParams())
@@ -41,17 +46,19 @@ struct GatewayLink: Sendable {
 
     /// Whether a write-capable grant for this endpoint is stored. Never
     /// infers authorization from an identity alone; does not touch the network.
-    func hasWriteGrant(for endpoint: OpenClawEndpoint) async -> Bool {
+    func grantStatus(for endpoint: OpenClawEndpoint) async -> GrantStatus {
         let scoped = GatewayScopedOpenClawDeviceCredentialStore(
             base: credentialStore,
             namespace: endpoint.credentialNamespace
         )
         do {
-            guard let identity = try await identityStore.load() else { return false }
+            guard let identity = try await identityStore.load() else { return .missing }
             let grant = try await scoped.load(deviceID: identity.deviceID, role: "operator")
-            return OpenClawStoredGrantAdmission.permitsWriteRuntime(grant)
+            return OpenClawStoredGrantAdmission.permitsWriteRuntime(grant) ? .approved : .missing
         } catch {
-            return false
+            // Typically errSecInteractionNotAllowed before the first unlock
+            // after a reboot: unknown, not revoked.
+            return .unavailable
         }
     }
 
@@ -102,6 +109,8 @@ struct GatewayLink: Sendable {
         )
         let usedStoredGrant = credentials.token == nil && credentials.bootstrapToken == nil
             && credentials.password == nil && credentials.explicitDeviceToken == nil
-        return GatewaySession(supervisor: supervisor, dispatcher: dispatcher, usedStoredGrant: usedStoredGrant)
+        return GatewaySession(
+            supervisor: supervisor, dispatcher: dispatcher, state: state, usedStoredGrant: usedStoredGrant
+        )
     }
 }

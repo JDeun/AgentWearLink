@@ -14,6 +14,9 @@ struct StartListeningIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        // Persisted first: on a cold launch the notification can fire before
+        // the UI subscribes; launch consumes the flag instead.
+        StartRequestFlag().mark()
         NotificationCenter.default.post(name: Self.notification, object: nil)
         return .result()
     }
