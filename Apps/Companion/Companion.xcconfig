@@ -19,4 +19,8 @@ AWL_META_CLIENT_TOKEN =
 AWL_META_TEAM_ID =
 AWL_META_CALLBACK_SCHEME = agentwearlink-companion
 
+// Lives here rather than in project.yml so a local xcconfig can override it
+// from plain Xcode builds too (target settings would win over xcconfigs).
+PRODUCT_BUNDLE_IDENTIFIER = dev.agentwearlink.companion
+
 #include? "local.companion.xcconfig"

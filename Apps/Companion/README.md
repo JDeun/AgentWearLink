@@ -76,12 +76,14 @@ xcodebuild -project AgentWearLinkCompanion.xcodeproj -scheme AgentWearLinkCompan
   -destination 'platform=iOS Simulator,name=iPhone 17' test
 ```
 
-For a physical device, create an uncommitted `local.companion.xcconfig` next to `Companion.xcconfig`. It holds your team ID, callback URL scheme and bundle identifier, and the `local.*` rule in `.gitignore` keeps it out of git. Pass it explicitly so it wins over target settings:
+For a physical device, create an uncommitted `local.companion.xcconfig` next to `Companion.xcconfig`. It holds your team ID, callback URL scheme and bundle identifier, and the `local.*` rule in `.gitignore` keeps it out of git. `Companion.xcconfig` includes it, so it applies to Xcode and command-line builds alike:
 
 ```bash
 xcodebuild -project AgentWearLinkCompanion.xcodeproj -scheme AgentWearLinkCompanion \
-  -destination 'generic/platform=iOS' -xcconfig local.companion.xcconfig -allowProvisioningUpdates build
+  -destination 'generic/platform=iOS' -allowProvisioningUpdates build
 ```
+
+If you already have a provisioned app ID (for example from an earlier AgentWearLink host build), set `PRODUCT_BUNDLE_IDENTIFIER` to it. The app then installs as an update of that app and needs no new profile.
 
 Meta AI Developer Mode needs no App ID or client token.
 

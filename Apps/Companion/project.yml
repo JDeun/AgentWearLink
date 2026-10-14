@@ -42,7 +42,6 @@ targets:
       base:
         PRODUCT_NAME: AgentWearLink
         PRODUCT_MODULE_NAME: AgentWearLinkCompanion
-        PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.companion
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: App/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
