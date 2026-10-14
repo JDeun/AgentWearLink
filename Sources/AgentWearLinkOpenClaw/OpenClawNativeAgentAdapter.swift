@@ -65,6 +65,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     }
 
     private let sessionKey: String?
+    private let turnOptions: OpenClawAgentTurnOptions
     private let maximumTerminalWaitPolls: Int
     private let terminalPollTimeoutMilliseconds: Int
     private let maximumAcceptedRunRecoveries: Int
@@ -82,7 +83,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         maximumAcceptedRunRecoveries: Int = OpenClawNativeAgentAdapter.defaultMaximumAcceptedRunRecoveries,
         responseBufferLimit: Int = AgentResponse.defaultBufferLimit,
         maximumStreamedTextBytes: Int = OpenClawNativeAgentAdapter.defaultMaximumStreamedTextBytes,
-        supportsVisionInput: Bool = false
+        supportsVisionInput: Bool = false,
+        turnOptions: OpenClawAgentTurnOptions = .init()
     ) {
         precondition(maximumTerminalWaitPolls > 0)
         precondition(terminalPollTimeoutMilliseconds > 0)
@@ -93,6 +95,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         self.dispatcher = dispatcher
         self.runClient = runClient
         self.sessionKey = sessionKey
+        self.turnOptions = turnOptions
         self.maximumTerminalWaitPolls = maximumTerminalWaitPolls
         self.terminalPollTimeoutMilliseconds = terminalPollTimeoutMilliseconds
         self.maximumAcceptedRunRecoveries = maximumAcceptedRunRecoveries
@@ -115,6 +118,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     ) async -> AsyncThrowingStream<AgentResponse, Error> {
         let client = runClient
         let sessionKey = sessionKey
+        let turnOptions = turnOptions
 
         return makeResponseStream(
             interactionID: request.interactionID,
@@ -123,7 +127,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
             try await client.submit(
                 message: request.text,
                 sessionKey: sessionKey,
-                idempotencyKey: idempotencyKey
+                idempotencyKey: idempotencyKey,
+                turnOptions: turnOptions
             )
         }
     }
@@ -146,6 +151,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
 
         let client = runClient
         let sessionKey = sessionKey
+        let turnOptions = turnOptions
         let attachment: OpenClawAgentAttachment
         do {
             attachment = try Self.makeImageAttachment(request.image)
@@ -166,7 +172,8 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
                 message: request.prompt,
                 sessionKey: sessionKey,
                 idempotencyKey: idempotencyKey,
-                attachments: [attachment]
+                attachments: [attachment],
+                turnOptions: turnOptions
             )
         }
     }
