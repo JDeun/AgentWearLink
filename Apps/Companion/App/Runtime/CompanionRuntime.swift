@@ -191,7 +191,7 @@ final class CompanionRuntime: ObservableObject {
                 refreshGlasses()
                 if wantsListening {
                     // iOS only lets playback start in the foreground.
-                    keepAlive.start()
+                    applyKeepAlivePolicy(force: true)
                     if runtime == nil { startRecovery("foreground", immediate: true, restart: true) }
                 }
                 await checkNow()
@@ -235,12 +235,12 @@ final class CompanionRuntime: ObservableObject {
         guard !signalsFrozen else { return }
         if wantsListening {
             // May fail in the background; the keep-alive watchdog retries.
-            keepAlive.start()
+            applyKeepAlivePolicy(force: true)
             if restartSession, runtime != nil {
                 record("restart: \(reason)")
                 await disconnectVoice()
                 // No DAT session now: safe to reactivate audio if needed.
-                keepAlive.start()
+                applyKeepAlivePolicy(force: true)
                 // A new DAT session too soon after a stop fails (dat-ios #231).
                 startRecovery(reason, immediate: false, restart: true)
             } else if runtime == nil {
@@ -516,7 +516,7 @@ final class CompanionRuntime: ObservableObject {
         case .routeChanged: mapped = .routeChanged
         }
         let actions = AudioEventPolicy.actions(for: mapped, listeningWanted: wantsListening)
-        if actions.restartKeepAlive { keepAlive.start() }
+        if actions.restartKeepAlive { applyKeepAlivePolicy(force: true) }
         if actions.recreateSynthesizer { speaker.recreate() }
         if actions.recoverSessionNow {
             if runtime == nil {
@@ -669,11 +669,44 @@ final class CompanionRuntime: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, !Task.isCancelled else { return }
+                self.applyKeepAlivePolicy()
                 self.appendPowerSample()
                 if self.appActive { await self.checkNow() }
             }
         }
     }
+
+    // MARK: Keep-alive policy
+
+    private var glassesLastSeenAt: Date?
+
+    /// Stops the silent keep-alive when it only keeps an idle app awake
+    /// (no glasses for a while, in the background); restarts it when needed.
+    /// `force` re-issues start() (idempotent) when the policy allows, for
+    /// callers that know the engine may have stopped.
+    private func applyKeepAlivePolicy(force: Bool = false) {
+        guard started, !signalsFrozen else { return }
+        let run = KeepAlivePolicy.shouldRun(
+            wantsListening: wantsListening,
+            voiceSessionActive: runtime != nil || voiceConnecting,
+            glassesConnected: signals.glasses == .connected,
+            appActive: appActive,
+            sinceGlassesSeen: glassesLastSeenAt.map { Date().timeIntervalSince($0) }
+        )
+        if !run, keepAlive.isRunning || keepAliveWanted {
+            keepAliveWanted = false
+            record(wantsListening
+                ? "keep-alive off: no glasses for \(Int(KeepAlivePolicy.graceWithoutGlasses / 60)) min"
+                : "keep-alive off: listening off")
+            keepAlive.stop()
+        } else if run, !keepAliveWanted || force {
+            keepAliveWanted = true
+            keepAlive.start()
+        }
+    }
+
+    /// Mirrors whether the policy last asked the keep-alive to run.
+    private var keepAliveWanted = true
 
     // MARK: Power log
 
@@ -714,6 +747,8 @@ final class CompanionRuntime: ObservableObject {
         guard !signalsFrozen, metaConfiguration != nil else { return }
         let snapshot = wearables.snapshot()
         signals.glasses = snapshot.glasses
+        if snapshot.glasses == .connected { glassesLastSeenAt = Date() }
+        applyKeepAlivePolicy()
         signals.glassesBattery = snapshot.battery
         signals.glassesCharging = snapshot.charging
         signals.checkedAt[.glasses] = Date()

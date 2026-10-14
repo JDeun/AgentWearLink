@@ -213,3 +213,26 @@ public enum SpeechPowerPolicy {
         return .listen
     }
 }
+
+/// Whether the silent keep-alive should run. It exists to keep a DAT voice
+/// session alive with the phone locked; with no glasses around it only plays
+/// silence into the iPhone speaker (field log 2026-10-14) and costs phone
+/// battery and heat. After a grace period without glasses it stops; the app
+/// is woken again by the glasses (external-accessory / Bluetooth), the Start
+/// Listening shortcut, or opening it.
+public enum KeepAlivePolicy {
+    public static let graceWithoutGlasses: TimeInterval = 300
+
+    public static func shouldRun(
+        wantsListening: Bool,
+        voiceSessionActive: Bool,
+        glassesConnected: Bool,
+        appActive: Bool,
+        sinceGlassesSeen: TimeInterval?
+    ) -> Bool {
+        guard wantsListening else { return false }
+        if voiceSessionActive || glassesConnected || appActive { return true }
+        guard let sinceGlassesSeen else { return false }
+        return sinceGlassesSeen < graceWithoutGlasses
+    }
+}
