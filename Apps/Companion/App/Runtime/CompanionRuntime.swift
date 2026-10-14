@@ -169,6 +169,7 @@ final class CompanionRuntime: ObservableObject {
             settings.listenEnabled = true
         }
         if !settings.setupCompleted { await restoreSetupProgress() }
+        consumeLaunchSetupCode()
         requestReconcile("launch", immediate: true)
         await checkNow()
         startPeriodicChecks()
@@ -319,6 +320,13 @@ final class CompanionRuntime: ObservableObject {
         } catch {
             pairing = .failed(.invalidCode)
         }
+    }
+
+    /// USB pairing (see `LaunchSetupCode`). The code itself is never logged.
+    private func consumeLaunchSetupCode() {
+        guard let code = LaunchSetupCode.value(in: ProcessInfo.processInfo.arguments) else { return }
+        record("pairing: setup code from the connected computer")
+        pair(setupCode: code)
     }
 
     func pair(address: String, oneTimeToken: String) {
@@ -1025,6 +1033,15 @@ final class CompanionRuntime: ObservableObject {
 
     private func record(_ message: String) {
         log.append(message)
+    }
+
+    /// QR scanner lifecycle (authorization, running, interruptions) for the
+    /// diagnostics log. Never carries the scanned payload.
+    func noteCamera(_ event: String) {
+        record("camera: \(event)")
+        #if DEBUG
+        print("[AWL] camera: \(event)")
+        #endif
     }
 
     // MARK: DEBUG fixtures

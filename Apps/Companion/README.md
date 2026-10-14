@@ -85,6 +85,16 @@ xcodebuild -project AgentWearLinkCompanion.xcodeproj -scheme AgentWearLinkCompan
 
 If you already have a provisioned app ID (for example from an earlier AgentWearLink host build), set `PRODUCT_BUNDLE_IDENTIFIER` to it. The app then installs as an update of that app and needs no new profile.
 
+### Install and pair over USB (no QR)
+
+With the iPhone connected to the computer that hosts the Gateway:
+
+```bash
+Apps/Companion/Tools/install-and-pair.sh --url wss://<gateway-host>.ts.net:8443
+```
+
+It builds and installs the app, mints a one-time setup code with `openclaw qr --limited`, and launches the app with that code as a launch argument, so the app pairs on its own. The code is never printed. Then compare the fingerprint shown in the app with `openclaw devices list` and approve the request.
+
 Meta AI Developer Mode needs no App ID or client token.
 
 ## Privacy

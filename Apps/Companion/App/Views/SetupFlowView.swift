@@ -379,7 +379,8 @@ private struct GatewayStep: View {
             ScannerFrame {
                 QRScannerView(
                     onCode: { runtime.pair(setupCode: $0) },
-                    onFailure: { cameraFailure = $0 }
+                    onFailure: { cameraFailure = $0 },
+                    onEvent: { runtime.noteCamera($0) }
                 )
             }
         }
