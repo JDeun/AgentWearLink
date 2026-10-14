@@ -55,6 +55,7 @@
 | Failure-mode regression matrix | [Reliability](reliability-matrix.md) |
 | Redacted diagnostics | [Diagnostics](diagnostics.md) |
 | Dependency boundaries | [ADR-0001](adr/0001-core-boundaries.md) |
+| Upstream research and hardware findings (Hey Meta, hands-free speech, locked phone, companion app limits) | [Research notes](research/README.md) |
 | Runtime owns intelligence | [ADR-0002](adr/0002-agent-runtime-owns-intelligence.md) |
 
 ## Validation evidence hierarchy
