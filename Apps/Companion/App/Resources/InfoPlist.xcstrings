@@ -1,0 +1,29 @@
+{
+  "sourceLanguage" : "ko",
+  "strings" : {
+    "NSBluetoothAlwaysUsageDescription" : {
+      "comment" : "Bluetooth permission prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent Wear Link connects to your Ray-Ban Meta glasses over Bluetooth." } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Agent Wear Link가 블루투스로 Ray-Ban Meta 안경에 연결합니다." } }
+      }
+    },
+    "NSCameraUsageDescription" : {
+      "comment" : "Camera permission prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The camera is used only to scan the setup QR code shown by your computer." } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "카메라는 컴퓨터에 표시된 설정 QR을 찍을 때만 사용합니다." } }
+      }
+    },
+    "CFBundleDisplayName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent Wear Link" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Agent Wear Link" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}
