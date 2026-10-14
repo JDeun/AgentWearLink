@@ -44,6 +44,7 @@
 | Read-only auth/pairing test | [OpenClaw probe](openclaw-probe.md) |
 | Opt-in mutating agent turn | [OpenClaw chat probe](openclaw-chat-probe.md) |
 | Actual iPhone/Tailnet/Mac acceptance | [P0-B runbook](p0b-openclaw-validation.md) |
+| End-to-end bring-up order on real devices | [Reference deployment](reference-deployment.md) |
 | Reachability and TLS | [Tailscale deployment](tailscale.md) |
 | Transport responsibilities and budgets | [Transport contracts](transports.md) |
 

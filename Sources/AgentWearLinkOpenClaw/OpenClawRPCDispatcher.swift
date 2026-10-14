@@ -200,9 +200,13 @@ public actor OpenClawRPCDispatcher {
         return now - lastActivityMilliseconds > Int64(timeoutMilliseconds)
     }
 
+    /// `timeout` overrides the dispatcher's default deadline for this request.
+    /// Long-poll RPCs whose server hold equals the default (agent.wait) need a
+    /// deadline beyond that hold, or the reply loses to network latency.
     public func request<Params: Encodable & Sendable>(
         method: String,
-        params: Params
+        params: Params,
+        timeout: Duration? = nil
     ) async throws -> OpenClawResponseEnvelope {
         guard !stopping,
               let activeReceiveTask = receiveTask,
@@ -288,7 +292,7 @@ public actor OpenClawRPCDispatcher {
                         )
                         sendCompleted = true
 
-                        try await Task.sleep(for: requestTimeout)
+                        try await Task.sleep(for: timeout ?? self.requestTimeout)
                         await self.fail(
                             id: id,
                             error: OpenClawRPCDispatcherError.deadlineExceeded

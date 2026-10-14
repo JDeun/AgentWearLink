@@ -55,6 +55,14 @@ its contents in CI, issues or logs. Xcode packages Meta client configuration
 inside the installed app; do not mistake the client token for a server-side
 secret. Never put an OpenClaw Gateway bearer token into an xcconfig or plist.
 
+For **Meta AI Developer Mode** testing on your own device, the Meta App ID and
+Client Token are not needed. Meta's CameraAccess sample README says
+"Developer Mode needs no credentials; for other release channels, set
+`META_APP_ID` and `CLIENT_TOKEN`". Leave `AWL_META_APP_ID` and
+`AWL_META_CLIENT_TOKEN` empty. The Apple Team ID and callback scheme are still
+required. Register the app in the Wearables Developer Center (Team ID, bundle
+ID, link) only when moving to a release channel.
+
 The reference app now displays `meta-local-provisioning-required` instead of
 attempting SDK registration with the placeholder values. This is a **local
 setup gate**, not a claim that physical registration has been validated.
