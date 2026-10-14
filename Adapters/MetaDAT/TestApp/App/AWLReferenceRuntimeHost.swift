@@ -51,10 +51,13 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         gatewayHealthInProgress = true
         defer { gatewayHealthInProgress = false }
 
-        guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            gatewayHealthStatus = "gateway-health-token-required"
-            return
-        }
+        // An empty token means "reconnect with the device grant this identity was
+        // issued on approval" (stored in the iOS Keychain under the service below).
+        // That is how #117's persisted-credential reuse is proven on a real
+        // iPhone. Without a stored grant the Gateway rejects the handshake and
+        // the state reports token-required instead of a generic failure.
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let usesStoredGrant = trimmedToken.isEmpty
         gatewayHealthStatus = "gateway-health-checking"
         do {
             let endpoint = try OpenClawEndpoint.tailnetServe(
@@ -90,7 +93,7 @@ final class AWLReferenceRuntimeHost: ObservableObject {
                 socket: socket,
                 appVersion: "0.1.0-ios-health-probe",
                 scopes: profile.scopes,
-                credentials: .init(token: token),
+                credentials: .init(token: usesStoredGrant ? nil : trimmedToken),
                 clientIdentity: profile.clientIdentity,
                 diagnostics: diagnostics
             )
@@ -112,6 +115,9 @@ final class AWLReferenceRuntimeHost: ObservableObject {
             } catch OpenClawHandshakeError.pairingRequired(_) {
                 await supervisor.stop()
                 gatewayHealthStatus = "gateway-health-pairing-required"
+            } catch _ where usesStoredGrant {
+                await supervisor.stop()
+                gatewayHealthStatus = "gateway-health-token-required"
             } catch {
                 await supervisor.stop()
                 gatewayHealthStatus = "gateway-health-failed"
@@ -125,12 +131,17 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         guard !configured else { return }
         // Fail before SDK initialization with test-only placeholder settings.
         // No client token or other registration detail is sent to diagnostics.
+        //
+        // TeamID and the callback scheme are always required. MetaAppID and
+        // ClientToken are only needed outside Meta AI Developer Mode: Meta's
+        // CameraAccess sample states "Developer Mode needs no credentials; for
+        // other release channels, set META_APP_ID and CLIENT_TOKEN". Empty values
+        // therefore mean Developer Mode registration; unexpanded build settings
+        // and the CI placeholder "0" are still rejected.
         guard let registration = Bundle.main.object(forInfoDictionaryKey: "MWDAT")
                 as? [String: Any],
-              let appID = registration["MetaAppID"] as? String,
-              !appID.isEmpty, appID != "0", !appID.contains("$("),
-              let clientToken = registration["ClientToken"] as? String,
-              !clientToken.isEmpty, !clientToken.contains("$("),
+              Self.isOptionalCredential(registration["MetaAppID"]),
+              Self.isOptionalCredential(registration["ClientToken"]),
               let teamID = registration["TeamID"] as? String,
               !teamID.isEmpty, !teamID.contains("$("),
               let link = registration["AppLinkURLScheme"] as? String,
@@ -171,6 +182,14 @@ final class AWLReferenceRuntimeHost: ObservableObject {
         } catch {
             status = "meta-\(name)-permission-request-failed"
         }
+    }
+
+    /// Absent or empty: Developer Mode. Present: must be a real expanded value.
+    static func isOptionalCredential(_ value: Any?) -> Bool {
+        guard let value else { return true }
+        guard let string = value as? String else { return false }
+        if string.isEmpty { return true }
+        return string != "0" && !string.contains("$(")
     }
 
     func startRegistration() async {

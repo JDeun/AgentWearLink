@@ -123,7 +123,7 @@ struct MetaDATTestHostApp: App {
                         VStack(spacing: 8) {
                     Text(referenceHost.status)
                         .accessibilityIdentifier("awl-reference-runtime-state")
-                    TextField("Mac mini hostname (*.ts.net)", text: $gatewayHostname)
+                    TextField("Mac mini hostname (*.ts.net[:port])", text: $gatewayHostname)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("awl-gateway-hostname")

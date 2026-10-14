@@ -32,6 +32,34 @@ Swift tests in `OpenClawUpstreamContractTests` then prove AWL can encode or
 decode the corresponding supported subset and independently reconstruct the
 bytes covered by the V3 device signature.
 
+## Checking the release you run
+
+CI always checks the pin. To check the OpenClaw release an operator actually
+runs, pass that release's full commit SHA:
+
+```bash
+python3 scripts/verify-openclaw-protocol-contract.py --commit <full 40-hex sha>
+```
+
+The `chat.abort` check covers only the fields AWL encodes
+(`sessionKey`, `agentId`, `runId` in `OpenClawChatAbortParams`). Upstream's
+schema is a closed object, so those fields must exist; fields AWL never sends
+(`preserveSideRuns`, `discardPendingInput`) are not part of AWL's contract.
+
+Releases checked on 2026-10-13 (source-level wire subset only; this is not a
+live Gateway test):
+
+| OpenClaw release | Commit | Wire subset |
+| --- | --- | --- |
+| 2026.9.6 | `eb377ac5` | verified |
+| 2026.9.9 | `bcfc8881` | verified |
+| 2026.10.1 | `e178c39e` | verified |
+| 2026.10.2 | `b8952d47` | verified |
+| 2026.10.5-beta.3 | `1808b57b` | verified |
+
+2026.9.6 previously failed only because the verifier also demanded
+`discardPendingInput`, a field AWL does not send.
+
 ## Updating the contract
 
 Do not change the upstream commit as a mechanical dependency bump.
