@@ -2,6 +2,7 @@ import Foundation
 import AgentWearLinkCore
 import MWDATCore
 import MWDATSpeech
+import MWDATInputs
 
 struct MetaDATDeviceSelectionCandidate: Equatable, Sendable {
     let identifier: String
@@ -175,6 +176,13 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var speechTask: Task<Void, Never>?
     private var speech: Speech?
     private var speechErrorToken: (any AnyListenerToken)?
+    private var speechStateToken: (any AnyListenerToken)?
+    private var speechRestartAttempts = 0
+    private var inputs: Inputs?
+    private var inputsTask: Task<Void, Never>?
+    private var transcriptGate: (@Sendable (String) async -> String?)?
+    private var glassesInputHandler: (@Sendable (_ isSelect: Bool, _ description: String) async -> Void)?
+    private var activityLogger: (@Sendable (String) -> Void)?
     private let speechTranscriptStream = MetaDATSpeechTranscriptStream()
     private let transcriptDeduplicator = MetaDATFinalTranscriptDeduplicator()
     private let finalTranscriptFilter = MetaDATFinalTranscriptFilter()
@@ -213,6 +221,27 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             maximumBytes: maximumSnapshotBytes,
             snapshotMode: snapshotMode
         )
+    }
+
+    /// Filters final transcripts before they become interactions. Return the
+    /// request text to forward, or nil to drop the utterance (e.g. no wake
+    /// phrase, or the app's own reply echoing back). Nil gate forwards all.
+    public func setTranscriptGate(_ gate: (@Sendable (String) async -> String?)?) {
+        transcriptGate = gate
+    }
+
+    /// Receives glasses touch/button input once Inputs is attached. A double
+    /// tap arrives as select; single tap and tap-and-hold stay with the system.
+    public func setGlassesInputHandler(
+        _ handler: (@Sendable (_ isSelect: Bool, _ description: String) async -> Void)?
+    ) {
+        glassesInputHandler = handler
+    }
+
+    /// Human-readable lifecycle notes (Speech state, restarts, Inputs) for
+    /// field diagnostics. Never receives transcript text.
+    public func setActivityLogger(_ logger: (@Sendable (String) -> Void)?) {
+        activityLogger = logger
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
@@ -536,6 +565,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 throw AWLError.device("Meta DAT session setup was superseded")
             }
             diagnostics?.record(.init(kind: .metaSessionReady, generation: generation))
+            attachInputs(to: session, generation: generation)
 
             stateTask = Task { [weak self] in
                 for await state in stateStream {
@@ -680,6 +710,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             }
         }
 
+        speechStateToken = speech.statePublisher.listen { [weak self] state in
+            Task { await self?.handleSpeechState(state, generation: generation) }
+        }
+        speechRestartAttempts = 0
         self.speech = speech
         speech.start()
 
@@ -699,6 +733,16 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         )
         guard accepted else { return }
 
+        var transcript = transcript
+        if transcript.isFinal, let transcriptGate {
+            guard let request = await transcriptGate(transcript.text),
+                  !stopping, generationFence.owns(generation) else { return }
+            transcript = MetaDATTranscript(text: request, isFinal: true, confidence: transcript.confidence)
+        } else if !transcript.isFinal, transcriptGate != nil {
+            // Partials are not shown to the agent; only gated finals count.
+            return
+        }
+
         let interactionID = InteractionID()
         guard let event = finalTranscriptFilter.event(
             for: .init(text: transcript.text, isFinal: transcript.isFinal),
@@ -712,6 +756,69 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             generation: generation
         ))
         yieldEvent(event)
+    }
+
+    private func handleSpeechState(_ state: SpeechState, generation: UInt64) async {
+        guard !stopping, generationFence.owns(generation), let speech else { return }
+        activityLogger?("speech \(state)")
+        let observed: MetaDATSpeechRestartPolicy.ObservedState
+        switch state {
+        case .started: observed = .started
+        case .stopped: observed = .stopped
+        default: observed = .transitioning
+        }
+        switch MetaDATSpeechRestartPolicy.action(for: observed, attempts: speechRestartAttempts) {
+        case .resetAttempts:
+            speechRestartAttempts = 0
+        case let .restart(attempt):
+            speechRestartAttempts = attempt
+            try? await Task.sleep(for: MetaDATSpeechRestartPolicy.delay)
+            guard !stopping, generationFence.owns(generation), self.speech === speech else { return }
+            activityLogger?("speech restart \(attempt)")
+            speech.start()
+        case .giveUp:
+            activityLogger?("speech restart limit reached")
+        case .none:
+            break
+        }
+    }
+
+    private func attachInputs(to session: DeviceSession, generation: UInt64) {
+        guard inputs == nil else { return }
+        let attached: Inputs?
+        do {
+            // Ask for the temple and both buttons (narrow subscriptions went
+            // silent in BirdSpotter) and keep Back so a swipe cannot end the
+            // session.
+            attached = try session.addInputs(configuration: InputsConfiguration(
+                sources: [.captouch, .captureButton, .actionButton],
+                consumeBack: true
+            ))
+        } catch {
+            activityLogger?("inputs unavailable: \(error)")
+            return
+        }
+        guard let attached else {
+            activityLogger?("inputs not attached")
+            return
+        }
+        inputs = attached
+        activityLogger?("inputs attached")
+        let events = attached.events
+        inputsTask = Task { [weak self] in
+            for await event in events {
+                guard !Task.isCancelled else { break }
+                await self?.handleGlassesInput(event, generation: generation)
+            }
+        }
+    }
+
+    private func handleGlassesInput(_ event: InputEvent, generation: UInt64) async {
+        guard !stopping, generationFence.owns(generation) else { return }
+        let isSelect: Bool
+        if case .select = event { isSelect = true } else { isSelect = false }
+        activityLogger?("input \(event)")
+        await glassesInputHandler?(isSelect, "\(event)")
     }
 
     private func handleSpeechError(
@@ -965,6 +1072,13 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             Task { await speechErrorToken.cancel() }
         }
         self.speechErrorToken = nil
+        if let speechStateToken {
+            Task { await speechStateToken.cancel() }
+        }
+        self.speechStateToken = nil
+        inputsTask?.cancel()
+        inputsTask = nil
+        inputs = nil
 
         deviceSession?.stop()
         deviceSession = nil
