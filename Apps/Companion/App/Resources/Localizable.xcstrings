@@ -977,6 +977,22 @@
         }
       }
     },
+    "고품질": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enhanced"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고품질"
+          }
+        }
+      }
+    },
     "권한 필요": {
       "localizations": {
         "en": {
@@ -1005,6 +1021,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "기기"
+          }
+        }
+      }
+    },
+    "기본 목소리": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 목소리"
           }
         }
       }
@@ -1085,6 +1117,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "나중에 하기"
+          }
+        }
+      }
+    },
+    "남성": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Male"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "남성"
           }
         }
       }
@@ -1341,6 +1389,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "대화 기록은 텔레그램에서 볼 수 있어요"
+          }
+        }
+      }
+    },
+    "더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download more voices in iPhone Settings › Accessibility › Spoken Content › Voices."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요."
           }
         }
       }
@@ -1661,6 +1725,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "모두 지우기"
+          }
+        }
+      }
+    },
+    "목소리": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "목소리"
           }
         }
       }
@@ -2401,6 +2481,22 @@
         }
       }
     },
+    "안경으로 미리 듣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview on the glasses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경으로 미리 듣기"
+          }
+        }
+      }
+    },
     "안경으로 부르면 에이전트에게 연결해요": {
       "localizations": {
         "en": {
@@ -2845,6 +2941,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "에이전트의 답을 텔레그램 대화에도 남겨요"
+          }
+        }
+      }
+    },
+    "여성": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Female"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여성"
           }
         }
       }
@@ -3917,6 +4029,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "텔레그램에 기록"
+          }
+        }
+      }
+    },
+    "프리미엄": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Premium"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프리미엄"
           }
         }
       }

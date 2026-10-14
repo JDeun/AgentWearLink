@@ -107,9 +107,46 @@ struct SettingsView: View {
                 detail: "요청을 받으면 '띵', 기다리는 동안 '톡톡', 이어 말할 수 있을 때 짧은 소리가 나요",
                 warning: "답이 올 때까지 아무 소리도 나지 않아요"
             )
+            voicePicker
         } header: {
             Text("대화")
         }
+    }
+
+    @ViewBuilder private var voicePicker: some View {
+        let options = runtime.voiceOptions
+        Picker(selection: binding(\.voiceIdentifier)) {
+            Text("기본 목소리").tag("")
+            ForEach(options) { option in
+                Text(voiceLabel(option)).tag(option.id)
+            }
+        } label: {
+            Text("목소리")
+        }
+        Button {
+            runtime.previewVoice()
+        } label: {
+            Label("안경으로 미리 듣기", systemImage: "play.circle")
+        }
+        Text("더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요.")
+            .font(.footnote)
+            .foregroundStyle(Theme.secondary)
+    }
+
+    private func voiceLabel(_ option: VoiceOption) -> String {
+        let gender: String
+        switch VoiceCatalog.gender(for: option) {
+        case .male: gender = String(localized: "남성")
+        case .female: gender = String(localized: "여성")
+        case .unspecified: gender = ""
+        }
+        let quality: String
+        switch option.quality {
+        case .premium: quality = String(localized: "프리미엄")
+        case .enhanced: quality = String(localized: "고품질")
+        case .standard: quality = ""
+        }
+        return ([option.name, gender, quality].filter { !$0.isEmpty }).joined(separator: " · ")
     }
 
     private var wakePhraseSection: some View {

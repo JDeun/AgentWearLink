@@ -123,6 +123,7 @@ final class CompanionRuntime: ObservableObject {
         keepAlive.onEvent = { [weak self] event in self?.handleAudioEvent(event) }
         speaker.setDucking = { [weak self] on in self?.keepAlive.setExperimentalDucking(on) }
         speaker.duckingMode = loaded.replyDucking
+        speaker.voiceIdentifier = loaded.voiceIdentifier
         callGate = CallGate(callActive: calls.isCallActive)
         calls.onChange = { [weak self] active in
             Task { @MainActor in self?.callsChanged(active) }
@@ -576,6 +577,7 @@ final class CompanionRuntime: ObservableObject {
             requestReconcile(settings.listenEnabled ? "listening on" : "listening off")
         }
         if old.replyDucking != settings.replyDucking { speaker.duckingMode = settings.replyDucking }
+        if old.voiceIdentifier != settings.voiceIdentifier { speaker.voiceIdentifier = settings.voiceIdentifier }
         if old.effectiveWakePhrases != settings.effectiveWakePhrases, let wakeGate {
             let phrases = settings.effectiveWakePhrases
             Task { await wakeGate.replacePhrases(phrases) }
@@ -1018,6 +1020,16 @@ final class CompanionRuntime: ObservableObject {
         default:
             break
         }
+    }
+
+    // MARK: Reply voice
+
+    var voiceOptions: [VoiceOption] { speaker.voiceOptions() }
+
+    /// "미리 듣기": speaks a sample through the glasses with the chosen voice
+    /// (same route guard as replies; nothing plays from the iPhone speaker).
+    func previewVoice() {
+        Task { await speaker.speak("안녕하십니까, 주인님. 이 목소리로 답해 드릴게요.") }
     }
 
     // MARK: Audio cues and follow-up

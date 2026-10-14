@@ -40,6 +40,8 @@ actor WakeGateBox {
 final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDelegate {
     private var synthesizer = AVSpeechSynthesizer()
     private let language: String?
+    /// Chosen voice; empty uses the language's default voice.
+    var voiceIdentifier = ""
     var gate: WakeGateBox?
     /// Called when a reply could not be spoken because of the route.
     var onSilenced: (() -> Void)?
@@ -97,7 +99,8 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
         }
         if duckingMode == .toggleDuckOthers { setDucking?(true) }
         let utterance = AVSpeechUtterance(string: text)
-        if let language { utterance.voice = AVSpeechSynthesisVoice(language: language) }
+        utterance.voice = (voiceIdentifier.isEmpty ? nil : AVSpeechSynthesisVoice(identifier: voiceIdentifier))
+            ?? language.flatMap(AVSpeechSynthesisVoice.init(language:))
         synthesizer.speak(utterance)
         onSpoken?()
     }
@@ -122,6 +125,20 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
         }
         if duckingMode == .toggleDuckOthers { setDucking?(false) }
         onIdle?()
+    }
+
+    /// Installed voices for the reply language, best first.
+    func voiceOptions() -> [VoiceOption] {
+        let all = AVSpeechSynthesisVoice.speechVoices().map { voice in
+            VoiceOption(
+                id: voice.identifier,
+                name: voice.name,
+                language: voice.language,
+                quality: voice.quality == .premium ? .premium : voice.quality == .enhanced ? .enhanced : .standard,
+                gender: voice.gender == .male ? .male : voice.gender == .female ? .female : .unspecified
+            )
+        }
+        return VoiceCatalog.options(from: all, language: language ?? "ko-KR")
     }
 
     static func kind(_ port: AVAudioSession.Port) -> AudioOutputKind {
