@@ -107,6 +107,20 @@ struct SettingsView: View {
                 detail: "요청을 받으면 '띵', 기다리는 동안 '톡톡', 이어 말할 수 있을 때 짧은 소리가 나요",
                 warning: "답이 올 때까지 아무 소리도 나지 않아요"
             )
+            SettingToggle(
+                isOn: binding(\.visionRequests),
+                title: "사진으로 물어보기",
+                detail: "'이거 뭐야?'처럼 물으면 안경 카메라로 한 장 찍어 함께 보내요. 찍는 동안 안경 불빛이 켜져요",
+                warning: "보이는 것을 물어도 사진 없이 답해요"
+            )
+            if runtime.settings.visionRequests {
+                SettingToggle(
+                    isOn: binding(\.photoMusicHint),
+                    title: "사진 후 음악 안내",
+                    detail: "사진을 찍다 음악이 멈추면 답 끝에 iPhone에서 다시 재생하라고 알려 드려요",
+                    warning: "사진 때문에 음악이 멈춰도 알려 드리지 않아요"
+                )
+            }
             voicePicker
         } header: {
             Text("대화")
@@ -302,6 +316,18 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.navigationLink)
+            Picker(selection: binding(\.photoCaptureMethod)) {
+                Text("일반 (기본)").tag(PhotoCaptureMethod.streamStill)
+                Text("실험: 단독 사진").tag(PhotoCaptureMethod.standalonePhoto)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("사진 찍는 방식")
+                    Text("실험 방식은 Meta의 실험 기능이라 개발용 빌드에서만 동작해요")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                }
+            }
+            .pickerStyle(.navigationLink)
             DisclosureGroup(isExpanded: $showFullFingerprint) {
                 Text(verbatim: DeviceFingerprint.grouped(runtime.deviceID))
                     .font(.caption.monospaced())
@@ -462,6 +488,7 @@ struct DiagnosticsView: View {
                 Text("연결 상태 기록만 담겨요. 토큰과 말한 내용은 기록하지 않아요.")
             }
             QualitySection(metrics: runtime.quality)
+            PhotoTestSection()
             Section {
                 ForEach(runtime.log.entries.reversed()) { entry in
                     VStack(alignment: .leading, spacing: 2) {
@@ -479,6 +506,64 @@ struct DiagnosticsView: View {
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(Text("진단 로그"))
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { runtime.clearPhotoTest() }
+    }
+}
+
+/// Tonight's camera measurements: one photo, not sent to the agent. The
+/// thumbnail stays on this screen only (never saved or logged); timings
+/// and music state go to the log as numbers.
+private struct PhotoTestSection: View {
+    @EnvironmentObject private var runtime: CompanionRuntime
+
+    var body: some View {
+        Section {
+            button("사진 테스트 (일반)", .streamStill)
+            button("사진 테스트 (실험)", .standalonePhoto)
+            switch runtime.photoTest {
+            case .idle:
+                EmptyView()
+            case .running:
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("사진 찍는 중…")
+                }
+            case let .captured(image, _):
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .accessibilityLabel(Text("찍은 사진"))
+            case .failed:
+                Label {
+                    Text("사진을 찍지 못했어요. 로그를 확인해 주세요")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .foregroundStyle(Theme.problem)
+            }
+        } header: {
+            Text("사진 테스트")
+        } footer: {
+            Text("에이전트에게 보내지 않아요. 사진은 이 화면에만 보이고 저장하거나 기록하지 않아요. 단계별 시간과 음악 상태만 로그에 남아요.")
+        }
+        .font(.footnote)
+    }
+
+    private var isRunning: Bool {
+        if case .running = runtime.photoTest { return true }
+        return false
+    }
+
+    private func button(_ title: LocalizedStringKey, _ method: PhotoCaptureMethod) -> some View {
+        Button {
+            Task { await runtime.testPhoto(method) }
+        } label: {
+            Label(title, systemImage: "camera")
+                .frame(minHeight: 44)
+        }
+        .disabled(isRunning)
     }
 }
 
@@ -497,6 +582,7 @@ private struct QualitySection: View {
             row("멈춤 (음성 · 탭)", "\(today.voiceStops) · \(today.tapStops)")
             row("답 없이 끝난 요청", "\(today.noReplyForwards)")
             row("듣기 먹통 재시작", "\(today.deafRestarts)")
+            row("사진 요청 (보냄 · 실패)", "\(today.photoTurns) · \(today.photoFailures)")
             LabeledContent {
                 Text("\(today.minutesListening) / \(today.minutesWorn)분")
             } label: {
@@ -504,6 +590,7 @@ private struct QualitySection: View {
             }
             latency("전달 → 첫 답 (중앙값)", metrics.medianToday(\.forwardToFirstText))
             latency("첫 답 → 첫 소리 (중앙값)", metrics.medianToday(\.firstTextToFirstAudio))
+            latency("사진 찍는 시간 (중앙값)", metrics.medianPhotoCaptureToday)
         } header: {
             Text("품질 지표 (오늘)")
         }

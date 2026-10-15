@@ -101,5 +101,6 @@ Meta AI Developer Mode needs no App ID or client token.
 ## Privacy
 
 - No transcript text is written to the diagnostics log; only lengths and states are recorded. Quality metrics (forwards, armings, ignored and echo-dropped finals, stops, per-turn latency stages, worn vs. listening minutes, recovery times) are counts and durations only. They appear in the hidden diagnostics screen and as extra columns at the end of the per-minute `power-log.csv`. The live transcript is shown only on the call-practice screen.
+- Photos ("이거 뭐야?", "what is this?"): only a request that asks about what you see takes one photo with the glasses camera (the glasses LED is on meanwhile). The JPEG (long side at most 1280 px, no metadata) lives in memory for that one agent turn and is never saved or logged; the log gets stage timings and whether music was playing before and 1 s / 4 s after. A camera stream can pause music for good (dat-ios #256), so the reply may end with "음악은 iPhone에서 다시 재생해 주세요" (Settings › 사진 후 음악 안내).
 - Tokens never go to UserDefaults or logs. Device grants live in the Keychain.
 - The app doesn't send your location. Location-aware agents should use their own private channel (see [companion app constraints](../../docs/research/companion-app-constraints.md)).

@@ -145,6 +145,22 @@
         }
       }
     },
+    "'이거 뭐야?'처럼 물으면 안경 카메라로 한 장 찍어 함께 보내요. 찍는 동안 안경 불빛이 켜져요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask things like 'What is this?' and the glasses camera takes one photo to send along. The glasses light is on while it does"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'이거 뭐야?'처럼 물으면 안경 카메라로 한 장 찍어 함께 보내요. 찍는 동안 안경 불빛이 켜져요"
+          }
+        }
+      }
+    },
     "1. 요청 목록을 열어요": {
       "localizations": {
         "en": {
@@ -1985,6 +2001,22 @@
         }
       }
     },
+    "보이는 것을 물어도 사진 없이 답해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questions about what you see are answered without a photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보이는 것을 물어도 사진 없이 답해요"
+          }
+        }
+      }
+    },
     "복사됨": {
       "localizations": {
         "en": {
@@ -2013,6 +2045,198 @@
           "stringUnit": {
             "state": "translated",
             "value": "붙여넣기"
+          }
+        }
+      }
+    },
+    "사진 때문에 음악이 멈춰도 알려 드리지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You won't be told when a photo stops your music"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 때문에 음악이 멈춰도 알려 드리지 않아요"
+          }
+        }
+      }
+    },
+    "사진 요청 (보냄 · 실패)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo requests (sent · failed)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 요청 (보냄 · 실패)"
+          }
+        }
+      }
+    },
+    "사진 찍는 방식": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo method"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 찍는 방식"
+          }
+        }
+      }
+    },
+    "사진 찍는 시간 (중앙값)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo capture time (median)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 찍는 시간 (중앙값)"
+          }
+        }
+      }
+    },
+    "사진 찍는 중…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taking a photo…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 찍는 중…"
+          }
+        }
+      }
+    },
+    "사진 테스트": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo test"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 테스트"
+          }
+        }
+      }
+    },
+    "사진 테스트 (실험)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo test (experiment)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 테스트 (실험)"
+          }
+        }
+      }
+    },
+    "사진 테스트 (일반)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo test (standard)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 테스트 (일반)"
+          }
+        }
+      }
+    },
+    "사진 후 음악 안내": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Music notice after a photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 후 음악 안내"
+          }
+        }
+      }
+    },
+    "사진으로 물어보기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask with a photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진으로 물어보기"
+          }
+        }
+      }
+    },
+    "사진을 찍다 음악이 멈추면 답 끝에 iPhone에서 다시 재생하라고 알려 드려요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If a photo stops your music, the reply ends by reminding you to resume it on your iPhone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진을 찍다 음악이 멈추면 답 끝에 iPhone에서 다시 재생하라고 알려 드려요"
+          }
+        }
+      }
+    },
+    "사진을 찍지 못했어요. 로그를 확인해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't take a photo. Check the log"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진을 찍지 못했어요. 로그를 확인해 주세요"
           }
         }
       }
@@ -2365,6 +2589,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "실험 기능이에요. 안경 연결이 끊길 수 있어 기본은 꺼져 있어요"
+          }
+        }
+      }
+    },
+    "실험 방식은 Meta의 실험 기능이라 개발용 빌드에서만 동작해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The experiment uses an experimental Meta feature and works only in development builds"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험 방식은 Meta의 실험 기능이라 개발용 빌드에서만 동작해요"
+          }
+        }
+      }
+    },
+    "실험: 단독 사진": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experiment: standalone photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험: 단독 사진"
           }
         }
       }
@@ -3201,6 +3457,22 @@
         }
       }
     },
+    "에이전트에게 보내지 않아요. 사진은 이 화면에만 보이고 저장하거나 기록하지 않아요. 단계별 시간과 음악 상태만 로그에 남아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not sent to the agent. The photo appears only on this screen and is never saved or logged; only stage timings and music state go to the log."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트에게 보내지 않아요. 사진은 이 화면에만 보이고 저장하거나 기록하지 않아요. 단계별 시간과 음악 상태만 로그에 남아요."
+          }
+        }
+      }
+    },
     "에이전트의 답을 텔레그램 대화에도 남겨요": {
       "localizations": {
         "en": {
@@ -3793,6 +4065,22 @@
         }
       }
     },
+    "일반 (기본)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard (default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일반 (기본)"
+          }
+        }
+      }
+    },
     "잠시 후 다시 불러 보세요": {
       "localizations": {
         "en": {
@@ -4093,6 +4381,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "짧게 말로 답하기"
+          }
+        }
+      }
+    },
+    "찍은 사진": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Captured photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "찍은 사진"
           }
         }
       }

@@ -191,6 +191,20 @@ final class WearablesLink {
         }
     }
 
+    /// Glasses camera permission (granted in the Meta AI app). Checks
+    /// silently; `request` switches to Meta AI and is only for an explicit
+    /// user action (the diagnostics photo test).
+    func cameraPermission(request: Bool) async -> ConnectionSignals.Permission {
+        guard isRegistered else { return .unknown }
+        do {
+            if try await Wearables.shared.checkPermissionStatus(.camera) == .granted { return .granted }
+            guard request else { return .denied }
+            return try await Wearables.shared.requestPermission(.camera) == .granted ? .granted : .denied
+        } catch {
+            return .unknown
+        }
+    }
+
     // MARK: Voice invocations
 
     /// "Hey Meta, start <app name>": Meta AI launches or foregrounds the app

@@ -673,7 +673,7 @@ final class CompanionRuntime: ObservableObject {
             Task { await wakeGate.replacePhrases(phrases) }
         }
         let turnOptionsChanged = CompanionTurnOptions.make(from: old) != CompanionTurnOptions.make(from: settings)
-            || old.sessionKey != settings.sessionKey
+            || old.sessionKey != settings.sessionKey || old.visionRequests != settings.visionRequests
         if turnOptionsChanged, runtime != nil {
             // Coalesce bursts of edits into one restart.
             restartDebounce?.cancel()
@@ -928,7 +928,8 @@ final class CompanionRuntime: ObservableObject {
             speechStallRestarts: speechStallRestartCount,
             turns: turnCount,
             quality: quality.sinceLaunch,
-            lastLatencyFirstAudioMilliseconds: lastFirstAudioMilliseconds
+            lastLatencyFirstAudioMilliseconds: lastFirstAudioMilliseconds,
+            lastPhotoCaptureMilliseconds: quality.lastPhotoCapture.map { Int(($0 * 1000).rounded()) }
         ))
     }
 
@@ -1215,6 +1216,10 @@ final class CompanionRuntime: ObservableObject {
             dispatcher: session.dispatcher,
             runClient: OpenClawAgentRunClient(dispatcher: session.dispatcher),
             sessionKey: sessionKeyOrNil,
+            // Image turns happen only through PhotoTurnAgent (DAT path);
+            // the Gateway's attachment policy is still checked per turn.
+            supportsVisionInput: true,
+            visionSystemPrompt: PhotoTurnText.visionHint,
             turnOptions: CompanionTurnOptions.make(from: settings)
         )
         if settings.wakeSource == .glassesMicOnPhone {
@@ -1235,9 +1240,20 @@ final class CompanionRuntime: ObservableObject {
         }
         // Device first: if the glasses dropped again, fail there without
         // dialling the Gateway.
+        // "이거 뭐야?": visual requests take one photo first (PhotoTurnAgent).
+        let photoAgent = PhotoTurnAgent(
+            inner: agent,
+            enabled: settings.visionRequests,
+            capture: { [weak self] id in
+                await self?.capturePhotoForTurn(id) ?? .unavailable(reason: "no runtime")
+            },
+            observe: { [weak self] event in
+                Task { @MainActor in self?.observePhotoTurn(event) }
+            }
+        )
         let composed = AgentWearLinkRuntime(
             device: concreteDevice,
-            agent: agent,
+            agent: photoAgent,
             connectionOrder: .deviceFirst,
             diagnostics: diagnostics,
             output: output
@@ -1487,6 +1503,7 @@ final class CompanionRuntime: ObservableObject {
             // Open the follow-up window once the reply has been spoken (all
             // reply text is queued by now), and only if something was spoken.
             followUp.turnCompleted(followUpEnabled: settings.followUp)
+            if pendingMusicWatch != nil { photoTurnReplyDone = true }
             if !speaker.isSpeaking { replySpeechIdle() }
         case let .failed(id, error):
             if id == nil, case .device = error {
@@ -1497,6 +1514,8 @@ final class CompanionRuntime: ObservableObject {
                 signals.agentFailing = true
                 signals.checkedAt[.agent] = now
                 record("turn failed")
+                pendingMusicWatch = nil
+                photoTurnReplyDone = false
                 stopWaitingCues()
                 if let turn = stages.flush() { reportTurn(turn) }
                 playCue(.failed)
@@ -1504,6 +1523,172 @@ final class CompanionRuntime: ObservableObject {
         default:
             break
         }
+    }
+
+    // MARK: Photo turns ("이거 뭐야?")
+
+    /// Music state around the current photo turn; the reminder is decided
+    /// once its reply has finished.
+    private var pendingMusicWatch: PhotoMusicWatch?
+    private var photoTurnReplyDone = false
+    private var musicCheckTask: Task<Void, Never>?
+    /// Diagnostics photo test: thumbnail on screen only (never saved or
+    /// logged), dropped when the screen goes away.
+    @Published private(set) var photoTest: PhotoTestState = .idle
+
+    enum PhotoTestState {
+        case idle
+        case running(PhotoCaptureMethod)
+        case captured(UIImage, PhotoCaptureMethod)
+        case failed(PhotoCaptureMethod)
+    }
+
+    private static func metaMode(_ method: PhotoCaptureMethod) -> MetaDATSnapshotMode {
+        switch method {
+        case .streamStill: return .compatibleStreamStill
+        case .standalonePhoto: return .experimentalStandalonePhoto
+        }
+    }
+
+    /// One photo for a visual request. Never changes the audio session
+    /// (the DAT session is live); only reads whether other audio plays.
+    private func capturePhotoForTurn(_ id: InteractionID) async -> PhotoCaptureOutcome {
+        guard let device else { return .unavailable(reason: "no glasses session") }
+        guard ThermalWorkPolicy.allowsPhoto(stage: thermalStage.stage) else {
+            return .unavailable(reason: "heat")
+        }
+        let method = settings.photoCaptureMethod
+        let watch = PhotoMusicWatch(playingBefore: AVAudioSession.sharedInstance().isOtherAudioPlaying)
+        playCue(.shutter)
+        do {
+            let result = try await device.captureSnapshot(interactionID: id, mode: Self.metaMode(method))
+            record(result.timings.logLine)
+            if let total = result.timings.totalMilliseconds {
+                quality.photoCaptured(seconds: Double(total) / 1000)
+            }
+            pendingMusicWatch = watch
+            photoTurnReplyDone = false
+            watchMusicAfterPhoto(watch)
+            return .photo(result.image)
+        } catch {
+            if let partial = await device.lastSnapshotTimings { record(partial.logLine + " (failed)") }
+            let reason = Self.photoFailureReason(error)
+            record("photo failed [\(method.rawValue)]: \(reason)")
+            // A failed capture may still have run the camera and stopped music.
+            pendingMusicWatch = watch
+            photoTurnReplyDone = false
+            watchMusicAfterPhoto(watch)
+            return .unavailable(reason: reason)
+        }
+    }
+
+    /// Stable, text-free failure categories (AWL's own messages only).
+    private static func photoFailureReason(_ error: Error) -> String {
+        if error is CancellationError { return "cancelled" }
+        if let error = error as? AWLError {
+            switch error {
+            case let .capabilityUnavailable(message), let .device(message): return message
+            case .timeout: return "timeout"
+            default: return "error"
+            }
+        }
+        if error is MetaDATPhotoNormalizationError { return "unexpected photo encoding" }
+        return "error"
+    }
+
+    private func observePhotoTurn(_ event: PhotoTurnEvent) {
+        switch event {
+        case let .intent(reason):
+            record("photo request (\(reason.rawValue))")
+        case .sentWithPhoto:
+            quality.photoTurn()
+            record("request sent with photo")
+        case let .sentWithoutPhoto(reason):
+            quality.photoFailed()
+            record("request sent without photo (\(reason))")
+        case .imageRejected:
+            quality.photoFailed()
+            record("gateway refused the photo; sent without it")
+        }
+    }
+
+    /// Logs whether other audio (music) still plays ~1 s and ~4 s after the
+    /// photo (dat-ios #256: a camera stream may pause it for good).
+    private func watchMusicAfterPhoto(_ initial: PhotoMusicWatch) {
+        musicCheckTask?.cancel()
+        record("music before photo: \(initial.playingBefore ? "playing" : "not playing")")
+        musicCheckTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            let one = AVAudioSession.sharedInstance().isOtherAudioPlaying
+            self.updateMusicWatch { $0.afterOneSecond = one }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            let four = AVAudioSession.sharedInstance().isOtherAudioPlaying
+            var final = initial
+            final.afterOneSecond = one
+            final.afterFourSeconds = four
+            self.updateMusicWatch { $0.afterFourSeconds = four }
+            self.record(final.logLine)
+        }
+    }
+
+    private func updateMusicWatch(_ change: (inout PhotoMusicWatch) -> Void) {
+        guard var watch = pendingMusicWatch else { return }
+        change(&watch)
+        pendingMusicWatch = watch
+    }
+
+    /// After a photo turn's reply: one line if the photo stopped the music.
+    /// Returns true when the line was queued.
+    private func speakMusicReminderIfDue() -> Bool {
+        guard photoTurnReplyDone, let watch = pendingMusicWatch else { return false }
+        pendingMusicWatch = nil
+        photoTurnReplyDone = false
+        let playingNow = AVAudioSession.sharedInstance().isOtherAudioPlaying
+        guard PhotoMusicPolicy.shouldRemind(
+            enabled: settings.photoMusicHint, playingBefore: watch.playingBefore, playingNow: playingNow
+        ) else { return false }
+        record("music reminder spoken")
+        let line = PhotoMusicPolicy.reminder(korean: WakePhrases.prefersKorean)
+        Task { await speaker.speak(line) }
+        return true
+    }
+
+    /// Diagnostics: one photo with `method`, not sent to the agent. Logs
+    /// stage timings and music state; the image stays in memory on screen.
+    func testPhoto(_ method: PhotoCaptureMethod) async {
+        if case .running = photoTest { return }
+        guard let device else {
+            record("photo test [\(method.rawValue)]: no glasses session")
+            photoTest = .failed(method)
+            return
+        }
+        photoTest = .running(method)
+        let permission = await wearables.cameraPermission(request: true)
+        record("photo test [\(method.rawValue)]: camera permission \(permission)")
+        let before = PhotoMusicWatch(playingBefore: AVAudioSession.sharedInstance().isOtherAudioPlaying)
+        playCue(.shutter)
+        do {
+            let result = try await device.captureSnapshot(interactionID: InteractionID(), mode: Self.metaMode(method))
+            record("photo test " + result.timings.logLine)
+            if let image = UIImage(data: result.image.data) {
+                photoTest = .captured(image, method)
+            } else {
+                photoTest = .failed(method)
+            }
+        } catch {
+            if let partial = await device.lastSnapshotTimings { record("photo test " + partial.logLine + " (failed)") }
+            record("photo test [\(method.rawValue)] failed: \(Self.photoFailureReason(error))")
+            photoTest = .failed(method)
+        }
+        // Log only; a test never queues the spoken reminder.
+        pendingMusicWatch = nil
+        watchMusicAfterPhoto(before)
+    }
+
+    func clearPhotoTest() {
+        photoTest = .idle
     }
 
     // MARK: Reply voice
@@ -1591,6 +1776,8 @@ final class CompanionRuntime: ObservableObject {
         followUp.reset()
         if let turn = stages.flush() { reportTurn(turn) }
         record("reply stopped (\(source.rawValue))")
+        pendingMusicWatch = nil
+        photoTurnReplyDone = false
         let sink = speechSink
         let gate = wakeGate
         Task {
@@ -1655,6 +1842,8 @@ final class CompanionRuntime: ObservableObject {
     /// The synthesizer has nothing left to say. After a completed turn,
     /// arm the gate so the wearer can continue without the wake phrase.
     private func replySpeechIdle() {
+        // The music line goes first; its own idle then opens the follow-up.
+        if speakMusicReminderIfDue() { return }
         guard followUp.speechIdle(), let wakeGate else { return }
         Task {
             await wakeGate.arm()
@@ -1697,6 +1886,8 @@ final class CompanionRuntime: ObservableObject {
         speechSink = nil
         voiceSession = nil
         wakeGate = nil
+        pendingMusicWatch = nil
+        photoTurnReplyDone = false
         signals.listening = false
         signals.speechReady = false
     }
