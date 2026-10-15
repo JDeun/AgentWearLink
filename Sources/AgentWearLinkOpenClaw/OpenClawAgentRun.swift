@@ -74,6 +74,19 @@ public struct OpenClawAgentTurnOptions: Sendable, Equatable {
         self.extraSystemPrompt = extraSystemPrompt
         self.inputSourceChannel = inputSourceChannel
     }
+
+    /// The same options with `hint` appended to the extra system prompt
+    /// (blank-line separated), e.g. a per-turn note that a photo is attached.
+    public func appendingSystemPrompt(_ hint: String?) -> OpenClawAgentTurnOptions {
+        let trimmed = hint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return self }
+        let combined = extraSystemPrompt.map { $0.isEmpty ? trimmed : $0 + "\n\n" + trimmed } ?? trimmed
+        return OpenClawAgentTurnOptions(
+            replyDelivery: replyDelivery,
+            extraSystemPrompt: combined,
+            inputSourceChannel: inputSourceChannel
+        )
+    }
 }
 
 public struct OpenClawInputProvenance: Encodable, Sendable, Equatable {
