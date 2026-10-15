@@ -90,7 +90,7 @@ final class CompanionScreenUITests: XCTestCase {
     func testSettingsConversationRows() {
         let app = launch("settings")
         XCTAssertTrue(app.navigationBars["설정"].waitForExistence(timeout: 15))
-        for title in ["안경으로 듣기", "텔레그램에 기록", "짧게 말로 답하기", "이어 말하기", "알림음"] {
+        for title in ["안경으로 듣기", "텔레그램에 기록", "짧게 말로 답하기", "이어 말하기", "알림음", "게이트웨이 목소리"] {
             let toggle = scrollTo(app.switches.matching(labelBeginsWith: title).firstMatch, in: app)
             XCTAssertTrue(toggle.exists, "missing toggle \(title)")
         }
