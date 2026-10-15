@@ -210,6 +210,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var glassesInputHandler: (@Sendable (_ isSelect: Bool, _ description: String) async -> Void)?
     private var activityLogger: (@Sendable (String) -> Void)?
     private var sessionErrorObserver: (@Sendable (MetaDATSessionErrorKind) -> Void)?
+    private var sessionPauseObserver: (@Sendable (_ paused: Bool) -> Void)?
+    /// A `.paused` was reported to the pause observer and not yet resolved.
+    private var sessionPauseReported = false
     /// MODERATE heat: optional work is reduced (speech stats less often).
     private var reducedWork = false
     private let speechTranscriptStream = MetaDATSpeechTranscriptStream()
@@ -278,6 +281,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     /// stream, by case name only, before any failure event is emitted.
     public func setSessionErrorObserver(_ observer: (@Sendable (MetaDATSessionErrorKind) -> Void)?) {
         sessionErrorObserver = observer
+    }
+
+    /// Receives `true` when the device pauses the live session (a single
+    /// temple tap; the app never gets the tap itself and cannot resume) and
+    /// `false` when that session is started again by a second tap. A stop
+    /// is not reported here (it ends the session as a media failure).
+    public func setSessionPauseObserver(_ observer: (@Sendable (_ paused: Bool) -> Void)?) {
+        sessionPauseObserver = observer
     }
 
     /// Meta thermal guidance for MODERATE: reduce optional work. Here that
@@ -992,10 +1003,20 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         // AWL never pauses the session itself, so a pause is the device's:
         // a single temple tap (or capture-button press) pauses a running
         // session (dat-ios #312). States only; tonight's test confirms it.
-        if state == .paused { activityLogger?("session paused by device (likely tap)") }
+        if state == .paused {
+            activityLogger?("session paused by device (likely tap)")
+            if !sessionPauseReported {
+                sessionPauseReported = true
+                sessionPauseObserver?(true)
+            }
+        }
         if sessionIsStarted, !wasStarted {
             activityLogger?("session started")
             handleSessionResumed(generation: generation)
+            if sessionPauseReported {
+                sessionPauseReported = false
+                sessionPauseObserver?(false)
+            }
         }
     }
 
@@ -1369,6 +1390,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         speechReviveTask = nil
         speechStallRestarting = false
         sessionIsStarted = true
+        sessionPauseReported = false
         inputsTask?.cancel()
         inputsTask = nil
         inputs = nil
