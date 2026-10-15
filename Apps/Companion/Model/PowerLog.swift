@@ -14,11 +14,16 @@ public struct PowerSample: Equatable, Sendable {
     public var phoneLocked: Bool
     public var speechStallRestarts: Int
     public var turns: Int
+    /// Quality counters since launch (appended columns; see `header`).
+    public var quality: QualityCounters
+    /// Final transcript → first reply audio of the last turn that spoke, ms.
+    public var lastLatencyFirstAudioMilliseconds: Int?
 
     public init(
         time: Date, glassesBattery: Int?, glassesCharging: Bool, listening: Bool, speechPause: String,
         keepAliveRunning: Bool, outputs: String, appActive: Bool, phoneLocked: Bool,
-        speechStallRestarts: Int, turns: Int
+        speechStallRestarts: Int, turns: Int,
+        quality: QualityCounters = QualityCounters(), lastLatencyFirstAudioMilliseconds: Int? = nil
     ) {
         self.time = time
         self.glassesBattery = glassesBattery
@@ -31,10 +36,15 @@ public struct PowerSample: Equatable, Sendable {
         self.phoneLocked = phoneLocked
         self.speechStallRestarts = speechStallRestarts
         self.turns = turns
+        self.quality = quality
+        self.lastLatencyFirstAudioMilliseconds = lastLatencyFirstAudioMilliseconds
     }
 
+    /// New columns are only ever appended, so older parsers stay valid.
     public static let header =
         "time,glasses_battery,charging,listening,speech_pause,keep_alive,outputs,app_active,phone_locked,stall_restarts,turns"
+        + ",forwards,armed,ignored_finals,echo_drops,stops,no_reply,last_latency_first_audio_ms"
+        + ",minutes_worn,minutes_listening,deaf_restarts"
 
     public var csvLine: String {
         let iso = ISO8601DateFormatter()
@@ -46,6 +56,10 @@ public struct PowerSample: Equatable, Sendable {
             iso.string(from: time), glassesBattery.map(String.init) ?? "", b(glassesCharging), b(listening),
             field(speechPause), b(keepAliveRunning), field(outputs), b(appActive), b(phoneLocked),
             String(speechStallRestarts), String(turns),
+            String(quality.forwards), String(quality.armed), String(quality.ignoredFinals),
+            String(quality.echoDrops), String(quality.stops), String(quality.noReplyForwards),
+            lastLatencyFirstAudioMilliseconds.map(String.init) ?? "",
+            String(quality.minutesWorn), String(quality.minutesListening), String(quality.deafRestarts),
         ].joined(separator: ",")
     }
 }
@@ -61,7 +75,9 @@ public struct PowerLogFile {
 
     public func append(_ sample: PowerSample) {
         let manager = FileManager.default
-        if let size = (try? manager.attributesOfItem(atPath: url.path)[.size]) as? Int, size > maximumBytes {
+        if let size = (try? manager.attributesOfItem(atPath: url.path)[.size]) as? Int,
+           size > maximumBytes || !hasCurrentHeader() {
+            // Too big, or written with an older header: start a new file.
             let old = url.deletingPathExtension().appendingPathExtension("1.csv")
             try? manager.removeItem(at: old)
             try? manager.moveItem(at: url, to: old)
@@ -74,5 +90,12 @@ public struct PowerLogFile {
         defer { try? handle.close() }
         _ = try? handle.seekToEnd()
         try? handle.write(contentsOf: Data((sample.csvLine + "\n").utf8))
+    }
+
+    private func hasCurrentHeader() -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        let prefix = (try? handle.read(upToCount: PowerSample.header.utf8.count + 1)) ?? Data()
+        return prefix == Data((PowerSample.header + "\n").utf8)
     }
 }
