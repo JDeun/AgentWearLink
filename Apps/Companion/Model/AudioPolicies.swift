@@ -109,6 +109,16 @@ public struct EchoWindow: Equatable, Sendable {
         finishedAt = now
     }
 
+    /// Speech was stopped: utterances dropped from a queue never report
+    /// finished. The echo filter still runs from now.
+    public mutating func stoppedSpeaking(at now: Date) {
+        guard pendingUtterances > 0 else { return }
+        pendingUtterances = 0
+        speechEnd = nil
+        pendingUntil = nil
+        finishedAt = now
+    }
+
     /// True while a reply is (believed to be) playing: everything is dropped.
     public func isSpeechPending(at now: Date) -> Bool {
         guard pendingUtterances > 0, let pendingUntil else { return false }

@@ -18,6 +18,8 @@ final class GatewayVoice {
     var play: ((AVAudioPCMBuffer, @escaping @Sendable () -> Void) -> Bool)?
     /// The engine's output format for decoded clips.
     var outputFormat: (() -> AVAudioFormat?)?
+    /// Stops the clip that is playing now.
+    var stopPlayback: (() -> Void)?
     var onLog: ((String) -> Void)?
 
     static let firstClipDeadline: Duration = .milliseconds(1500)
@@ -56,8 +58,10 @@ final class GatewayVoice {
         generation += 1
         for item in queue { item.clip.cancel() }
         queue.removeAll()
+        let wasBusy = isBusy
         draining = false
         isBusy = false
+        if wasBusy { stopPlayback?() }
     }
 
     private func drain(

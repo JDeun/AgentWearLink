@@ -131,6 +131,7 @@ final class CompanionRuntime: ObservableObject {
         speaker.gatewayVoice = gatewayVoice
         gatewayVoice.play = { [weak keepAlive] buffer, done in keepAlive?.playSpeech(buffer, done: done) ?? false }
         gatewayVoice.outputFormat = { [weak keepAlive] in keepAlive?.speechFormat }
+        gatewayVoice.stopPlayback = { [weak keepAlive] in keepAlive?.stopSpeech() }
         callGate = CallGate(callActive: calls.isCallActive)
         calls.onChange = { [weak self] active in
             Task { @MainActor in self?.callsChanged(active) }
@@ -141,7 +142,10 @@ final class CompanionRuntime: ObservableObject {
         }
         speaker.onEvent = { [weak self] line in self?.record(line) }
         speaker.onSilenced = { [weak self] in self?.signals.replyNotSpoken = true }
-        speaker.onSpoken = { [weak self] in self?.signals.replyNotSpoken = false }
+        speaker.onSpoken = { [weak self] in
+            self?.signals.replyNotSpoken = false
+            self?.followUp.replySpoken()
+        }
         speaker.onIdle = { [weak self] in self?.replySpeechIdle() }
     }
 
@@ -1186,9 +1190,9 @@ final class CompanionRuntime: ObservableObject {
             signals.agentFailing = false
             signals.checkedAt[.agent] = now
             stopWaitingCues()
-            // Open the follow-up window once the reply has been spoken; all
-            // reply text is queued in the synthesizer by now.
-            followUpPending = settings.followUp
+            // Open the follow-up window once the reply has been spoken (all
+            // reply text is queued by now), and only if something was spoken.
+            followUp.turnCompleted(followUpEnabled: settings.followUp)
             if !speaker.isSpeaking { replySpeechIdle() }
         case let .failed(id, error):
             if id == nil, case .device = error {
@@ -1220,8 +1224,8 @@ final class CompanionRuntime: ObservableObject {
 
     // MARK: Audio cues and follow-up
 
-    /// True from turn completion until the reply finished speaking.
-    private var followUpPending = false
+    /// Opens the follow-up window only after a turn that spoke something.
+    private var followUp = FollowUpTracker()
     private var thinkingTask: Task<Void, Never>?
 
     /// Plays an earcon into the glasses only (never the iPhone speaker).
@@ -1233,7 +1237,7 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private func startWaitingCues() {
-        followUpPending = false
+        followUp.requestForwarded()
         thinkingTask?.cancel()
         playCue(.accepted)
         guard settings.audioCues else { return }
@@ -1257,8 +1261,7 @@ final class CompanionRuntime: ObservableObject {
     /// The synthesizer has nothing left to say. After a completed turn,
     /// arm the gate so the wearer can continue without the wake phrase.
     private func replySpeechIdle() {
-        guard followUpPending, let wakeGate else { return }
-        followUpPending = false
+        guard followUp.speechIdle(), let wakeGate else { return }
         Task {
             await wakeGate.arm()
             record("follow-up window open (\(Int(FollowUpWindow.seconds)) s)")
@@ -1293,7 +1296,7 @@ final class CompanionRuntime: ObservableObject {
         micDevice = nil
         bindGatewayVoice(nil)
         stopWaitingCues()
-        followUpPending = false
+        followUp.reset()
         runtime = nil
         device = nil
         voiceSession = nil

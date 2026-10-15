@@ -75,3 +75,41 @@ public struct ThinkingCueSchedule: Equatable, Sendable {
 public enum FollowUpWindow {
     public static let seconds: TimeInterval = 8
 }
+
+/// Whether the follow-up window opens after this turn: only when the turn
+/// actually spoke something (system or gateway voice) and the wearer turned
+/// "이어 말하기" on. A reply refused by the route guard was never heard, so the
+/// next utterance must still need the wake phrase.
+public struct FollowUpTracker: Equatable, Sendable {
+    public private(set) var spokeThisTurn = false
+    /// Turn completed with speech; waiting for the speaker to go idle.
+    public private(set) var waitingForIdle = false
+
+    public init() {}
+
+    /// A new request was forwarded: a fresh turn.
+    public mutating func requestForwarded() {
+        spokeThisTurn = false
+        waitingForIdle = false
+    }
+
+    /// A sentence of the reply was queued for speaking.
+    public mutating func replySpoken() {
+        spokeThisTurn = true
+    }
+
+    public mutating func turnCompleted(followUpEnabled: Bool) {
+        waitingForIdle = followUpEnabled && spokeThisTurn
+        spokeThisTurn = false
+    }
+
+    /// The speaker has nothing left to say. True once: arm the gate now.
+    public mutating func speechIdle() -> Bool {
+        defer { waitingForIdle = false }
+        return waitingForIdle
+    }
+
+    public mutating func reset() {
+        self = FollowUpTracker()
+    }
+}

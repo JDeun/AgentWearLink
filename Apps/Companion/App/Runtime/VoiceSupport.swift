@@ -26,6 +26,8 @@ actor WakeGateBox {
     func arm() { gate.arm() }
     func beganSpeaking(_ text: String) { echo.beganSpeaking(text, at: Date()) }
     func finishedSpeaking() { echo.finishedSpeaking(at: Date()) }
+    /// Speech was stopped: queued gateway sentences never call back.
+    func stoppedSpeaking() { echo.stoppedSpeaking(at: Date()) }
 }
 
 /// Speaks replies into the glasses, and only there.
@@ -140,6 +142,10 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     func stop() async {
         gatewayVoice?.stop()
         synthesizer.stopSpeaking(at: .immediate)
+        // Dropped sentences (gateway queue, system queue) never report
+        // finished: close the pending echo window now; the echo filter
+        // still runs afterwards.
+        await gate?.stoppedSpeaking()
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
@@ -383,6 +389,11 @@ final class SilentKeepAlive {
         player.scheduleBuffer(buffer, completionHandler: nil)
         if !player.isPlaying { player.play() }
         return true
+    }
+
+    /// Stops a gateway clip that is playing (engine only, never the session).
+    func stopSpeech() {
+        speechPlayer?.stop()
     }
 
     /// The format gateway clips are converted to.

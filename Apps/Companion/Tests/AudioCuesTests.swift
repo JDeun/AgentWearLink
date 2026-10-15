@@ -33,3 +33,47 @@ final class AudioCuesTests: XCTestCase {
         XCTAssertLessThanOrEqual(schedule.tickTimes.last ?? 0, 90)
     }
 }
+
+final class FollowUpTrackerTests: XCTestCase {
+    func testArmsAfterASpokenReplyOnceIdle() {
+        var tracker = FollowUpTracker()
+        tracker.requestForwarded()
+        tracker.replySpoken()
+        tracker.turnCompleted(followUpEnabled: true)
+        XCTAssertTrue(tracker.speechIdle())
+        XCTAssertFalse(tracker.speechIdle(), "only once")
+    }
+
+    // Finding 11: a reply refused by the route guard was never heard.
+    func testDoesNotArmWhenNothingWasSpoken() {
+        var tracker = FollowUpTracker()
+        tracker.requestForwarded()
+        tracker.turnCompleted(followUpEnabled: true)
+        XCTAssertFalse(tracker.speechIdle())
+    }
+
+    func testDoesNotArmWhenTheSettingIsOff() {
+        var tracker = FollowUpTracker()
+        tracker.replySpoken()
+        tracker.turnCompleted(followUpEnabled: false)
+        XCTAssertFalse(tracker.speechIdle())
+    }
+
+    func testSpeechFromAnEarlierTurnDoesNotCount() {
+        var tracker = FollowUpTracker()
+        tracker.replySpoken()
+        tracker.turnCompleted(followUpEnabled: true)
+        _ = tracker.speechIdle()
+        tracker.requestForwarded()
+        tracker.turnCompleted(followUpEnabled: true)
+        XCTAssertFalse(tracker.speechIdle())
+    }
+
+    func testANewRequestCancelsAPendingArm() {
+        var tracker = FollowUpTracker()
+        tracker.replySpoken()
+        tracker.turnCompleted(followUpEnabled: true)
+        tracker.requestForwarded()
+        XCTAssertFalse(tracker.speechIdle())
+    }
+}

@@ -128,3 +128,19 @@ final class EchoWindowContentTests: XCTestCase {
         XCTAssertTrue(window.suppresses("네", at: start.addingTimeInterval(0.5)))
     }
 }
+
+final class EchoWindowStopTests: XCTestCase {
+    func testStoppingClosesThePendingWindowButKeepsTheFilter() {
+        var window = EchoWindow()
+        let start = Date(timeIntervalSince1970: 0)
+        window.beganSpeaking("첫 문장입니다.", at: start)
+        window.beganSpeaking("둘째 문장입니다.", at: start)
+        window.stoppedSpeaking(at: start.addingTimeInterval(1))
+        XCTAssertFalse(window.isSpeechPending(at: start.addingTimeInterval(1.1)))
+        XCTAssertFalse(window.suppresses("그럼 내일 날씨는", at: start.addingTimeInterval(1.1)))
+        XCTAssertTrue(window.suppresses("둘째 문장입니다", at: start.addingTimeInterval(1.1)))
+        // A late didCancel for the stopped system utterance is harmless.
+        window.finishedSpeaking(at: start.addingTimeInterval(1.2))
+        XCTAssertEqual(window.pendingUtterances, 0)
+    }
+}
