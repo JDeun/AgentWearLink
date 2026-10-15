@@ -510,7 +510,8 @@ final class CompanionRuntime: ObservableObject {
                 }
                 do {
                     let session = try runtime.gatewayLink.makeSession(
-                        endpoint: endpoint, credentials: credentials, diagnostics: runtime.diagnostics
+                        endpoint: endpoint, credentials: credentials,
+                        adminScope: runtime.settings.adminScope, diagnostics: runtime.diagnostics
                     )
                     do {
                         try await session.supervisor.start()
@@ -677,6 +678,11 @@ final class CompanionRuntime: ObservableObject {
         }
         let turnOptionsChanged = CompanionTurnOptions.make(from: old) != CompanionTurnOptions.make(from: settings)
             || old.sessionKey != settings.sessionKey || old.visionRequests != settings.visionRequests
+            // Reconnect so the Gateway connection asks for the new scope set.
+            || old.adminScope != settings.adminScope
+        if old.adminScope != settings.adminScope {
+            record("admin scope: \(settings.adminScope ? "requested" : "not requested")")
+        }
         if turnOptionsChanged, runtime != nil {
             // Coalesce bursts of edits into one restart.
             restartDebounce?.cancel()
@@ -726,7 +732,7 @@ final class CompanionRuntime: ObservableObject {
                     break
                 }
                 let session = try gatewayLink.makeSession(
-                    endpoint: endpoint, credentials: .init(), diagnostics: diagnostics
+                    endpoint: endpoint, credentials: .init(), adminScope: settings.adminScope, diagnostics: diagnostics
                 )
                 do {
                     try await session.supervisor.start()
@@ -1211,7 +1217,9 @@ final class CompanionRuntime: ObservableObject {
 
         let session: GatewaySession
         do {
-            session = try gatewayLink.makeSession(endpoint: endpoint, credentials: .init(), diagnostics: diagnostics)
+            session = try gatewayLink.makeSession(
+                endpoint: endpoint, credentials: .init(), adminScope: settings.adminScope, diagnostics: diagnostics
+            )
         } catch {
             record("connect failed: invalid endpoint")
             return .needsApproval
@@ -1499,7 +1507,9 @@ final class CompanionRuntime: ObservableObject {
     private func observeOutput(_ event: InteractionEvent, attempt: UInt64) {
         let now = Date()
         switch event {
-        case let .text(id, _):
+        case let .text(id, text):
+            // Whitespace is not a reply: it would mask an empty turn.
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { break }
             stages.replyText(at: now)
             if let seconds = latency.replyText(replyID: String(describing: id), at: now) {
                 settings.lastReplyLatency = seconds
@@ -1515,8 +1525,11 @@ final class CompanionRuntime: ObservableObject {
             signals.checkedAt[.agent] = now
             stopWaitingCues()
             if stages.awaitingText {
-                // False-trigger proxy: the agent had nothing to say.
+                // False-trigger proxy: the agent had nothing to say. Also the
+                // symptom of a reply sent through a tool (e.g. `message`)
+                // instead of the turn's own text.
                 quality.noReply(at: now)
+                record("turn ended without reply text: nothing spoken")
                 if let turn = stages.flush() { reportTurn(turn) }
             } else if !speaker.isSpeaking, let turn = stages.flush() {
                 // Nothing will play (route guard, empty reply).

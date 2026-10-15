@@ -68,6 +68,10 @@ public struct CompanionSettings: Equatable, Sendable {
     public var photoCaptureMethod: PhotoCaptureMethod = .streamStill
     /// "사진 후 음악 안내": after a photo stopped music, say so at the end.
     public var photoMusicHint = true
+    /// "관리자 권한(대화 공유)" (Advanced, default off): ask the Gateway for
+    /// `operator.admin` so glasses turns get the owner tool set and share the
+    /// Telegram conversation's agent thread. Takes effect after re-approval.
+    public var adminScope = false
     /// Wall-clock time of the last spoken reply, for "마지막 대화 N분 전".
     public var lastReplyAt: Date?
     /// Speech end → first reply text, seconds.
@@ -131,6 +135,7 @@ public struct CompanionSettingsStore {
         public static let visionRequests = "awl.companion.visionRequests"
         public static let photoCaptureMethod = "awl.companion.photoCaptureMethod"
         public static let photoMusicHint = "awl.companion.photoMusicHint"
+        public static let adminScope = "awl.companion.adminScope"
         public static let lastReplyAt = "awl.companion.lastReplyAt"
         public static let lastReplyLatency = "awl.companion.lastReplyLatency"
         /// Bluetooth identifiers of the glasses held by the wake anchor
@@ -141,7 +146,7 @@ public struct CompanionSettingsStore {
             setupCompleted, gatewayURL, gatewayName, agentName, wakePhrases, spokenName, listenEnabled,
             telegramEnabled, telegramChatID, voiceStyle, sessionKey, replyDucking,
             audioCues, followUp, voiceIdentifier, wakeSource, gatewayVoice, lastReplyAt, lastReplyLatency,
-            visionRequests, photoCaptureMethod, photoMusicHint, glassesPeripherals,
+            visionRequests, photoCaptureMethod, photoMusicHint, adminScope, glassesPeripherals,
         ]
     }
 
@@ -175,6 +180,7 @@ public struct CompanionSettingsStore {
         settings.photoCaptureMethod = defaults.string(forKey: Key.photoCaptureMethod)
             .flatMap(PhotoCaptureMethod.init(rawValue:)) ?? .streamStill
         settings.photoMusicHint = defaults.object(forKey: Key.photoMusicHint) as? Bool ?? true
+        settings.adminScope = defaults.bool(forKey: Key.adminScope)
         settings.lastReplyAt = defaults.object(forKey: Key.lastReplyAt) as? Date
         settings.lastReplyLatency = defaults.object(forKey: Key.lastReplyLatency) as? Double
         // Never trust a "completed" flag without an endpoint to connect to.
@@ -203,6 +209,7 @@ public struct CompanionSettingsStore {
         defaults.set(settings.visionRequests, forKey: Key.visionRequests)
         defaults.set(settings.photoCaptureMethod.rawValue, forKey: Key.photoCaptureMethod)
         defaults.set(settings.photoMusicHint, forKey: Key.photoMusicHint)
+        defaults.set(settings.adminScope, forKey: Key.adminScope)
         defaults.set(settings.lastReplyAt, forKey: Key.lastReplyAt)
         defaults.set(settings.lastReplyLatency, forKey: Key.lastReplyLatency)
     }
