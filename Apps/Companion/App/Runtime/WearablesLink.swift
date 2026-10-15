@@ -1,3 +1,4 @@
+import AgentWearLinkCore
 import AgentWearLinkMetaDATIntegration
 import Foundation
 import MWDATCore
@@ -17,6 +18,8 @@ final class WearablesLink {
     private(set) var configuration: Configuration?
     private var observers: [Task<Void, Never>] = []
     private var deviceTokens: [any AnyListenerToken] = []
+    private var invocationChannel: MetaDATVoiceInvocationChannel?
+    private var invocationReady: Bool?
 
     var isConfigured: Bool { configuration == .configured }
 
@@ -186,6 +189,52 @@ final class WearablesLink {
         } catch {
             return .unknown
         }
+    }
+
+    // MARK: Voice invocations
+
+    /// "Hey Meta, start <app name>": Meta AI launches or foregrounds the app
+    /// and delivers a LaunchApp invocation, which the channel acknowledges
+    /// at once (sendSuccess) before `onLaunch` runs.
+    ///
+    /// Meta's docs say to open the stream early (app scope) so a cold launch
+    /// does not miss the command, so it starts here, right after configure,
+    /// independent of the DAT session and the Gateway, and keeps running
+    /// across session restarts. The channel itself waits for registration
+    /// and re-selects the device when the link or device list changes.
+    ///
+    /// Field notes: Korean launch phrases are reported not to work (only the
+    /// English "Hey Meta, start/open Agent Wear Link", spacing exact), and
+    /// delivery in Developer Mode is unreliable; a release channel is
+    /// recommended for testing (dat-ios discussion #326).
+    func startVoiceInvocations(
+        diagnostics: AWLDiagnosticRecorder?,
+        onLog: @escaping @MainActor @Sendable (String) -> Void,
+        onLaunch: @escaping @MainActor @Sendable () -> Void
+    ) {
+        guard isConfigured, invocationChannel == nil else { return }
+        let channel = MetaDATVoiceInvocationChannel(
+            wearables: Wearables.shared,
+            diagnostics: diagnostics,
+            onEvent: { event in
+                Task { @MainActor in
+                    switch event {
+                    case .invocation: onLaunch()
+                    case .failed: onLog("voice invocation: acknowledgement not delivered")
+                    default: break
+                    }
+                }
+            },
+            onReadiness: { [weak self] ready in
+                Task { @MainActor in
+                    guard let self, self.invocationReady != ready else { return }
+                    self.invocationReady = ready
+                    onLog(ready ? "voice invocation: listening" : "voice invocation: not listening")
+                }
+            }
+        )
+        invocationChannel = channel
+        channel.start()
     }
 
     // MARK: Observation

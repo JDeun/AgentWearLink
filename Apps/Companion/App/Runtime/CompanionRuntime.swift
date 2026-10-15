@@ -195,6 +195,13 @@ final class CompanionRuntime: ObservableObject {
         metaConfiguration = configuration
         record("meta \(configuration)")
         wearables.observe { [weak self] in self?.refreshGlasses() }
+        // App scope, independent of the session and the Gateway (Meta:
+        // "open the stream early"); see WearablesLink.startVoiceInvocations.
+        wearables.startVoiceInvocations(
+            diagnostics: diagnostics,
+            onLog: { [weak self] line in self?.record(line) },
+            onLaunch: { [weak self] in self?.voiceInvocationLaunched() }
+        )
         deviceID = (try? await gatewayLink.deviceID()) ?? ""
         refreshGlasses()
         signals.microphone = await wearables.microphonePermission()
@@ -1023,6 +1030,24 @@ final class CompanionRuntime: ObservableObject {
         setHold(nil, reason: "requested")
     }
 
+    /// "Hey Meta, start <app>": already acknowledged by the channel. Same
+    /// path as the Start Listening intent; when a session is already up,
+    /// arm the gate like a double tap so the wearer can speak right away.
+    private func voiceInvocationLaunched() {
+        record("voice invocation: launch app")
+        guard started, settings.setupCompleted else { return }
+        if runtime == nil {
+            beginWakeBackgroundTask()
+            startListeningFromIntent()
+        } else if let wakeGate {
+            Task {
+                await wakeGate.arm()
+                record("armed by voice invocation")
+                playCue(.listening)
+            }
+        }
+    }
+
     /// Stops DAT Speech when the glasses are taken off, folded or too hot,
     /// and restarts it when usable again, keeping the DAT session: a session
     /// ended by a doff/fold can refuse new starts until a power cycle
@@ -1222,20 +1247,13 @@ final class CompanionRuntime: ObservableObject {
         wakeGate = gate
         do {
             try await composed.start()
+            // Voice invocations run app-wide (WearablesLink), not per session.
             guard connectionFence.isCurrent(attempt) else {
-                await composed.stop()
-                clearVoiceReferences()
-                return .retry
-            }
-            await concreteDevice.startVoiceInvocationListening()
-            guard connectionFence.isCurrent(attempt) else {
-                await concreteDevice.stopVoiceInvocationListening()
                 await composed.stop()
                 clearVoiceReferences()
                 return .retry
             }
         } catch {
-            await concreteDevice.stopVoiceInvocationListening()
             await composed.stop()
             clearVoiceReferences()
             if let kind = MetaDATSessionErrorKind(classifying: error) {
@@ -1663,7 +1681,6 @@ final class CompanionRuntime: ObservableObject {
         connectionFence.invalidate()
         watchTask?.cancel()
         watchTask = nil
-        if let device { await device.stopVoiceInvocationListening() }
         if let runtime { await runtime.stop() }
         clearVoiceReferences()
     }
