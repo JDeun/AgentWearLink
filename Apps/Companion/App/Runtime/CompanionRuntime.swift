@@ -155,6 +155,23 @@ final class CompanionRuntime: ObservableObject {
     func start() async {
         guard !started else { return }
         started = true
+        // The intent can arrive with no view on screen (background launch).
+        intentObserver = NotificationCenter.default.addObserver(
+            forName: StartListeningIntent.notification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.startListeningFromIntent() }
+        }
+        #if DEBUG
+        let previewing = CompanionPreviewFixture.isActive
+        #else
+        let previewing = false
+        #endif
+        if !previewing {
+            wakeAnchor.onLog = { [weak self] line in self?.record(line) }
+            wakeAnchor.onLinked = { [weak self] in self?.glassesLinked() }
+            wakeAnchor.onUnlinked = { [weak self] in self?.record("glasses link down") }
+            wakeAnchor.start()
+        }
         #if DEBUG
         if CompanionPreviewFixture.apply(to: self) { return }
         #endif
@@ -683,6 +700,23 @@ final class CompanionRuntime: ObservableObject {
         }
     }
 
+    // MARK: Bluetooth wake
+
+    private let wakeAnchor = GlassesWakeAnchor()
+    private var intentObserver: NSObjectProtocol?
+
+    func noteBluetoothRelaunch() { record("relaunched by Bluetooth") }
+
+    /// The glasses' Bluetooth link came back (possibly waking a suspended
+    /// app): keep the app awake and reconnect, like opening the app would.
+    private func glassesLinked() {
+        glassesLastSeenAt = Date()
+        guard started, wantsListening else { return }
+        applyKeepAlivePolicy(force: true)
+        refreshGlasses()
+        if runtime == nil { startRecovery("glasses linked", immediate: true, restart: false) }
+    }
+
     // MARK: Keep-alive policy
 
     private var glassesLastSeenAt: Date?
@@ -962,6 +996,7 @@ final class CompanionRuntime: ObservableObject {
         voiceSession = session
         let speech = concreteDevice.capabilities.contains(.speechInput)
         record(speech ? "listening" : "connected without speech")
+        wakeAnchor.refresh()
         signals.listening = true
         signals.speechReady = speech
         signals.listenFailed = false

@@ -1,9 +1,30 @@
 import SwiftUI
+import UIKit
+
+/// Creates the runtime at launch, including a background relaunch by the
+/// Bluetooth wake anchor or an App Intent, when no view may ever be created.
+final class CompanionAppDelegate: NSObject, UIApplicationDelegate {
+    @MainActor lazy var runtime = CompanionRuntime()
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        MainActor.assumeIsolated {
+            let runtime = self.runtime
+            if launchOptions?[.bluetoothCentrals] != nil { runtime.noteBluetoothRelaunch() }
+            Task { await runtime.start() }
+        }
+        return true
+    }
+}
 
 @main
 struct CompanionApp: App {
-    @StateObject private var runtime = CompanionRuntime()
+    @UIApplicationDelegateAdaptor(CompanionAppDelegate.self) private var delegate
     @Environment(\.scenePhase) private var scenePhase
+
+    private var runtime: CompanionRuntime { delegate.runtime }
 
     var body: some Scene {
         WindowGroup {
@@ -14,9 +35,6 @@ struct CompanionApp: App {
                 .task { await runtime.start() }
                 .onChange(of: scenePhase) { _, phase in runtime.scenePhaseChanged(phase) }
                 .onOpenURL { runtime.handleOpenURL($0) }
-                .onReceive(NotificationCenter.default.publisher(for: StartListeningIntent.notification)) { _ in
-                    runtime.startListeningFromIntent()
-                }
         }
     }
 }
