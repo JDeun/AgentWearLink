@@ -2,18 +2,24 @@ import AgentWearLinkOpenClaw
 import AVFoundation
 import Foundation
 
-/// Speaks replies with the Gateway's TTS (a local model on the Gateway
-/// computer, `tts.speak`) through the keep-alive engine, so the audio session
-/// is never touched while a DAT session is live (dat-ios #292).
+/// Speaks replies in the Gateway computer's local voice through the
+/// keep-alive engine, so the audio session is never touched while a DAT
+/// session is live (dat-ios #292).
 ///
-/// Sentences are requested as soon as they arrive and played in order, so
-/// the next clip renders while the current one plays. A clip that fails or
-/// takes longer than `firstClipDeadline` turns the rest of the reply over to
-/// the system voice (`fallback`), so a slow Gateway never leaves silence.
+/// Per sentence, in order of preference:
+/// 1. the streaming server (`streamConfig`): PCM over the tailnet, first
+///    audio ~0.3 s; no audio within `StreamJitterPolicy.firstAudioDeadline`
+///    hands this sentence and the rest of the reply down the chain;
+/// 2. the Gateway's `tts.speak` (whole clips, ~1.5-1.9 s per sentence);
+/// 3. the system voice (`fallback`).
+/// Sentences are fetched ahead of the one playing and always played in
+/// order; a new reply starts at the top of the chain again.
 @MainActor
 final class GatewayVoice {
     /// Renders one sentence; nil when the Gateway is not connected.
     var render: ((String) async throws -> OpenClawSpeechClip)?
+    /// The streaming server; nil when not configured.
+    var streamConfig: VoiceStreamConfig?
     /// Plays a decoded buffer; calls back when it finished.
     var play: ((AVAudioPCMBuffer, @escaping @Sendable () -> Void) -> Bool)?
     /// The engine's output format for decoded clips.
@@ -21,45 +27,53 @@ final class GatewayVoice {
     /// Stops the clip that is playing now.
     var stopPlayback: (() -> Void)?
     /// A clip was scheduled and the player started (latency metric).
-    var onPlaybackStarted: (() -> Void)?
+    var onPlaybackStarted: ((TurnStages.Voice) -> Void)?
+    /// A streamed sentence started this long after it was needed.
+    var onStreamFirstAudio: ((TimeInterval) -> Void)?
+    /// A sentence left the stream for the fallback chain.
+    var onStreamFallback: ((StreamFallbackReason) -> Void)?
     var onLog: ((String) -> Void)?
     /// Clips rendered ahead of the one playing; nil renders every queued
-    /// sentence at once. MODERATE heat sets 1 (ThermalWorkPolicy).
+    /// sentence at once. MODERATE heat sets 1 (ThermalWorkPolicy). Streams
+    /// always run at most one sentence ahead (the server renders one at a
+    /// time, so more would only queue there).
     var prefetchLimit: Int?
 
     /// The Gateway's local TTS (tts.speak) returns whole clips: ~1.5-1.9 s per
     /// sentence on the Mac mini (2026-10-15). 3 s keeps the first sentence in
-    /// the same voice; measure on device and revisit with a streaming path.
+    /// the same voice.
     static let firstClipDeadline: Duration = .seconds(3)
     static let clipDeadline: Duration = .seconds(6)
 
     private struct Item {
         let text: String
-        /// Starts rendering; called at most once.
-        let render: () -> Task<AVAudioPCMBuffer?, Never>
+        let enqueuedAt: Date
+        /// First sentence of a reply (the short clip deadline applies).
+        let first: Bool
         var clip: Task<AVAudioPCMBuffer?, Never>?
+        var stream: StreamedSentence?
     }
 
     private var queue: [Item] = []
     private var draining = false
     private var generation = 0
+    private var route: ReplyVoiceRoute = .system
+    /// The sentence streaming or playing now (cancelled by `stop`).
+    private var current: StreamedSentence?
     private(set) var isBusy = false
 
-    /// Enqueues a sentence. Returns false when the Gateway voice cannot be
-    /// used at all (caller speaks it with the system voice).
+    /// Enqueues a sentence. Returns false when neither the stream nor the
+    /// Gateway voice can be used (caller speaks it with the system voice).
     func enqueue(
         _ text: String,
         fallback: @escaping (String) async -> Void,
         finished: @escaping () -> Void,
         onIdle: @escaping () -> Void
     ) -> Bool {
-        guard let render, play != nil, let outputFormat, let format = outputFormat() else { return false }
-        let deadline = queue.isEmpty && !isBusy ? Self.firstClipDeadline : Self.clipDeadline
-        queue.append(Item(text: text, render: {
-            Task<AVAudioPCMBuffer?, Never> {
-                await Self.fetch(text, render: render, format: format, deadline: deadline)
-            }
-        }))
+        guard streamConfig != nil || render != nil, play != nil, outputFormat?() != nil else { return false }
+        let first = queue.isEmpty && !isBusy
+        if first { route = .start(streamConfigured: streamConfig != nil, gatewayAvailable: render != nil) }
+        queue.append(Item(text: text, enqueuedAt: Date(), first: first))
         startPrefetches()
         isBusy = true
         if !draining { drain(fallback: fallback, finished: finished, onIdle: onIdle) }
@@ -68,8 +82,13 @@ final class GatewayVoice {
 
     func stop() {
         generation += 1
-        for item in queue { item.clip?.cancel() }
+        for item in queue {
+            item.clip?.cancel()
+            item.stream?.cancel()
+        }
         queue.removeAll()
+        current?.cancel()
+        current = nil
         let wasBusy = isBusy
         draining = false
         isBusy = false
@@ -82,38 +101,146 @@ final class GatewayVoice {
         onIdle: @escaping () -> Void
     ) {
         draining = true
-        let current = generation
+        let generationAtStart = generation
         Task { @MainActor in
-            var fellBack = false
-            while generation == current, !queue.isEmpty {
-                let item = queue.removeFirst()
-                let clip = fellBack ? nil : (item.clip ?? item.render())
-                if !fellBack { startPrefetches() }
-                let buffer = await clip?.value
-                guard generation == current else { return }
-                if let buffer, let play, await Self.playAndWait(buffer, play: play, started: { [weak self] in
-                    self?.onPlaybackStarted?()
-                }) {
-                    finished()
-                    continue
+            while generation == generationAtStart, !queue.isEmpty {
+                var item = queue.removeFirst()
+                let neededAt = max(item.enqueuedAt, Date())
+                var spoken = false
+                var fellFromStream = false
+
+                if route == .stream {
+                    let stream = item.stream ?? startStream(item.text)
+                    item.stream = nil
+                    startPrefetches()
+                    if let stream {
+                        current = stream
+                        let outcome = await playStream(stream, neededAt: neededAt)
+                        current = nil
+                        guard generation == generationAtStart else { return }
+                        switch outcome {
+                        case .played:
+                            spoken = true
+                        case let .cut(reason):
+                            // Played up to the cut; the rest of the reply falls back.
+                            spoken = true
+                            leaveStream(reason)
+                        case let .failed(reason):
+                            leaveStream(reason)
+                            fellFromStream = true
+                        }
+                    } else {
+                        leaveStream(.engine)
+                        fellFromStream = true
+                    }
                 }
-                if !fellBack { onLog?("gateway voice unavailable — system voice for the rest of this reply") }
-                fellBack = true
-                await fallback(item.text)
+
+                if !spoken, route == .gateway {
+                    let clip = item.clip ?? renderClip(item.text, first: item.first || fellFromStream)
+                    item.clip = nil
+                    startPrefetches()
+                    let buffer = await clip?.value
+                    guard generation == generationAtStart else { return }
+                    if let buffer, let play, await Self.playAndWait(buffer, play: play, started: { [weak self] in
+                        self?.onPlaybackStarted?(.gateway)
+                    }) {
+                        spoken = true
+                    } else {
+                        onLog?("gateway voice unavailable — system voice for the rest of this reply")
+                        route = .system
+                        cancelPrefetches()
+                    }
+                }
+
+                if spoken {
+                    finished()
+                } else {
+                    await fallback(item.text)
+                }
             }
-            guard generation == current else { return }
+            guard generation == generationAtStart else { return }
             draining = false
             isBusy = false
             onIdle()
         }
     }
 
-    /// Starts rendering the first `prefetchLimit` queued sentences (all
-    /// when nil) that are not rendering yet.
+    private enum StreamResult {
+        case played
+        case cut(StreamFallbackReason)
+        case failed(StreamFallbackReason)
+    }
+
+    private func playStream(_ stream: StreamedSentence, neededAt: Date) async -> StreamResult {
+        switch await stream.waitForStart(deadline: StreamJitterPolicy.firstAudioDeadline) {
+        case let .failed(reason):
+            stream.cancel()
+            return .failed(reason)
+        case .ready:
+            let waited = max(0, Date().timeIntervalSince(neededAt))
+            onLog?("voice: stream first audio \(Int((waited * 1000).rounded())) ms")
+            onStreamFirstAudio?(waited)
+            onPlaybackStarted?(.stream)
+            let outcome = await stream.play()
+            if stream.underruns > 0 { onLog?("voice: stream underruns \(stream.underruns)") }
+            switch outcome {
+            case .completed, .stopped: return .played
+            case let .cut(reason): return .cut(reason)
+            }
+        }
+    }
+
+    /// The stream failed for this reply: the rest goes down the chain.
+    private func leaveStream(_ reason: StreamFallbackReason) {
+        onLog?(reason.logLine)
+        onStreamFallback?(reason)
+        route = route.next(gatewayAvailable: render != nil)
+        cancelPrefetches()
+        startPrefetches()
+    }
+
+    private func startStream(_ text: String) -> StreamedSentence? {
+        guard let streamConfig, let play, let format = outputFormat?() else { return nil }
+        return StreamedSentence(text: text, config: streamConfig, format: format, schedule: play)
+    }
+
+    private func renderClip(_ text: String, first: Bool) -> Task<AVAudioPCMBuffer?, Never>? {
+        guard let render, let format = outputFormat?() else { return nil }
+        let deadline = first ? Self.firstClipDeadline : Self.clipDeadline
+        return Task<AVAudioPCMBuffer?, Never> {
+            await Self.fetch(text, render: render, format: format, deadline: deadline)
+        }
+    }
+
+    /// Starts fetching ahead for the current route: one stream, or the
+    /// first `prefetchLimit` gateway clips (all when nil).
     private func startPrefetches() {
-        let limit = min(prefetchLimit ?? queue.count, queue.count)
-        for index in 0..<limit where queue[index].clip == nil {
-            queue[index].clip = queue[index].render()
+        switch route {
+        case .stream:
+            if let index = queue.indices.first, queue[index].stream == nil {
+                queue[index].stream = startStream(queue[index].text)
+            }
+        case .gateway:
+            let limit = min(prefetchLimit ?? queue.count, queue.count)
+            for index in 0..<limit where queue[index].clip == nil {
+                queue[index].clip = renderClip(queue[index].text, first: queue[index].first)
+            }
+        case .system:
+            break
+        }
+    }
+
+    /// Drops fetches made for a route this reply no longer uses.
+    private func cancelPrefetches() {
+        for index in queue.indices {
+            if route != .stream, let stream = queue[index].stream {
+                stream.cancel()
+                queue[index].stream = nil
+            }
+            if route != .gateway, let clip = queue[index].clip {
+                clip.cancel()
+                queue[index].clip = nil
+            }
         }
     }
 

@@ -135,6 +135,14 @@ struct SettingsView: View {
             detail: "에이전트가 있는 컴퓨터의 로컬 음성 모델로 읽어요. 느리거나 안 되면 아래 목소리로 바로 바꿔 읽어요",
             warning: "아래 iPhone 목소리로 읽어요"
         )
+        if runtime.settings.gatewayVoice {
+            LabeledContent {
+                Text(runtime.voiceStreamConfigured ? "설정됨" : "설정 안 됨")
+            } label: {
+                Text("스트리밍 음성")
+            }
+            .font(.footnote)
+        }
         Picker(selection: binding(\.voiceIdentifier)) {
             Text("기본 목소리").tag("")
             ForEach(options) { option in
@@ -614,6 +622,8 @@ private struct QualitySection: View {
             }
             latency("전달 → 첫 답 (중앙값)", metrics.medianToday(\.forwardToFirstText))
             latency("첫 답 → 첫 소리 (중앙값)", metrics.medianToday(\.firstTextToFirstAudio))
+            latency("스트리밍 첫 소리 (중앙값)", metrics.medianStreamFirstAudioToday)
+            row("스트리밍 → 대체 음성", "\(today.streamFallbacks)")
             latency("사진 찍는 시간 (중앙값)", metrics.medianPhotoCaptureToday)
         } header: {
             Text("품질 지표 (오늘)")

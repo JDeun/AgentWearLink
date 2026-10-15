@@ -56,6 +56,8 @@ final class CompanionRuntime: ObservableObject {
     @Published private(set) var isChecking = false
     @Published private(set) var lastCheckAt: Date?
     @Published private(set) var log = ActivityLog()
+    /// The streaming voice has a URL and key (both stay in the Keychain).
+    @Published private(set) var voiceStreamConfigured = false
 
     var isListening: Bool {
         #if DEBUG
@@ -159,7 +161,19 @@ final class CompanionRuntime: ObservableObject {
         }
         speaker.onIdle = { [weak self] in self?.replySpeechIdle() }
         speaker.onSystemAudioStarted = { [weak self] in self?.replyAudioStarted(.system) }
-        gatewayVoice.onPlaybackStarted = { [weak self] in self?.replyAudioStarted(.gateway) }
+        gatewayVoice.onPlaybackStarted = { [weak self] voice in self?.replyAudioStarted(voice) }
+        gatewayVoice.onLog = { [weak self] line in self?.record(line) }
+        gatewayVoice.onStreamFirstAudio = { [weak self] seconds in self?.quality.streamFirstAudio(seconds: seconds) }
+        gatewayVoice.onStreamFallback = { [weak self] _ in self?.quality.streamFallback() }
+        loadVoiceStream()
+    }
+
+    /// Reads the streaming voice's config from the Keychain (unreadable
+    /// before the first unlock; retried at launch-argument time).
+    private func loadVoiceStream() {
+        guard gatewayVoice.streamConfig == nil, let config = VoiceStreamStore.load() else { return }
+        gatewayVoice.streamConfig = config
+        voiceStreamConfigured = true
     }
 
     private var wantsListening: Bool {
@@ -425,9 +439,30 @@ final class CompanionRuntime: ObservableObject {
             settings.telegramEnabled = true
             record("settings: Telegram chat from the connected computer")
         }
+        consumeVoiceStreamArguments(arguments)
         guard let code = LaunchSetupCode.value(in: arguments) else { return }
         record("pairing: setup code from the connected computer")
         pair(setupCode: code)
+    }
+
+    /// `-AWLVoiceStreamURL` + `-AWLVoiceStreamKey` from the install script.
+    /// The key goes to the Keychain; neither value is logged.
+    private func consumeVoiceStreamArguments(_ arguments: [String]) {
+        loadVoiceStream()
+        guard let url = LaunchArgument.value(LaunchArgument.voiceStreamURL, in: arguments),
+              let key = LaunchArgument.rawValue(LaunchArgument.voiceStreamKey, in: arguments) else { return }
+        guard let config = VoiceStreamConfig(url: url, key: key) else {
+            record("settings: streaming voice arguments rejected (need https URL and key)")
+            return
+        }
+        guard config != gatewayVoice.streamConfig else { return }
+        guard VoiceStreamStore.save(config) else {
+            record("settings: streaming voice not saved (Keychain)")
+            return
+        }
+        gatewayVoice.streamConfig = config
+        voiceStreamConfigured = true
+        record("settings: streaming voice from the connected computer")
     }
 
     func pair(address: String, oneTimeToken: String) {
@@ -793,7 +828,6 @@ final class CompanionRuntime: ObservableObject {
         }
         let client = OpenClawAgentRunClient(dispatcher: session.dispatcher)
         gatewayVoice.render = { text in try await client.speak(text: text) }
-        gatewayVoice.onLog = { [weak self] line in self?.record(line) }
     }
 
     // MARK: Bluetooth wake
