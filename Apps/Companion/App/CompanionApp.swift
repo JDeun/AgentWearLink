@@ -12,7 +12,13 @@ final class CompanionAppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         MainActor.assumeIsolated {
             let runtime = self.runtime
+            // Reachable from the Start Listening intent, which can run with
+            // no view at all (background launch).
+            CompanionRuntime.current = runtime
             if launchOptions?[.bluetoothCentrals] != nil { runtime.noteBluetoothRelaunch() }
+            // Synchronously, before returning: a CoreBluetooth restore
+            // relaunch expects the manager to exist by now.
+            runtime.startWakeAnchor()
             Task { await runtime.start() }
         }
         return true

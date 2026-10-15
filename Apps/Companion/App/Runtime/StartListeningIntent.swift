@@ -8,9 +8,21 @@ struct StartListeningIntent: AppIntent {
     static let notification = Notification.Name("dev.agentwearlink.companion.startListening")
     static let title: LocalizedStringResource = "듣기 시작"
     static let description = IntentDescription("저장된 설정으로 안경과 에이전트를 다시 연결하고 듣기 시작해요.")
-    // Before iOS 26 the conservative choice is to open the app (a DAT session
-    // is only proven to start with the app running); on a locked phone that
-    // asks for unlock, so the automation stops being hands-free.
+
+    /// How long `perform()` keeps the app running while the session comes up.
+    static let waitForListening: TimeInterval = 20
+
+    /// Before iOS 26 the conservative choice is to open the app (a DAT
+    /// session is only proven to start with the app running); on a locked
+    /// phone that asks for unlock, so the automation stops being hands-free.
+    ///
+    /// It cannot be made iOS-version dependent: the AppIntents metadata
+    /// processor requires a compile-time constant here. On iOS 26+ it is
+    /// deprecated in favour of `supportedModes`, which is the declared
+    /// behaviour there; which of the two the system honours when both are
+    /// present is not verified on hardware, so nothing depends on it:
+    /// `perform()` waits for listening either way, and logs the app state it
+    /// ran in so a device log shows which one won.
     static let openAppWhenRun = true
 
     /// iOS 26+: run entirely in the background, so a Shortcuts automation
@@ -26,10 +38,16 @@ struct StartListeningIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        // Persisted first: on a cold launch the notification can fire before
-        // the UI subscribes; launch consumes the flag instead.
+        // Persisted first: on a cold launch before the runtime exists, launch
+        // consumes the flag instead.
         StartRequestFlag().mark()
-        NotificationCenter.default.post(name: Self.notification, object: nil)
+        if let runtime = CompanionRuntime.current {
+            runtime.noteIntentRun()
+            // The app runs only while perform() does: wait for listening.
+            _ = await runtime.startListeningAndWait(timeout: Self.waitForListening)
+        } else {
+            NotificationCenter.default.post(name: Self.notification, object: nil)
+        }
         return .result()
     }
 }

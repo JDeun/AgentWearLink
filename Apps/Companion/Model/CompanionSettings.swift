@@ -123,11 +123,15 @@ public struct CompanionSettingsStore {
         public static let gatewayVoice = "awl.companion.gatewayVoice"
         public static let lastReplyAt = "awl.companion.lastReplyAt"
         public static let lastReplyLatency = "awl.companion.lastReplyLatency"
+        /// Bluetooth identifiers of the glasses held by the wake anchor
+        /// (not a setting the user edits, but forgotten on reset).
+        public static let glassesPeripherals = "awl.companion.glassesPeripherals"
 
         static let all = [
             setupCompleted, gatewayURL, gatewayName, agentName, wakePhrases, spokenName, listenEnabled,
             telegramEnabled, telegramChatID, voiceStyle, sessionKey, replyDucking,
             audioCues, followUp, voiceIdentifier, wakeSource, gatewayVoice, lastReplyAt, lastReplyLatency,
+            glassesPeripherals,
         ]
     }
 

@@ -223,6 +223,10 @@ public enum SpeechPowerPolicy {
 /// External Accessory docs), so the way back is the Start Listening intent
 /// from a Shortcuts automation ("Ray-Ban Meta connected"), "Hey Meta, start
 /// <app>", or opening the app.
+///
+/// The stop is only allowed while the Bluetooth wake anchor holds at least
+/// one glasses peripheral: without it nothing would wake the app again, so
+/// the keep-alive runs as before (the app must reconnect by itself).
 public enum KeepAlivePolicy {
     public static let graceWithoutGlasses: TimeInterval = 300
 
@@ -231,11 +235,45 @@ public enum KeepAlivePolicy {
         voiceSessionActive: Bool,
         glassesConnected: Bool,
         appActive: Bool,
-        sinceGlassesSeen: TimeInterval?
+        sinceGlassesSeen: TimeInterval?,
+        wakeAnchored: Bool
     ) -> Bool {
         guard wantsListening else { return false }
         if voiceSessionActive || glassesConnected || appActive { return true }
+        guard wakeAnchored else { return true }
         guard let sinceGlassesSeen else { return false }
         return sinceGlassesSeen < graceWithoutGlasses
+    }
+
+    /// The grace clock: glasses that are connected, or a live voice session,
+    /// count as seen now (a long locked-phone session may see no device
+    /// event at all, and must not end with an expired clock).
+    public static func lastSeen(previous: Date?, now: Date, glassesConnected: Bool, voiceSessionLive: Bool) -> Date? {
+        glassesConnected || voiceSessionLive ? now : previous
+    }
+
+    /// The activity-log line for a stop, saying what actually happened.
+    public static func offReason(wantsListening: Bool, sinceGlassesSeen: TimeInterval?) -> String {
+        guard wantsListening else { return "keep-alive off: listening off" }
+        guard let sinceGlassesSeen else { return "keep-alive off: in the background, no glasses seen since launch" }
+        return "keep-alive off: no glasses for \(Int(sinceGlassesSeen / 60)) min"
+    }
+}
+
+/// Retry delay for the wake anchor's pending connection after a failed
+/// connect (a pending request normally never fails; a failing one must not
+/// spin): 5 s doubling to 5 min.
+public enum WakeAnchorBackoff {
+    public static let first: TimeInterval = 5
+    public static let maximum: TimeInterval = 300
+
+    public static func delay(afterFailures failures: Int) -> TimeInterval {
+        guard failures > 0 else { return 0 }
+        return min(first * pow(2, Double(min(failures - 1, 16))), maximum)
+    }
+
+    /// Only hold the link while listening is wanted after setup.
+    public static func shouldAnchor(setupCompleted: Bool, listenEnabled: Bool) -> Bool {
+        setupCompleted && listenEnabled
     }
 }

@@ -169,17 +169,8 @@ final class CompanionRuntime: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.startListeningFromIntent() }
         }
-        #if DEBUG
-        let previewing = CompanionPreviewFixture.isActive
-        #else
-        let previewing = false
-        #endif
-        if !previewing {
-            wakeAnchor.onLog = { [weak self] line in self?.record(line) }
-            wakeAnchor.onLinked = { [weak self] in self?.glassesLinked() }
-            wakeAnchor.onUnlinked = { [weak self] in self?.record("glasses link down") }
-            wakeAnchor.start()
-        }
+        // Normally already started in didFinishLaunching; idempotent.
+        startWakeAnchor()
         #if DEBUG
         if CompanionPreviewFixture.apply(to: self) { return }
         #endif
@@ -239,6 +230,45 @@ final class CompanionRuntime: ObservableObject {
         }
     }
 
+    /// The app's runtime, set by the app delegate at launch, for the Start
+    /// Listening intent (which may run with no view on screen).
+    static weak var current: CompanionRuntime?
+
+    /// Start Listening intent: starts listening and waits until a voice
+    /// session is up, or `timeout`. An intent-launched app only gets
+    /// execution time while `perform()` runs, so returning at once let a
+    /// background launch suspend before anything connected.
+    func startListeningAndWait(timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        // A cold launch: start() runs from the delegate's Task.
+        while !started, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        startListeningFromIntent()
+        guard settings.setupCompleted else {
+            record("start listening intent: setup not completed")
+            return false
+        }
+        while !signals.listening, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        record(signals.listening ? "start listening intent: listening" : "start listening intent: not listening yet")
+        return signals.listening
+    }
+
+    /// Which mode the intent actually ran in (openAppWhenRun vs
+    /// supportedModes on iOS 26+ is unverified).
+    func noteIntentRun() {
+        let state: String
+        switch UIApplication.shared.applicationState {
+        case .active: state = "foreground"
+        case .inactive: state = "inactive"
+        case .background: state = "background"
+        @unknown default: state = "unknown"
+        }
+        record("start listening intent (app \(state))")
+    }
+
     /// "Start listening" App Intent / App Shortcut.
     func startListeningFromIntent() {
         _ = startRequest.consume()
@@ -261,6 +291,7 @@ final class CompanionRuntime: ObservableObject {
 
     private func reconcile(_ reason: String, immediate: Bool, restartSession: Bool) async {
         guard !signalsFrozen else { return }
+        updateWakeAnchor()
         if wantsListening {
             // May fail in the background; the keep-alive watchdog retries.
             applyKeepAlivePolicy(force: true)
@@ -523,6 +554,7 @@ final class CompanionRuntime: ObservableObject {
     func resetEverything() async {
         await stopEverything()
         await gatewayLink.forgetEverything(endpoint: currentEndpoint)
+        wakeAnchor.forget()
         store.reset()
         settings = store.load()
         deviceID = (try? await gatewayLink.deviceID()) ?? ""
@@ -731,14 +763,71 @@ final class CompanionRuntime: ObservableObject {
 
     func noteBluetoothRelaunch() { record("relaunched by Bluetooth") }
 
+    /// Creates the Bluetooth wake anchor. Called synchronously from
+    /// `didFinishLaunching`, so a CoreBluetooth restore relaunch re-creates
+    /// the manager where Apple expects it; idempotent.
+    func startWakeAnchor() {
+        #if DEBUG
+        if CompanionPreviewFixture.isActive { return }
+        #endif
+        guard !wakeAnchorStarted else { return }
+        wakeAnchorStarted = true
+        wakeAnchor.onLog = { [weak self] line in self?.record(line) }
+        wakeAnchor.onLinked = { [weak self] in self?.glassesLinked() }
+        wakeAnchor.onUnlinked = { [weak self] in self?.record("glasses link down") }
+        wakeAnchor.start(active: anchorWanted)
+    }
+
+    private var wakeAnchorStarted = false
+
+    private var anchorWanted: Bool {
+        WakeAnchorBackoff.shouldAnchor(setupCompleted: settings.setupCompleted, listenEnabled: settings.listenEnabled)
+    }
+
+    /// Holds the glasses link only while listening is wanted after setup.
+    private func updateWakeAnchor() {
+        guard wakeAnchorStarted else { return }
+        wakeAnchor.setActive(anchorWanted)
+    }
+
     /// The glasses' Bluetooth link came back (possibly waking a suspended
     /// app): keep the app awake and reconnect, like opening the app would.
     private func glassesLinked() {
         glassesLastSeenAt = Date()
         guard started, wantsListening else { return }
+        // A Bluetooth wake gives the app ~10 s; ask for more until the
+        // keep-alive runs and the first connect attempt is under way.
+        if runtime == nil { beginWakeBackgroundTask() }
         applyKeepAlivePolicy(force: true)
         refreshGlasses()
         if runtime == nil { startRecovery("glasses linked", immediate: true, restart: false) }
+    }
+
+    private var wakeBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var wakeBackgroundTimeout: Task<Void, Never>?
+    static let wakeBackgroundSeconds: TimeInterval = 25
+
+    private func beginWakeBackgroundTask() {
+        guard wakeBackgroundTask == .invalid else { return }
+        wakeBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "glasses wake") { [weak self] in
+            MainActor.assumeIsolated { self?.endWakeBackgroundTask("expired") }
+        }
+        guard wakeBackgroundTask != .invalid else { return }
+        record("glasses wake: background time requested")
+        wakeBackgroundTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.wakeBackgroundSeconds))
+            guard !Task.isCancelled else { return }
+            self?.endWakeBackgroundTask("timeout")
+        }
+    }
+
+    private func endWakeBackgroundTask(_ reason: String) {
+        guard wakeBackgroundTask != .invalid else { return }
+        wakeBackgroundTimeout?.cancel()
+        wakeBackgroundTimeout = nil
+        UIApplication.shared.endBackgroundTask(wakeBackgroundTask)
+        wakeBackgroundTask = .invalid
+        record("glasses wake: background time ended (\(reason))")
     }
 
     // MARK: Keep-alive policy
@@ -751,18 +840,24 @@ final class CompanionRuntime: ObservableObject {
     /// callers that know the engine may have stopped.
     private func applyKeepAlivePolicy(force: Bool = false) {
         guard started, !signalsFrozen else { return }
+        let now = Date()
+        let glassesConnected = signals.glasses == .connected
+        glassesLastSeenAt = KeepAlivePolicy.lastSeen(
+            previous: glassesLastSeenAt, now: now,
+            glassesConnected: glassesConnected, voiceSessionLive: runtime != nil
+        )
+        let sinceGlassesSeen = glassesLastSeenAt.map { now.timeIntervalSince($0) }
         let run = KeepAlivePolicy.shouldRun(
             wantsListening: wantsListening,
             voiceSessionActive: runtime != nil || voiceConnecting,
-            glassesConnected: signals.glasses == .connected,
+            glassesConnected: glassesConnected,
             appActive: appActive,
-            sinceGlassesSeen: glassesLastSeenAt.map { Date().timeIntervalSince($0) }
+            sinceGlassesSeen: sinceGlassesSeen,
+            wakeAnchored: wakeAnchor.anchoredCount > 0
         )
         if !run, keepAlive.isRunning || keepAliveWanted {
             keepAliveWanted = false
-            record(wantsListening
-                ? "keep-alive off: no glasses for \(Int(KeepAlivePolicy.graceWithoutGlasses / 60)) min"
-                : "keep-alive off: listening off")
+            record(KeepAlivePolicy.offReason(wantsListening: wantsListening, sinceGlassesSeen: sinceGlassesSeen))
             keepAlive.stop()
         } else if run, !keepAliveWanted || force {
             keepAliveWanted = true
@@ -1023,6 +1118,7 @@ final class CompanionRuntime: ObservableObject {
         record(speech ? "listening" : "connected without speech")
         wakeAnchor.refresh()
         signals.listening = true
+        endWakeBackgroundTask("listening")
         signals.speechReady = speech
         signals.listenFailed = false
         if !speech {
@@ -1075,6 +1171,7 @@ final class CompanionRuntime: ObservableObject {
         bindGatewayVoice(session)
         record("listening (glasses mic, experiment)")
         signals.listening = true
+        endWakeBackgroundTask("listening")
         signals.speechReady = true
         signals.listenFailed = false
         markGatewayHealthy()
