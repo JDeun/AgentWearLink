@@ -8,9 +8,21 @@ struct StartListeningIntent: AppIntent {
     static let notification = Notification.Name("dev.agentwearlink.companion.startListening")
     static let title: LocalizedStringResource = "듣기 시작"
     static let description = IntentDescription("저장된 설정으로 안경과 에이전트를 다시 연결하고 듣기 시작해요.")
-    // A DAT device session is only proven to start with the app running, so
-    // the conservative choice is to open the app.
+    // Before iOS 26 the conservative choice is to open the app (a DAT session
+    // is only proven to start with the app running); on a locked phone that
+    // asks for unlock, so the automation stops being hands-free.
     static let openAppWhenRun = true
+
+    /// iOS 26+: run entirely in the background, so a Shortcuts automation
+    /// ("Ray-Ban Meta connected → 듣기 시작", Run Immediately) works with the
+    /// phone locked. Starting playback + DAT from this background launch is
+    /// still to be verified on hardware.
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes { .background }
+
+    /// No unlock needed: the intent only starts listening with the stored
+    /// approval; it reads or changes no user data.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
 
     @MainActor
     func perform() async throws -> some IntentResult {

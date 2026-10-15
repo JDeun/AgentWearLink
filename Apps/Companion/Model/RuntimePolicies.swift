@@ -217,9 +217,12 @@ public enum SpeechPowerPolicy {
 /// Whether the silent keep-alive should run. It exists to keep a DAT voice
 /// session alive with the phone locked; with no glasses around it only plays
 /// silence into the iPhone speaker (field log 2026-10-14) and costs phone
-/// battery and heat. After a grace period without glasses it stops; the app
-/// is woken again by the glasses (external-accessory / Bluetooth), the Start
-/// Listening shortcut, or opening it.
+/// battery and heat. After a grace period without glasses it stops and iOS
+/// suspends the app. Connecting glasses does NOT wake a suspended app (an
+/// accessory-connect notice is queued until the app runs again; Apple
+/// External Accessory docs), so the way back is the Start Listening intent
+/// from a Shortcuts automation ("Ray-Ban Meta connected"), "Hey Meta, start
+/// <app>", or opening the app.
 public enum KeepAlivePolicy {
     public static let graceWithoutGlasses: TimeInterval = 300
 
