@@ -36,6 +36,15 @@ public enum MetaDATSpeechStallPolicy {
     public static let restartGap: Duration = .milliseconds(600)
     /// How often the adapter checks.
     public static let checkInterval: Duration = .seconds(2)
+    /// Speech event counts are logged this often (the activity log holds
+    /// only 300 lines; a line every 10 s pushed out session-end lines).
+    public static let statsInterval: Duration = .seconds(60)
+
+    /// True on the check that completes a `statsInterval`.
+    public static func shouldLogStats(afterCheck checks: Int) -> Bool {
+        let perLine = max(1, Int(statsInterval.components.seconds / checkInterval.components.seconds))
+        return checks > 0 && checks % perLine == 0
+    }
 
     public enum Reason: String, Equatable, Sendable {
         case noEvents = "no transcription events"

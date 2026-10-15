@@ -30,8 +30,29 @@ final class MetaDATSpeechRestartPolicyTests: XCTestCase {
     func testRepeatedSelfStopsBackOff() {
         XCTAssertEqual(MetaDATSpeechRestartPolicy.restartDelay(recentUnrequestedStops: 1), .milliseconds(750))
         XCTAssertEqual(MetaDATSpeechRestartPolicy.restartDelay(recentUnrequestedStops: 3), .milliseconds(750))
-        XCTAssertEqual(MetaDATSpeechRestartPolicy.restartDelay(recentUnrequestedStops: 4), .seconds(60))
-        XCTAssertEqual(MetaDATSpeechRestartPolicy.restartDelay(recentUnrequestedStops: 6), .seconds(300))
+        XCTAssertEqual(MetaDATSpeechRestartPolicy.restartDelay(recentUnrequestedStops: 4), .seconds(10))
+        XCTAssertEqual(MetaDATSpeechRestartPolicy.restartDelay(recentUnrequestedStops: 6), .seconds(30))
+    }
+
+    // Never deaf for minutes: the backoff is capped at 30 s however many stops.
+    func testBackoffIsCappedAtThirtySeconds() {
+        XCTAssertEqual(MetaDATSpeechRestartPolicy.maximumDelay, .seconds(30))
+        for stops in 0...50 {
+            XCTAssertLessThanOrEqual(MetaDATSpeechRestartPolicy.restartDelay(recentUnrequestedStops: stops), .seconds(30))
+        }
+    }
+
+    // A resume during the backoff sleep already started Speech: no second start().
+    func testStartsAfterTheWaitOnlyWhenStillStopped() {
+        XCTAssertTrue(MetaDATSpeechRestartPolicy.shouldStartAfterWait(.stopped))
+        XCTAssertFalse(MetaDATSpeechRestartPolicy.shouldStartAfterWait(.started))
+        XCTAssertFalse(MetaDATSpeechRestartPolicy.shouldStartAfterWait(.transitioning))
+    }
+
+    func testAStallRestartsOwnLateStopIsNotCounted() {
+        XCTAssertTrue(MetaDATSpeechRestartPolicy.isOwnStop(sinceStallStop: 0.7))
+        XCTAssertFalse(MetaDATSpeechRestartPolicy.isOwnStop(sinceStallStop: 5))
+        XCTAssertFalse(MetaDATSpeechRestartPolicy.isOwnStop(sinceStallStop: nil))
     }
 
     func testOnlyStopsInsideTheWindowCount() {

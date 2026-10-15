@@ -68,4 +68,11 @@ final class MetaDATSpeechStallPolicyTests: XCTestCase {
             .restart(.emptyOnly)
         )
     }
+
+    // One stats line a minute (30 checks of 2 s), not every 10 s.
+    func testSpeechStatsAreLoggedOncePerMinute() {
+        let logged = (1...300).filter { MetaDATSpeechStallPolicy.shouldLogStats(afterCheck: $0) }
+        XCTAssertEqual(logged, [30, 60, 90, 120, 150, 180, 210, 240, 270, 300])
+        XCTAssertFalse(MetaDATSpeechStallPolicy.shouldLogStats(afterCheck: 0))
+    }
 }

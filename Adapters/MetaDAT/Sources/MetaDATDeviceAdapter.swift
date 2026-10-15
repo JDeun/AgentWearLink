@@ -195,6 +195,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var speechStallRestarts = 0
     /// Recent unrequested Speech stops (monotonic seconds) for the backoff.
     private var unrequestedSpeechStops: [TimeInterval] = []
+    /// When a stall restart last called `stop()` (monotonic seconds).
+    private var lastStallStopAt: TimeInterval?
     /// Empty-only restarts since the last non-empty transcript (backoff).
     private var emptyOnlyRestartsInARow = 0
     /// Last fresh Speech start (connect, resume, session resume).
@@ -768,6 +770,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             lastNonEmptyTranscriptAt = now
             speechNonEmptyCount += 1
             emptyOnlyRestartsInARow = 0
+            // Speech is hearing the room: earlier self-stops were inactivity,
+            // not shedding, so the restart backoff starts over.
+            unrequestedSpeechStops = []
         }
 
         let accepted = await transcriptDeduplicator.accept(
@@ -836,8 +841,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         let now = ContinuousClock.now
         // Counts only (never text): tells "silent room" from "deaf Speech".
         speechStatsChecks += 1
-        if speechStatsChecks % 5 == 0 {
-            activityLogger?("speech events \(speechEventCount) (non-empty \(speechNonEmptyCount)) in last 10 s, state \(speech.state)")
+        if MetaDATSpeechStallPolicy.shouldLogStats(afterCheck: speechStatsChecks) {
+            activityLogger?("speech events \(speechEventCount) (non-empty \(speechNonEmptyCount)) in last 60 s, state \(speech.state)")
             speechEventCount = 0
             speechNonEmptyCount = 0
         }
@@ -862,6 +867,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         if reason == .emptyOnly { emptyOnlyRestartsInARow += 1 }
         activityLogger?("speech stall restart \(speechStallRestarts) (\(reason.rawValue))")
         speechStallRestarting = true
+        lastStallStopAt = Self.monotonicSeconds()
         speech.stop()
         try? await Task.sleep(for: MetaDATSpeechStallPolicy.restartGap)
         speechStallRestarting = false
@@ -927,20 +933,26 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     public var isSpeechPaused: Bool { speechPaused }
 
+    private static func observed(_ state: SpeechState) -> MetaDATSpeechRestartPolicy.ObservedState {
+        switch state {
+        case .started: return .started
+        case .stopped: return .stopped
+        default: return .transitioning
+        }
+    }
+
     private func handleSpeechState(_ state: SpeechState, generation: UInt64) async {
         guard !stopping, generationFence.owns(generation), let speech else { return }
         activityLogger?("speech \(state)")
-        let observed: MetaDATSpeechRestartPolicy.ObservedState
-        switch state {
-        case .started: observed = .started
-        case .stopped: observed = .stopped
-        default: observed = .transitioning
-        }
+        let observed = Self.observed(state)
         switch MetaDATSpeechRestartPolicy.action(
             for: observed, attempts: speechRestartAttempts,
             // A stall restart's own stop, or a paused session, is not an
             // unrequested stop.
             paused: speechPaused || speechStallRestarting || !sessionIsStarted
+                || (observed == .stopped && MetaDATSpeechRestartPolicy.isOwnStop(
+                    sinceStallStop: lastStallStopAt.map { Self.monotonicSeconds() - $0 }
+                ))
         ) {
         case .resetAttempts:
             speechRestartAttempts = 0
@@ -954,6 +966,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             }
             try? await Task.sleep(for: wait)
             guard !stopping, !speechPaused, generationFence.owns(generation), self.speech === speech else { return }
+            // A resume or session resume during the wait may have started it.
+            guard MetaDATSpeechRestartPolicy.shouldStartAfterWait(Self.observed(speech.state)) else {
+                activityLogger?("speech restart \(attempt) skipped: already \(speech.state)")
+                return
+            }
             activityLogger?("speech restart \(attempt)")
             speech.start()
         case .giveUp:

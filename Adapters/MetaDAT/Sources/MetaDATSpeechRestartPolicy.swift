@@ -25,13 +25,34 @@ enum MetaDATSpeechRestartPolicy {
     /// Unrequested stops counted for the backoff.
     static let stormWindow: TimeInterval = 600
 
-    /// 750 ms normally; 60 s from the 4th self-stop in 10 min; 300 s from the 6th.
+    /// The longest backoff: a self-stopping Speech in a quiet room must not
+    /// leave the glasses deaf for minutes ("can stop after inactivity").
+    static let maximumDelay: Duration = .seconds(30)
+
+    /// 750 ms normally; 10 s from the 4th self-stop in 10 min; 30 s (the cap)
+    /// from the 6th. A non-empty transcript clears the count.
     static func restartDelay(recentUnrequestedStops: Int) -> Duration {
         switch recentUnrequestedStops {
         case ..<4: return delay
-        case 4...5: return .seconds(60)
-        default: return .seconds(300)
+        case 4...5: return .seconds(10)
+        default: return maximumDelay
         }
+    }
+
+    /// After the backoff sleep: start only if Speech is still stopped. A
+    /// resume or session resume during the wait may have started it already.
+    static func shouldStartAfterWait(_ state: ObservedState) -> Bool {
+        state == .stopped
+    }
+
+    /// A stop delivered this soon after a stall restart issued `stop()` is
+    /// that restart's own stop (the state event hops through a Task and can
+    /// land after the restart gap), not an unrequested one.
+    static let ownStopGrace: TimeInterval = 3
+
+    static func isOwnStop(sinceStallStop: TimeInterval?) -> Bool {
+        guard let sinceStallStop else { return false }
+        return sinceStallStop >= 0 && sinceStallStop < ownStopGrace
     }
 
     /// Stop times (seconds, any monotonic base) still inside `stormWindow`.
