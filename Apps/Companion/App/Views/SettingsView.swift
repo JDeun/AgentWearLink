@@ -461,6 +461,7 @@ struct DiagnosticsView: View {
             } footer: {
                 Text("연결 상태 기록만 담겨요. 토큰과 말한 내용은 기록하지 않아요.")
             }
+            QualitySection(metrics: runtime.quality)
             Section {
                 ForEach(runtime.log.entries.reversed()) { entry in
                     VStack(alignment: .leading, spacing: 2) {
@@ -478,5 +479,55 @@ struct DiagnosticsView: View {
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(Text("진단 로그"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Today's quality counters and median latencies (numbers only), to compare
+/// against the glasses' own assistant without a stopwatch.
+private struct QualitySection: View {
+    let metrics: QualityMetrics
+
+    var body: some View {
+        let today = metrics.today
+        Section {
+            row("전달한 요청", "\(today.forwards)")
+            row("호출 대기 (이름 · 두 번 탭)", "\(today.armedByName) · \(today.armedByTap)")
+            row("이름 없이 들린 말", "\(today.ignoredFinals)")
+            row("에코로 걸러낸 말", "\(today.echoDrops)")
+            row("멈춤 (음성 · 탭)", "\(today.voiceStops) · \(today.tapStops)")
+            row("답 없이 끝난 요청", "\(today.noReplyForwards)")
+            row("듣기 먹통 재시작", "\(today.deafRestarts)")
+            LabeledContent {
+                Text("\(today.minutesListening) / \(today.minutesWorn)분")
+            } label: {
+                Text("착용 중 듣기")
+            }
+            latency("전달 → 첫 답 (중앙값)", metrics.medianToday(\.forwardToFirstText))
+            latency("첫 답 → 첫 소리 (중앙값)", metrics.medianToday(\.firstTextToFirstAudio))
+        } header: {
+            Text("품질 지표 (오늘)")
+        }
+        .font(.footnote)
+    }
+
+    private func row(_ title: LocalizedStringKey, _ value: String) -> some View {
+        LabeledContent {
+            Text(verbatim: value).monospacedDigit()
+        } label: {
+            Text(title)
+        }
+    }
+
+    @ViewBuilder
+    private func latency(_ title: LocalizedStringKey, _ seconds: TimeInterval?) -> some View {
+        LabeledContent {
+            if let seconds {
+                Text("\(seconds, format: .number.precision(.fractionLength(1)))초")
+            } else {
+                Text(verbatim: "—")
+            }
+        } label: {
+            Text(title)
+        }
     }
 }

@@ -40,7 +40,11 @@ final class CompanionRuntime: ObservableObject {
     @Published var settings: CompanionSettings {
         didSet { settingsChanged(from: oldValue) }
     }
-    @Published private(set) var signals = ConnectionSignals()
+    @Published private(set) var signals = ConnectionSignals() {
+        didSet { if !signalsFrozen { updateRecovery() } }
+    }
+    /// Quality counters and turn latencies (counts and durations only).
+    @Published private(set) var quality = QualityMetrics()
     @Published private(set) var setup = SetupProgress()
     @Published private(set) var metaConfiguration: WearablesLink.Configuration?
     @Published private(set) var pairing: PairingPhase = .idle
@@ -97,6 +101,13 @@ final class CompanionRuntime: ObservableObject {
     private var voiceConnecting = false
     private var wakeGate: WakeGateBox?
     private var latency = TurnLatencyTracker()
+    private var stages = TurnStageTracker()
+    private var recovery = RecoveryTracker()
+    /// Speech is (re)starting after a deaf restart or a pause; not listening yet.
+    private var speechRestartingSince: Date?
+    private var lastFirstAudioMilliseconds: Int?
+    /// The live reply sink, to drop the rest of a stopped reply.
+    private var speechSink: StreamingSpeechOutput?
     private var connectionFence = AWLConnectionAttemptFence()
     private var disconnectInProgress = false
 
@@ -147,6 +158,8 @@ final class CompanionRuntime: ObservableObject {
             self?.followUp.replySpoken()
         }
         speaker.onIdle = { [weak self] in self?.replySpeechIdle() }
+        speaker.onSystemAudioStarted = { [weak self] in self?.replyAudioStarted(.system) }
+        gatewayVoice.onPlaybackStarted = { [weak self] in self?.replyAudioStarted(.gateway) }
     }
 
     private var wantsListening: Bool {
@@ -298,6 +311,7 @@ final class CompanionRuntime: ObservableObject {
             if restartSession, runtime != nil {
                 record("restart: \(reason)")
                 await disconnectVoice()
+                listeningLost("restart: \(reason)")
                 // No DAT session now: safe to reactivate audio if needed.
                 applyKeepAlivePolicy(force: true)
                 // A new DAT session too soon after a stop fails (dat-ios #231).
@@ -879,6 +893,10 @@ final class CompanionRuntime: ObservableObject {
 
     /// One line a minute, also in the background while the keep-alive runs.
     private func appendPowerSample() {
+        let now = Date()
+        // Safety net: a restart whose "speech started" never logged.
+        if let since = speechRestartingSince, now.timeIntervalSince(since) > 90 { speechRestartingSince = nil }
+        quality.minute(worn: shouldListenNow, listening: listeningUp, at: now)
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+")
         powerLog.append(PowerSample(
             time: Date(),
@@ -891,7 +909,9 @@ final class CompanionRuntime: ObservableObject {
             appActive: appActive,
             phoneLocked: !UIApplication.shared.isProtectedDataAvailable,
             speechStallRestarts: speechStallRestartCount,
-            turns: turnCount
+            turns: turnCount,
+            quality: quality.sinceLaunch,
+            lastLatencyFirstAudioMilliseconds: lastFirstAudioMilliseconds
         ))
     }
 
@@ -924,9 +944,17 @@ final class CompanionRuntime: ObservableObject {
     /// (dat-ios #292). Only a real link drop / session stop tears down.
     private func applySpeechPower(_ decision: SpeechPowerPolicy.Decision, force: Bool = false) {
         let previous = signals.speechPause
+        if previous != .listen, decision == .listen, device != nil {
+            // Listening is back only once Speech has really started again
+            // (set before the signal changes, which updates recovery).
+            speechRestartingSince = Date()
+        }
         signals.speechPause = decision
         guard force || decision != previous else { return }
         if decision != previous { record("speech power: \(decision)") }
+        if previous == .listen, decision != .listen {
+            listeningLost(decision == .shedThermal ? "thermal pause" : "doff/fold pause")
+        }
         guard let device else { return }
         Task {
             if decision == .listen {
@@ -938,6 +966,7 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private func callsChanged(_ active: Bool) {
+        defer { updateRecovery() }
         switch callGate.update(callActive: active) {
         case .callStarted:
             record("call started: reconnects paused")
@@ -1067,6 +1096,7 @@ final class CompanionRuntime: ObservableObject {
         let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
         speaker.gate = gate
         let sink = StreamingSpeechOutput(synthesizer: speaker)
+        speechSink = sink
         await configureDevice(concreteDevice, gate: gate)
 
         let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
@@ -1139,6 +1169,7 @@ final class CompanionRuntime: ObservableObject {
         speaker.gate = gate
         speaker.allowHandsFree = true
         let sink = StreamingSpeechOutput(synthesizer: speaker)
+        speechSink = sink
         let log: @Sendable (String) -> Void = { [weak self] line in Task { @MainActor in self?.record(line) } }
         let mic = GlassesMicSpeechAdapter(
             language: Self.speechLanguage,
@@ -1146,9 +1177,10 @@ final class CompanionRuntime: ObservableObject {
             log: log
         )
         await mic.setTranscriptGate { [weak self] text in
-            let decision = await gate.evaluate(text)
-            await self?.observeTranscript(text, decision: decision)
-            if case let .forward(request) = decision { return request }
+            let heardAt = Date()
+            let result = await gate.evaluate(text)
+            await self?.observeTranscript(text, result: result, heardAt: heardAt)
+            if case let .forward(request) = result.decision { return request }
             return nil
         }
         let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
@@ -1229,6 +1261,7 @@ final class CompanionRuntime: ObservableObject {
                 case .reconnect:
                     self.record("watch: session replaced")
                     await self.disconnectVoice()
+                    self.listeningLost("gateway down")
                     self.startRecovery("session watch", immediate: false, restart: true)
                     return
                 case .stopNeedsApproval:
@@ -1248,25 +1281,36 @@ final class CompanionRuntime: ObservableObject {
         }
         await device.setActivityLogger(log)
         await device.setTranscriptGate { [weak self] text in
-            let decision = await gate.evaluate(text)
-            await self?.observeTranscript(text, decision: decision)
-            if case let .forward(request) = decision { return request }
+            let heardAt = Date()
+            let result = await gate.evaluate(text)
+            await self?.observeTranscript(text, result: result, heardAt: heardAt)
+            if case let .forward(request) = result.decision { return request }
             return nil
         }
         await device.setGlassesInputHandler { [weak self] isSelect, _ in
-            guard isSelect else { return }
+            guard isSelect, let self else { return }
+            // While a reply plays or is awaited, a double tap stops it.
+            if await self.doubleTapStopsReply() { return }
             await gate.arm()
             log("armed by double tap")
-            await self?.playCue(.listening)
+            await self.playCue(.listening)
         }
     }
 
-    private func observeTranscript(_ text: String, decision: AWLWakePhraseGate.Decision) {
+    private func observeTranscript(_ text: String, result: WakeGateBox.Result, heardAt: Date) {
+        let decision = result.decision
         // A transcript proves Speech is running.
         signals.speechReady = true
+        if result.verdict != .empty, speechRestartingSince != nil {
+            speechRestartingSince = nil
+            updateRecovery()
+        }
+        quality.record(result.verdict)
         switch decision {
         case let .forward(request):
-            latency.requestForwarded(at: Date())
+            let now = Date()
+            latency.requestForwarded(at: now)
+            if let unreported = stages.forwarded(finalAt: heardAt, at: now) { reportTurn(unreported) }
             startWaitingCues()
             // Only the length is logged; transcripts never enter the log.
             record("request forwarded (\(request.count) chars)")
@@ -1274,7 +1318,7 @@ final class CompanionRuntime: ObservableObject {
             record("armed by name")
             playCue(.listening)
         case .ignore:
-            break
+            if result.verdict == .stop { stopReply(.voice) }
         }
         if !settings.setupCompleted, setup.current == .practice {
             practice.transcript = text
@@ -1286,6 +1330,7 @@ final class CompanionRuntime: ObservableObject {
         let now = Date()
         switch event {
         case let .text(id, _):
+            stages.replyText(at: now)
             if let seconds = latency.replyText(replyID: String(describing: id), at: now) {
                 settings.lastReplyLatency = seconds
                 signals.lastReplyLatency = seconds
@@ -1299,6 +1344,14 @@ final class CompanionRuntime: ObservableObject {
             signals.agentFailing = false
             signals.checkedAt[.agent] = now
             stopWaitingCues()
+            if stages.awaitingText {
+                // False-trigger proxy: the agent had nothing to say.
+                quality.noReply(at: now)
+                if let turn = stages.flush() { reportTurn(turn) }
+            } else if !speaker.isSpeaking, let turn = stages.flush() {
+                // Nothing will play (route guard, empty reply).
+                reportTurn(turn)
+            }
             // Open the follow-up window once the reply has been spoken (all
             // reply text is queued by now), and only if something was spoken.
             followUp.turnCompleted(followUpEnabled: settings.followUp)
@@ -1313,6 +1366,7 @@ final class CompanionRuntime: ObservableObject {
                 signals.checkedAt[.agent] = now
                 record("turn failed")
                 stopWaitingCues()
+                if let turn = stages.flush() { reportTurn(turn) }
                 playCue(.failed)
             }
         default:
@@ -1347,6 +1401,7 @@ final class CompanionRuntime: ObservableObject {
 
     private func startWaitingCues() {
         followUp.requestForwarded()
+        waitingSince = Date()
         thinkingTask?.cancel()
         playCue(.accepted)
         guard settings.audioCues else { return }
@@ -1363,8 +1418,103 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private func stopWaitingCues() {
+        waitingSince = nil
         thinkingTask?.cancel()
         thinkingTask = nil
+    }
+
+    /// A request was forwarded and its reply has not started yet.
+    private var waitingSince: Date?
+
+    private var isAwaitingReply: Bool {
+        guard let waitingSince else { return false }
+        return Date().timeIntervalSince(waitingSince) < ThinkingCueSchedule().maximumWait
+    }
+
+    // MARK: Stop ("그만" / double tap)
+
+    /// Double tap: stops a reply that is playing or awaited; otherwise the
+    /// caller arms the gate as before.
+    private func doubleTapStopsReply() -> Bool {
+        guard speaker.isSpeaking || isAwaitingReply else {
+            quality.armedByTap()
+            return false
+        }
+        stopReply(.tap)
+        return true
+    }
+
+    /// Stops the reply: speaker (system and gateway voice), the rest of the
+    /// streamed reply, thinking ticks and the echo window. No follow-up
+    /// window and no cue: the silence itself is the confirmation, and the
+    /// "listening" earcon would wrongly suggest the gate is armed. The agent
+    /// run itself is not cancelled (the runtime exposes no per-turn cancel);
+    /// its late reply is dropped instead.
+    private func stopReply(_ source: StopSource) {
+        let awaiting = stages.awaitingText || isAwaitingReply
+        quality.stopped(source)
+        stopWaitingCues()
+        followUp.reset()
+        if let turn = stages.flush() { reportTurn(turn) }
+        record("reply stopped (\(source.rawValue))")
+        let sink = speechSink
+        let gate = wakeGate
+        Task {
+            await sink?.stopCurrentReply(awaitingReply: awaiting)
+            await speaker.stop()
+            await gate?.closeEchoWindow()
+        }
+    }
+
+    // MARK: Quality metrics
+
+    /// Reply audio actually started: completes the turn's latency stages.
+    private func replyAudioStarted(_ voice: TurnStages.Voice) {
+        guard let turn = stages.audioStarted(voice: voice, at: Date()) else { return }
+        reportTurn(turn)
+    }
+
+    private func reportTurn(_ turn: TurnStages) {
+        quality.turn(turn)
+        if turn.voice != nil {
+            let total = (turn.finalToForward ?? 0) + (turn.forwardToFirstText ?? 0) + (turn.firstTextToFirstAudio ?? 0)
+            lastFirstAudioMilliseconds = Int((total * 1000).rounded())
+        }
+        record(turn.logLine)
+    }
+
+    /// Worn, listening on, no call: the wearer expects the agent to hear.
+    private var shouldListenNow: Bool {
+        wantsListening && signals.glasses == .connected && signals.speechPause == .listen && callGate.allowsReconnect
+    }
+
+    /// A voice session is up and Speech is actually running.
+    private var listeningUp: Bool {
+        signals.listening && signals.speechPause == .listen && speechRestartingSince == nil
+    }
+
+    private func listeningLost(_ reason: String) {
+        guard !signalsFrozen else { return }
+        recovery.lost(reason, shouldListen: shouldListenNow, at: Date())
+        updateRecovery()
+    }
+
+    private func updateRecovery() {
+        guard started, let result = recovery.update(shouldListen: shouldListenNow, listening: listeningUp, at: Date()) else { return }
+        record(result.logLine)
+    }
+
+    /// Activity-log lines that carry metric events (counts only).
+    private func noteMetricLine(_ message: String) {
+        if message.hasPrefix("speech stall restart") {
+            quality.deafRestart()
+            speechRestartingSince = Date()
+            listeningLost("speech deaf restart")
+        } else if speechRestartingSince != nil, message.hasPrefix("speech "),
+                  message.lowercased().contains("started"), !message.contains("restart") {
+            speechRestartingSince = nil
+            updateRecovery()
+        }
     }
 
     /// The synthesizer has nothing left to say. After a completed turn,
@@ -1382,6 +1532,8 @@ final class CompanionRuntime: ObservableObject {
         guard connectionFence.ownsRuntime(attempt), runtime != nil, !disconnectInProgress else { return }
         await disconnectVoice()
         record("device session lost")
+        // Calls end the DAT session on current firmware (#332).
+        listeningLost(callGate.allowsReconnect ? "device session lost" : "call")
         refreshGlasses()
         // The keep-alive keeps running, so this loop survives a locked phone.
         if wantsListening { startRecovery("device session lost", immediate: false, restart: true) }
@@ -1408,6 +1560,7 @@ final class CompanionRuntime: ObservableObject {
         followUp.reset()
         runtime = nil
         device = nil
+        speechSink = nil
         voiceSession = nil
         wakeGate = nil
         signals.listening = false
@@ -1423,6 +1576,7 @@ final class CompanionRuntime: ObservableObject {
         log.append(message)
         if message.hasPrefix("speech stall restart") { speechStallRestartCount += 1 }
         if message.hasPrefix("request forwarded") { turnCount += 1 }
+        noteMetricLine(message)
         #if DEBUG
         // Same lines as the diagnostics screen (never transcripts), so a
         // connected Mac can follow them with `devicectl ... --console`.

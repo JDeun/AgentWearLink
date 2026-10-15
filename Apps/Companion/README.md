@@ -30,6 +30,7 @@ flowchart LR
 General "Hey Meta" requests always go to Meta AI. Meta staff confirm that a registered app cannot receive them ([research](../../docs/research/hey-meta-and-meta-ai-boundary.md)). The app therefore keeps its own Speech session and listens for **your agent's name**. Other ways in:
 
 - **Double tap** on the glasses arms the next sentence without saying the name.
+- **Stop a reply** by saying "그만" (or 멈춰, 됐어, 조용히, 스톱, stop) while it plays, or by double tapping while it plays or is being prepared. Outside a reply, "그만" counts only after the name or a double tap.
 - **"Hey Meta, open Agent Wear Link"** (English only) starts the app if it isn't running.
 - A **Shortcuts automation** can start it when the glasses connect over Bluetooth. Use the "Start listening in Agent Wear Link" action.
 
@@ -99,6 +100,6 @@ Meta AI Developer Mode needs no App ID or client token.
 
 ## Privacy
 
-- No transcript text is written to the diagnostics log; only lengths and states are recorded. The live transcript is shown only on the call-practice screen.
+- No transcript text is written to the diagnostics log; only lengths and states are recorded. Quality metrics (forwards, armings, ignored and echo-dropped finals, stops, per-turn latency stages, worn vs. listening minutes, recovery times) are counts and durations only. They appear in the hidden diagnostics screen and as extra columns at the end of the per-minute `power-log.csv`. The live transcript is shown only on the call-practice screen.
 - Tokens never go to UserDefaults or logs. Device grants live in the Keychain.
 - The app doesn't send your location. Location-aware agents should use their own private channel (see [companion app constraints](../../docs/research/companion-app-constraints.md)).

@@ -6,28 +6,91 @@ import Foundation
 /// Owns the wake-phrase gate on one actor, shared by the DAT transcript
 /// callback, the double-tap handler and the reply speaker (echo guard).
 actor WakeGateBox {
+    struct Result: Sendable {
+        let decision: AWLWakePhraseGate.Decision
+        let verdict: TranscriptVerdict
+    }
+
+    /// Same as the gate's own armed window.
+    static let armedWindow: TimeInterval = 8
+
+    private var phrases: [String]
     private var gate: AWLWakePhraseGate
     private var echo = EchoWindow()
+    /// Mirrors the gate's armed state (it does not expose it).
+    private var armedUntil: Date?
 
     init(phrases: [String]) {
-        gate = AWLWakePhraseGate(wakePhrases: phrases)
+        self.phrases = phrases
+        gate = AWLWakePhraseGate(wakePhrases: phrases, armedWindow: Self.armedWindow)
     }
 
     func replacePhrases(_ phrases: [String]) {
-        gate = AWLWakePhraseGate(wakePhrases: phrases)
+        self.phrases = phrases
+        gate = AWLWakePhraseGate(wakePhrases: phrases, armedWindow: Self.armedWindow)
+        armedUntil = nil
     }
 
-    func evaluate(_ text: String) -> AWLWakePhraseGate.Decision {
+    func evaluate(_ text: String) -> Result {
+        let now = Date()
+        guard !StopCommand.normalize(text).isEmpty else { return Result(decision: .ignore, verdict: .empty) }
+        // "그만" while a reply plays (or just after): stop it, unless it is
+        // the reply's own echo. Checked before the echo guard, which drops
+        // everything while speech is pending.
+        if StopDecision.shouldStop(
+            match: stopMatch(text),
+            replyActive: echo.suppresses(at: now),
+            echoOfReply: echo.echoes(text),
+            armed: armedUntil.map { now <= $0 } ?? false
+        ) {
+            disarm()
+            return Result(decision: .ignore, verdict: .stop)
+        }
         // The app's own reply echoing into the glasses microphone.
-        if echo.suppresses(text, at: Date()) { return .ignore }
-        return gate.evaluate(text)
+        if echo.suppresses(text, at: now) { return Result(decision: .ignore, verdict: .echoDropped) }
+        let decision = gate.evaluate(text)
+        switch decision {
+        case .forward:
+            armedUntil = nil
+            return Result(decision: decision, verdict: .forwarded)
+        case .armed:
+            armedUntil = now.addingTimeInterval(Self.armedWindow)
+            return Result(decision: decision, verdict: .armedByName)
+        case .ignore:
+            armedUntil = nil
+            return Result(decision: decision, verdict: .ignoredWithoutName)
+        }
     }
 
-    func arm() { gate.arm() }
+    private func stopMatch(_ text: String) -> StopCommand.Match? {
+        guard !phrases.isEmpty else {
+            // No wake phrase: every utterance is addressed to the agent.
+            return StopCommand.match(text, wakePhrases: []).map { _ in .afterWakePhrase }
+        }
+        if let match = StopCommand.match(text, wakePhrases: phrases) { return match }
+        // A misheard name ("알프래드 그만"): the gate's own fuzzy stripping.
+        guard case let .forward(rest) = AWLWakePhraseGate(wakePhrases: phrases).evaluate(text),
+              StopCommand.match(rest, wakePhrases: []) != nil else { return nil }
+        return .afterWakePhrase
+    }
+
+    private func disarm() {
+        gate = AWLWakePhraseGate(wakePhrases: phrases, armedWindow: Self.armedWindow)
+        armedUntil = nil
+    }
+
+    func arm() {
+        gate.arm()
+        armedUntil = Date().addingTimeInterval(Self.armedWindow)
+    }
+
     func beganSpeaking(_ text: String) { echo.beganSpeaking(text, at: Date()) }
     func finishedSpeaking() { echo.finishedSpeaking(at: Date()) }
     /// Speech was stopped: queued gateway sentences never call back.
     func stoppedSpeaking() { echo.stoppedSpeaking(at: Date()) }
+    /// The wearer stopped the reply: nothing of it plays any more, so the
+    /// next utterance is judged on its own.
+    func closeEchoWindow() { echo = EchoWindow() }
 }
 
 /// Speaks replies into the glasses, and only there.
@@ -55,6 +118,8 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     var onSpoken: (() -> Void)?
     /// The last queued utterance finished (nothing left to say).
     var onIdle: (() -> Void)?
+    /// A system-voice utterance actually started playing (latency metric).
+    var onSystemAudioStarted: (() -> Void)?
     var onEvent: ((String) -> Void)?
     var isSpeaking: Bool { synthesizer.isSpeaking || (gatewayVoice?.isBusy ?? false) }
     /// EXPERIMENT (default off), see `ReplyDuckingMode`.
@@ -146,6 +211,10 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
         // finished: close the pending echo window now; the echo filter
         // still runs afterwards.
         await gate?.stoppedSpeaking()
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.onSystemAudioStarted?() }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {

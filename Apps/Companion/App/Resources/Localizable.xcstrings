@@ -129,6 +129,22 @@
         }
       }
     },
+    "%lld / %lld분": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld min"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld분"
+          }
+        }
+      }
+    },
     "1. 요청 목록을 열어요": {
       "localizations": {
         "en": {
@@ -1281,6 +1297,22 @@
         }
       }
     },
+    "답 없이 끝난 요청": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requests with no reply"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답 없이 끝난 요청"
+          }
+        }
+      }
+    },
     "답변은 텔레그램에서 확인하세요": {
       "localizations": {
         "en": {
@@ -1421,6 +1453,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "두세 문장으로 답해요. 긴 답은 텔레그램에서 볼 수 있어요"
+          }
+        }
+      }
+    },
+    "듣기 먹통 재시작": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deaf speech restarts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣기 먹통 재시작"
           }
         }
       }
@@ -1645,6 +1693,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "먼저 안경을 펼쳐 쓰고 iPhone 가까이 두세요. 안경이 연결되면 버튼을 누를 수 있어요."
+          }
+        }
+      }
+    },
+    "멈춤 (음성 · 탭)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped (voice · tap)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "멈춤 (음성 · 탭)"
           }
         }
       }
@@ -3025,6 +3089,22 @@
         }
       }
     },
+    "에코로 걸러낸 말": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dropped as echo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에코로 걸러낸 말"
+          }
+        }
+      }
+    },
     "여성": {
       "localizations": {
         "en": {
@@ -3553,6 +3633,22 @@
         }
       }
     },
+    "이름 없이 들린 말": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Heard without the name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름 없이 들린 말"
+          }
+        }
+      }
+    },
     "이어 말하기": {
       "localizations": {
         "en": {
@@ -3645,6 +3741,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "저장된 승인이 더 이상 유효하지 않아요"
+          }
+        }
+      }
+    },
+    "전달 → 첫 답 (중앙값)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward → first text (median)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전달 → 첫 답 (중앙값)"
+          }
+        }
+      }
+    },
+    "전달한 요청": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requests forwarded"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전달한 요청"
           }
         }
       }
@@ -3857,6 +3985,22 @@
         }
       }
     },
+    "착용 중 듣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening while worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "착용 중 듣기"
+          }
+        }
+      }
+    },
     "처음 설정": {
       "localizations": {
         "en": {
@@ -3885,6 +4029,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "처음부터 다시"
+          }
+        }
+      }
+    },
+    "첫 답 → 첫 소리 (중앙값)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First text → first audio (median)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "첫 답 → 첫 소리 (중앙값)"
           }
         }
       }
@@ -4113,6 +4273,22 @@
         }
       }
     },
+    "품질 지표 (오늘)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality (today)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "품질 지표 (오늘)"
+          }
+        }
+      }
+    },
     "프리미엄": {
       "localizations": {
         "en": {
@@ -4173,6 +4349,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "허용 필요"
+          }
+        }
+      }
+    },
+    "호출 대기 (이름 · 두 번 탭)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Armed (name · double tap)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 대기 (이름 · 두 번 탭)"
           }
         }
       }

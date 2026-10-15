@@ -20,6 +20,8 @@ final class GatewayVoice {
     var outputFormat: (() -> AVAudioFormat?)?
     /// Stops the clip that is playing now.
     var stopPlayback: (() -> Void)?
+    /// A clip was scheduled and the player started (latency metric).
+    var onPlaybackStarted: (() -> Void)?
     var onLog: ((String) -> Void)?
 
     static let firstClipDeadline: Duration = .milliseconds(1500)
@@ -77,7 +79,9 @@ final class GatewayVoice {
                 let item = queue.removeFirst()
                 let buffer = fellBack ? nil : await item.clip.value
                 guard generation == current else { return }
-                if let buffer, let play, await Self.playAndWait(buffer, play: play) {
+                if let buffer, let play, await Self.playAndWait(buffer, play: play, started: { [weak self] in
+                    self?.onPlaybackStarted?()
+                }) {
                     finished()
                     continue
                 }
@@ -94,11 +98,12 @@ final class GatewayVoice {
 
     private static func playAndWait(
         _ buffer: AVAudioPCMBuffer,
-        play: (AVAudioPCMBuffer, @escaping @Sendable () -> Void) -> Bool
+        play: (AVAudioPCMBuffer, @escaping @Sendable () -> Void) -> Bool,
+        started: () -> Void
     ) async -> Bool {
         await withCheckedContinuation { continuation in
-            let started = play(buffer) { continuation.resume(returning: true) }
-            if !started { continuation.resume(returning: false) }
+            let playing = play(buffer) { continuation.resume(returning: true) }
+            if playing { started() } else { continuation.resume(returning: false) }
         }
     }
 

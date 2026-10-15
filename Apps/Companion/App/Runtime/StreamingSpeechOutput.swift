@@ -14,6 +14,8 @@ actor StreamingSpeechOutput: InteractionOutputSink {
     private var buffer = ""
     private var finished: Set<InteractionID> = []
     private var finishedOrder: [InteractionID] = []
+    /// Stopped while waiting: the next reply that starts is not spoken.
+    private var skipNextReply = false
     static let maximumBufferedCharacters = 32_000
 
     init(synthesizer: any SpeechSynthesizing) {
@@ -23,7 +25,7 @@ actor StreamingSpeechOutput: InteractionOutputSink {
     func consume(_ event: InteractionEvent) async {
         switch event {
         case let .text(id, delta):
-            guard !finished.contains(id) else { return }
+            guard !finished.contains(id), !skippedAsStopped(id) else { return }
             if activeID != id {
                 if activeID != nil { await synthesizer.stop() }
                 activeID = id
@@ -42,7 +44,7 @@ actor StreamingSpeechOutput: InteractionOutputSink {
             for sentence in sentences { await speak(sentence) }
 
         case let .turnCompleted(id):
-            guard !finished.contains(id) else { return }
+            guard !finished.contains(id), !skippedAsStopped(id) else { return }
             remember(id)
             guard activeID == id else { return }
             let (sentences, _) = SentenceSplitter.split(buffer, final: true)
@@ -53,7 +55,7 @@ actor StreamingSpeechOutput: InteractionOutputSink {
             // A timeout is not final: a late reply for the same request may
             // still arrive and is spoken unless a newer request superseded it.
             if case .timeout = error { return }
-            guard !finished.contains(id) else { return }
+            guard !finished.contains(id), !skippedAsStopped(id) else { return }
             remember(id)
             guard activeID == id else { return }
             buffer = ""
@@ -69,6 +71,26 @@ actor StreamingSpeechOutput: InteractionOutputSink {
         case .sessionStarted, .invocation:
             break
         }
+    }
+
+    /// The wearer stopped the reply ("그만" / double tap): the rest of it is
+    /// dropped. `awaitingReply`: stopped before any reply text, so the next
+    /// reply to start (the stopped request's) is dropped too. The caller
+    /// stops the speaker itself.
+    func stopCurrentReply(awaitingReply: Bool) {
+        if let activeID { remember(activeID) }
+        activeID = nil
+        buffer = ""
+        if awaitingReply { skipNextReply = true }
+    }
+
+    /// True once for the first event of a new reply after a stop while
+    /// waiting; that reply is remembered as finished.
+    private func skippedAsStopped(_ id: InteractionID) -> Bool {
+        guard skipNextReply, id != activeID else { return false }
+        skipNextReply = false
+        remember(id)
+        return true
     }
 
     private func speak(_ sentence: String) async {
