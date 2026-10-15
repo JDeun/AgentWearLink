@@ -151,6 +151,12 @@ public struct EchoWindow: Equatable, Sendable {
         return Self.looksLikeEcho(transcript, of: spoken)
     }
 
+    /// The transcript looks like what was spoken in the current window
+    /// (for the stop command: the reply itself saying "그만" is not a stop).
+    public func echoes(_ transcript: String) -> Bool {
+        Self.looksLikeEcho(transcript, of: spoken)
+    }
+
     static func canonical(_ text: String) -> String {
         String(text.lowercased().unicodeScalars.filter {
             CharacterSet.alphanumerics.contains($0)
