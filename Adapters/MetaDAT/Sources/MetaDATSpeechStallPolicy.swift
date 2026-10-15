@@ -40,9 +40,19 @@ public enum MetaDATSpeechStallPolicy {
     /// only 300 lines; a line every 10 s pushed out session-end lines).
     public static let statsInterval: Duration = .seconds(60)
 
-    /// True on the check that completes a `statsInterval`.
-    public static func shouldLogStats(afterCheck checks: Int) -> Bool {
-        let perLine = max(1, Int(statsInterval.components.seconds / checkInterval.components.seconds))
+    /// MODERATE heat (reduced optional work): stats lines this many times
+    /// less often.
+    public static let reducedStatsStretch = 5
+
+    /// Seconds one stats line covers.
+    public static func statsSeconds(reduced: Bool) -> Int64 {
+        statsInterval.components.seconds * Int64(reduced ? reducedStatsStretch : 1)
+    }
+
+    /// True on the check that completes a stats window (`statsInterval`,
+    /// stretched while work is reduced).
+    public static func shouldLogStats(afterCheck checks: Int, reduced: Bool = false) -> Bool {
+        let perLine = max(1, Int(statsSeconds(reduced: reduced) / checkInterval.components.seconds))
         return checks > 0 && checks % perLine == 0
     }
 

@@ -207,6 +207,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var transcriptGate: (@Sendable (String) async -> String?)?
     private var glassesInputHandler: (@Sendable (_ isSelect: Bool, _ description: String) async -> Void)?
     private var activityLogger: (@Sendable (String) -> Void)?
+    private var sessionErrorObserver: (@Sendable (MetaDATSessionErrorKind) -> Void)?
+    /// MODERATE heat: optional work is reduced (speech stats less often).
+    private var reducedWork = false
     private let speechTranscriptStream = MetaDATSpeechTranscriptStream()
     private let transcriptDeduplicator = MetaDATFinalTranscriptDeduplicator()
     private let finalTranscriptFilter = MetaDATFinalTranscriptFilter()
@@ -266,6 +269,20 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     /// field diagnostics. Never receives transcript text.
     public func setActivityLogger(_ logger: (@Sendable (String) -> Void)?) {
         activityLogger = logger
+    }
+
+    /// Receives every DeviceSessionError from the live session's error
+    /// stream, by case name only, before any failure event is emitted.
+    public func setSessionErrorObserver(_ observer: (@Sendable (MetaDATSessionErrorKind) -> Void)?) {
+        sessionErrorObserver = observer
+    }
+
+    /// Meta thermal guidance for MODERATE: reduce optional work. Here that
+    /// stretches the Speech statistics log line; Speech itself keeps running.
+    public func setReducedWork(_ reduced: Bool) {
+        guard reduced != reducedWork else { return }
+        reducedWork = reduced
+        activityLogger?(reduced ? "reduced work: speech stats every \(MetaDATSpeechStallPolicy.statsSeconds(reduced: true)) s" : "reduced work off")
     }
 
     public nonisolated func events() -> AsyncStream<InteractionEvent> {
@@ -841,8 +858,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         let now = ContinuousClock.now
         // Counts only (never text): tells "silent room" from "deaf Speech".
         speechStatsChecks += 1
-        if MetaDATSpeechStallPolicy.shouldLogStats(afterCheck: speechStatsChecks) {
-            activityLogger?("speech events \(speechEventCount) (non-empty \(speechNonEmptyCount)) in last 60 s, state \(speech.state)")
+        if MetaDATSpeechStallPolicy.shouldLogStats(afterCheck: speechStatsChecks, reduced: reducedWork) {
+            let window = MetaDATSpeechStallPolicy.statsSeconds(reduced: reducedWork)
+            activityLogger?("speech events \(speechEventCount) (non-empty \(speechNonEmptyCount)) in last \(window) s, state \(speech.state)")
+            speechStatsChecks = 0
             speechEventCount = 0
             speechNonEmptyCount = 0
         }
@@ -1209,8 +1228,15 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         tearDownSession(expectedGeneration: generation)
     }
 
-    private func emitDeviceError(_ error: any Error, generation: UInt64) {
+    private func emitDeviceError(_ error: DeviceSessionError, generation: UInt64) {
         guard !stopping, generationFence.owns(generation) else { return }
+        // The case name only: the vendor description stays redacted.
+        let kind = MetaDATSessionErrorKind(error)
+        activityLogger?("session error: \(kind.rawValue)")
+        sessionErrorObserver?(kind)
+        // A non-blocking warning (dwaOutOfStuRange) must not retire a
+        // healthy session.
+        guard kind.response.endsSession else { return }
         emitMediaFailure(MetaDATVendorFailurePolicy.message(
             for: error,
             surface: .session

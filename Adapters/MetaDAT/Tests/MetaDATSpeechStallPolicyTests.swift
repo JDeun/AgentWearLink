@@ -75,4 +75,12 @@ final class MetaDATSpeechStallPolicyTests: XCTestCase {
         XCTAssertEqual(logged, [30, 60, 90, 120, 150, 180, 210, 240, 270, 300])
         XCTAssertFalse(MetaDATSpeechStallPolicy.shouldLogStats(afterCheck: 0))
     }
+
+    // MODERATE heat stretches the stats line to every 5 minutes.
+    func testReducedWorkStretchesSpeechStats() {
+        let logged = (1...300).filter { MetaDATSpeechStallPolicy.shouldLogStats(afterCheck: $0, reduced: true) }
+        XCTAssertEqual(logged, [150, 300])
+        XCTAssertEqual(MetaDATSpeechStallPolicy.statsSeconds(reduced: false), 60)
+        XCTAssertEqual(MetaDATSpeechStallPolicy.statsSeconds(reduced: true), 300)
+    }
 }
