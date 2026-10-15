@@ -115,6 +115,12 @@ struct SettingsView: View {
 
     @ViewBuilder private var voicePicker: some View {
         let options = runtime.voiceOptions
+        SettingToggle(
+            isOn: binding(\.gatewayVoice),
+            title: "게이트웨이 목소리",
+            detail: "에이전트가 있는 컴퓨터의 로컬 음성 모델로 읽어요. 느리거나 안 되면 아래 목소리로 바로 바꿔 읽어요",
+            warning: "아래 iPhone 목소리로 읽어요"
+        )
         Picker(selection: binding(\.voiceIdentifier)) {
             Text("기본 목소리").tag("")
             ForEach(options) { option in

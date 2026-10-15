@@ -737,6 +737,22 @@
         }
       }
     },
+    "게이트웨이 목소리": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 목소리"
+          }
+        }
+      }
+    },
     "게이트웨이 연결하기": {
       "localizations": {
         "en": {
@@ -2273,6 +2289,22 @@
         }
       }
     },
+    "아래 iPhone 목소리로 읽어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads with the iPhone voice below"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래 iPhone 목소리로 읽어요"
+          }
+        }
+      }
+    },
     "아직 대화가 없어요": {
       "localizations": {
         "en": {
@@ -2941,6 +2973,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "에이전트가 있는 컴퓨터 · 승인됨"
+          }
+        }
+      }
+    },
+    "에이전트가 있는 컴퓨터의 로컬 음성 모델로 읽어요. 느리거나 안 되면 아래 목소리로 바로 바꿔 읽어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads with the local voice model on the agent's computer. If it is slow or unavailable, the voice below takes over at once"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 있는 컴퓨터의 로컬 음성 모델로 읽어요. 느리거나 안 되면 아래 목소리로 바로 바꿔 읽어요"
           }
         }
       }

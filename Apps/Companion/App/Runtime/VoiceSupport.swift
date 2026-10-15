@@ -44,6 +44,9 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     var voiceIdentifier = ""
     /// EXPERIMENT glasses-mic wake: the route is Bluetooth hands-free.
     var allowHandsFree = false
+    /// "게이트웨이 목소리": speak with the Gateway's local TTS when connected.
+    var useGatewayVoice = false
+    var gatewayVoice: GatewayVoice?
     var gate: WakeGateBox?
     /// Called when a reply could not be spoken because of the route.
     var onSilenced: (() -> Void)?
@@ -51,7 +54,7 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     /// The last queued utterance finished (nothing left to say).
     var onIdle: (() -> Void)?
     var onEvent: ((String) -> Void)?
-    var isSpeaking: Bool { synthesizer.isSpeaking }
+    var isSpeaking: Bool { synthesizer.isSpeaking || (gatewayVoice?.isBusy ?? false) }
     /// EXPERIMENT (default off), see `ReplyDuckingMode`.
     var duckingMode: ReplyDuckingMode = .off {
         didSet {
@@ -99,6 +102,27 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
             return
         }
         await gate?.beganSpeaking(text)
+        if useGatewayVoice, let gatewayVoice {
+            let queued = gatewayVoice.enqueue(
+                text,
+                fallback: { [weak self] sentence in self?.speakWithSystem(sentence) },
+                finished: { [weak self] in Task { await self?.gate?.finishedSpeaking() } },
+                onIdle: { [weak self] in
+                    guard let self, !self.synthesizer.isSpeaking else { return }
+                    self.onIdle?()
+                }
+            )
+            if queued {
+                onSpoken?()
+                return
+            }
+        }
+        speakWithSystem(text)
+    }
+
+    /// The system voice, for replies and as the gateway voice's fallback.
+    /// The echo window was already opened by `speak`.
+    private func speakWithSystem(_ text: String) {
         // Default: no ducking. Changing the audio session while a DAT session
         // is held makes the glasses end it (dat-ios #292); replies mix over
         // music. The variants below exist only to be measured.
@@ -114,6 +138,7 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     }
 
     func stop() async {
+        gatewayVoice?.stop()
         synthesizer.stopSpeaking(at: .immediate)
     }
 
@@ -132,6 +157,7 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
             onEvent?("reply end [\(duckingMode.rawValue)] otherAudio=\(AVAudioSession.sharedInstance().isOtherAudioPlaying)")
         }
         if duckingMode == .toggleDuckOthers { setDucking?(false) }
+        if gatewayVoice?.isBusy ?? false { return }
         onIdle?()
     }
 
@@ -184,6 +210,8 @@ final class SilentKeepAlive {
     /// session to change while a DAT session is live (dat-ios #292).
     private var cuePlayer: AVAudioPlayerNode?
     private var cueFormat: AVAudioFormat?
+    /// Gateway TTS clips play here, beside the cues.
+    private var speechPlayer: AVAudioPlayerNode?
     private var wanted = false
     private var categoryConfigured = false
     /// Our best knowledge of whether the session is active.
@@ -357,12 +385,24 @@ final class SilentKeepAlive {
         return true
     }
 
+    /// The format gateway clips are converted to.
+    var speechFormat: AVAudioFormat? { isRunning ? cueFormat : nil }
+
+    /// Plays one decoded gateway clip; `done` runs when it finished playing.
+    func playSpeech(_ buffer: AVAudioPCMBuffer, done: @escaping @Sendable () -> Void) -> Bool {
+        guard isRunning, let speechPlayer else { return false }
+        speechPlayer.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in done() }
+        if !speechPlayer.isPlaying { speechPlayer.play() }
+        return true
+    }
+
     /// Engine only: never touches the session.
     private func startEngine() {
         if isRunning { return }
         engine?.stop()
         engine = nil
         cuePlayer = nil
+        speechPlayer = nil
         let engine = AVAudioEngine()
         var format = engine.mainMixerNode.outputFormat(forBus: 0)
         if format.sampleRate == 0 || format.channelCount == 0,
@@ -382,11 +422,15 @@ final class SilentKeepAlive {
         let cueFormat = AVAudioFormat(standardFormatWithSampleRate: format.sampleRate, channels: format.channelCount)
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: cueFormat)
+        let speech = AVAudioPlayerNode()
+        engine.attach(speech)
+        engine.connect(speech, to: engine.mainMixerNode, format: cueFormat)
         do {
             try engine.start()
             self.engine = engine
             self.cuePlayer = player
             self.cueFormat = cueFormat
+            self.speechPlayer = speech
             onLog?("keep-alive engine on")
         } catch {
             onLog?("keep-alive engine start failed: \(error.localizedDescription)")

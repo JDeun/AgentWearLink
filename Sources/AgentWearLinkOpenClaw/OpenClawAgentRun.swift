@@ -211,3 +211,22 @@ public enum OpenClawAgentRunUpdate: Sendable, Equatable {
     case tool(runID: String, payload: JSONValue?)
     case lifecycle(runID: String, payload: JSONValue?)
 }
+
+public struct OpenClawTTSSpeakParams: Encodable, Sendable {
+    public let text: String
+
+    public init(text: String) {
+        self.text = text
+    }
+}
+
+/// One rendered sentence from `tts.speak`.
+public struct OpenClawSpeechClip: Decodable, Sendable, Equatable {
+    public let audioBase64: String
+    public let provider: String
+    public let outputFormat: String?
+    public let mimeType: String?
+    public let fileExtension: String?
+
+    public var audio: Data? { Data(base64Encoded: audioBase64) }
+}

@@ -127,6 +127,10 @@ final class CompanionRuntime: ObservableObject {
         speaker.setDucking = { [weak self] on in self?.keepAlive.setExperimentalDucking(on) }
         speaker.duckingMode = loaded.replyDucking
         speaker.voiceIdentifier = loaded.voiceIdentifier
+        speaker.useGatewayVoice = loaded.gatewayVoice
+        speaker.gatewayVoice = gatewayVoice
+        gatewayVoice.play = { [weak keepAlive] buffer, done in keepAlive?.playSpeech(buffer, done: done) ?? false }
+        gatewayVoice.outputFormat = { [weak keepAlive] in keepAlive?.speechFormat }
         callGate = CallGate(callActive: calls.isCallActive)
         calls.onChange = { [weak self] active in
             Task { @MainActor in self?.callsChanged(active) }
@@ -598,6 +602,7 @@ final class CompanionRuntime: ObservableObject {
         }
         if old.replyDucking != settings.replyDucking { speaker.duckingMode = settings.replyDucking }
         if old.voiceIdentifier != settings.voiceIdentifier { speaker.voiceIdentifier = settings.voiceIdentifier }
+        if old.gatewayVoice != settings.gatewayVoice { speaker.useGatewayVoice = settings.gatewayVoice }
         if old.wakeSource != settings.wakeSource, runtime != nil {
             record("wake source: \(settings.wakeSource.rawValue)")
             requestReconcile("wake source changed", restartSession: true)
@@ -698,6 +703,21 @@ final class CompanionRuntime: ObservableObject {
                 if self.appActive { await self.checkNow() }
             }
         }
+    }
+
+    // MARK: Gateway voice
+
+    private let gatewayVoice = GatewayVoice()
+
+    /// Points the gateway voice at the live session (nil: not connected).
+    private func bindGatewayVoice(_ session: GatewaySession?) {
+        guard let session else {
+            gatewayVoice.render = nil
+            return
+        }
+        let client = OpenClawAgentRunClient(dispatcher: session.dispatcher)
+        gatewayVoice.render = { text in try await client.speak(text: text) }
+        gatewayVoice.onLog = { [weak self] line in self?.record(line) }
     }
 
     // MARK: Bluetooth wake
@@ -994,6 +1014,7 @@ final class CompanionRuntime: ObservableObject {
         }
 
         voiceSession = session
+        bindGatewayVoice(session)
         let speech = concreteDevice.capabilities.contains(.speechInput)
         record(speech ? "listening" : "connected without speech")
         wakeAnchor.refresh()
@@ -1047,6 +1068,7 @@ final class CompanionRuntime: ObservableObject {
             return .retry
         }
         voiceSession = session
+        bindGatewayVoice(session)
         record("listening (glasses mic, experiment)")
         signals.listening = true
         signals.speechReady = true
@@ -1269,6 +1291,7 @@ final class CompanionRuntime: ObservableObject {
     /// whether listening is wanted, not whether a session is up.
     private func clearVoiceReferences() {
         micDevice = nil
+        bindGatewayVoice(nil)
         stopWaitingCues()
         followUpPending = false
         runtime = nil
