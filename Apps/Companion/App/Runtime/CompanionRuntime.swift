@@ -1155,12 +1155,19 @@ final class CompanionRuntime: ObservableObject {
             await sink.consume(event)
             await self?.observeOutput(event, attempt: attempt)
         }
-        let composed = AgentWearLinkRuntime(device: mic, agent: agent, connectionOrder: .deviceFirst, diagnostics: diagnostics, output: output)
+        // Gateway first: while it is down, a retry fails before the glasses
+        // mic touches the audio session (no category flip per retry).
+        let composed = AgentWearLinkRuntime(device: mic, agent: agent, connectionOrder: .agentFirst, diagnostics: diagnostics, output: output)
         runtime = composed
         micDevice = mic
         wakeGate = gate
         do {
             try await composed.start()
+            guard connectionFence.isCurrent(attempt) else {
+                await composed.stop()
+                clearVoiceReferences()
+                return .retry
+            }
         } catch {
             await composed.stop()
             clearVoiceReferences()
@@ -1183,8 +1190,13 @@ final class CompanionRuntime: ObservableObject {
     /// Asks for speech-recognition permission (needed by the glasses-mic
     /// experiment). Call from the foreground.
     func requestSpeechRecognition() {
-        SFSpeechRecognizer.requestAuthorization { status in
-            Task { @MainActor [weak self] in self?.record("speech recognition authorization \(status.rawValue)") }
+        SFSpeechRecognizer.requestAuthorization { [weak self] status in
+            Task { @MainActor in self?.record("speech recognition authorization \(status.rawValue)") }
+        }
+        // The glasses mic itself also needs record permission.
+        Task { [weak self] in
+            let granted = await AVAudioApplication.requestRecordPermission()
+            self?.record("microphone record permission \(granted ? "granted" : "denied")")
         }
     }
 
