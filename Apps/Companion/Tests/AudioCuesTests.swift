@@ -26,6 +26,15 @@ final class AudioCuesTests: XCTestCase {
         }
     }
 
+    func testPausedIsTwoDescendingNotesQuieterThanFailed() {
+        let tones = Earcon.paused.tones
+        XCTAssertEqual(tones.count, 2)
+        XCTAssertGreaterThan(tones[0].frequency, tones[1].frequency)
+        let failed = Earcon.failed.tones.map(\.gain).min() ?? 0
+        XCTAssertLessThan(tones.map(\.gain).max() ?? 1, failed)
+        XCTAssertNotEqual(tones.map(\.frequency), Earcon.failed.tones.map(\.frequency))
+    }
+
     func testThinkingTicksStartLateAndStop() {
         let schedule = ThinkingCueSchedule()
         XCTAssertEqual(schedule.tickTimes.first, 1.6)

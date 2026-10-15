@@ -17,6 +17,9 @@ public enum Earcon: String, CaseIterable, Sendable {
     /// The glasses camera is taking a photo for this request (two quiet,
     /// very short high clicks, like a shutter).
     case shutter
+    /// The glasses paused the session (a single temple tap): two soft
+    /// descending notes, quieter than `failed`.
+    case paused
 
     public struct Tone: Equatable, Sendable {
         public let frequency: Double
@@ -36,6 +39,8 @@ public enum Earcon: String, CaseIterable, Sendable {
             return [Tone(frequency: 440, duration: 0.10, gain: 0.18), Tone(frequency: 300, duration: 0.14, gain: 0.18)]
         case .shutter:
             return [Tone(frequency: 2400, duration: 0.02, gain: 0.10), Tone(frequency: 1600, duration: 0.03, gain: 0.10)]
+        case .paused:
+            return [Tone(frequency: 740, duration: 0.08, gain: 0.11), Tone(frequency: 554, duration: 0.11, gain: 0.11)]
         }
     }
 
