@@ -191,6 +191,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var speechNonEmptyCount = 0
     private var speechStatsChecks = 0
     private var speechStallTask: Task<Void, Never>?
+    private var speechReviveTask: Task<Void, Never>?
+    private let defaultSnapshotMode: MetaDATSnapshotMode
     private var speechStallRestarting = false
     private var speechStallRestarts = 0
     /// Recent unrequested Speech stops (monotonic seconds) for the backoff.
@@ -243,6 +245,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         self.applicationLifecycle = applicationLifecycle
         self.diagnostics = diagnostics
         self.eventSource = MetaDATDeviceEventSource(bufferLimit: eventBufferLimit)
+        self.defaultSnapshotMode = snapshotMode
         self.cameraSnapshotController = MetaDATCameraSnapshotController(
             timeout: snapshotTimeout,
             maximumBytes: maximumSnapshotBytes,
@@ -629,6 +632,22 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public func captureSnapshot(
         interactionID: InteractionID
     ) async throws -> ImageAttachment {
+        try await captureSnapshot(interactionID: interactionID, mode: defaultSnapshotMode).image
+    }
+
+    /// Stage timings of the latest capture attempt (also a failed one).
+    public var lastSnapshotTimings: MetaDATSnapshotTimings? {
+        cameraSnapshotController.lastAttemptTimings
+    }
+
+    /// One explicit still in `mode`, with stage timings. Afterwards Speech
+    /// is revived if the photo put it down (BirdSpotter: "a photograph is
+    /// what puts it down"); the audio session is never touched here.
+    public func captureSnapshot(
+        interactionID: InteractionID,
+        mode: MetaDATSnapshotMode
+    ) async throws -> MetaDATSnapshotResult {
+        defer { reviveSpeechAfterPhoto(generation: generationFence.current) }
         guard !stopping,
               let session = deviceSession else {
             throw AWLError.device("Meta DAT device session is not connected")
@@ -668,9 +687,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             generation: generation
         ))
 
-        let image: ImageAttachment
+        let result: MetaDATSnapshotResult
         do {
-            image = try await cameraSnapshotController.capture(from: session)
+            result = try await cameraSnapshotController.capture(from: session, mode: mode)
         } catch {
             diagnostics?.record(.init(
                 kind: .metaSnapshotFailed,
@@ -691,7 +710,44 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             interactionID: interactionID,
             generation: generation
         ))
-        return image
+        return result
+    }
+
+    /// Restarts Speech that a photo stopped: up to `limit` checks at the
+    /// BirdSpotter cadence (750 ms), starting only while it is still stopped,
+    /// so it never races the unrequested-stop handler into a double start.
+    private func reviveSpeechAfterPhoto(generation: UInt64) {
+        speechReviveTask?.cancel()
+        speechReviveTask = Task { [weak self] in
+            for attempt in 1...MetaDATSpeechRestartPolicy.limit {
+                try? await Task.sleep(for: MetaDATSpeechRestartPolicy.delay)
+                guard !Task.isCancelled, let self else { return }
+                guard await self.reviveSpeechIfStopped(attempt: attempt, generation: generation) else { return }
+            }
+            await self?.logActivity("speech still stopped after photo (\(MetaDATSpeechRestartPolicy.limit) tries)")
+        }
+    }
+
+    /// Returns true when another check is needed.
+    private func reviveSpeechIfStopped(attempt: Int, generation: UInt64) -> Bool {
+        guard !stopping, !speechPaused, sessionIsStarted, generationFence.owns(generation),
+              let speech else { return false }
+        switch Self.observed(speech.state) {
+        case .started:
+            if attempt == 1 { activityLogger?("speech running after photo") }
+            return false
+        case .transitioning:
+            return true
+        case .stopped:
+            activityLogger?("speech revived after photo (attempt \(attempt))")
+            markSpeechRestarted()
+            speech.start()
+            return true
+        }
+    }
+
+    private func logActivity(_ line: String) {
+        activityLogger?(line)
     }
 
     private func startSpeech(
@@ -933,7 +989,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         guard generationFence.owns(generation) else { return }
         let wasStarted = sessionIsStarted
         sessionIsStarted = state == .started
-        if state == .paused { activityLogger?("session paused") }
+        // AWL never pauses the session itself, so a pause is the device's:
+        // a single temple tap (or capture-button press) pauses a running
+        // session (dat-ios #312). States only; tonight's test confirms it.
+        if state == .paused { activityLogger?("session paused by device (likely tap)") }
         if sessionIsStarted, !wasStarted {
             activityLogger?("session started")
             handleSessionResumed(generation: generation)
@@ -1306,6 +1365,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         speechPaused = false
         speechStallTask?.cancel()
         speechStallTask = nil
+        speechReviveTask?.cancel()
+        speechReviveTask = nil
         speechStallRestarting = false
         sessionIsStarted = true
         inputsTask?.cancel()
