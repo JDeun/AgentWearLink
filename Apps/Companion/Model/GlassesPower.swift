@@ -156,6 +156,12 @@ public enum ThermalWorkPolicy {
         stage == .normal || earcon == .accepted || earcon == .failed
     }
 
+    /// A photo turn starts the camera (heat, power): only at normal heat
+    /// (thermal unknown, normal or light). Otherwise the turn goes without.
+    public static func allowsPhoto(stage: ThermalStageTracker.Stage) -> Bool {
+        stage == .normal
+    }
+
     /// Gateway voice clips rendered ahead of the one playing (nil: all).
     public static func gatewayVoicePrefetchLimit(stage: ThermalStageTracker.Stage) -> Int? {
         stage == .normal ? nil : 1

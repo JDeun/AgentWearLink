@@ -85,3 +85,22 @@ final class PowerLogTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("power-log.1.csv").path))
     }
 }
+
+final class PowerLogPhotoColumnTests: XCTestCase {
+    func testPhotoColumnsAreAppendedAtTheEnd() {
+        var counters = QualityCounters()
+        counters.photoTurns = 4
+        counters.photoFailures = 1
+        let sample = PowerSample(
+            time: Date(timeIntervalSince1970: 1_791_986_000), glassesBattery: 80, glassesCharging: false,
+            listening: true, speechPause: "listen", keepAliveRunning: true, outputs: "A2DP",
+            appActive: true, phoneLocked: false, speechStallRestarts: 0, turns: 5,
+            quality: counters, lastLatencyFirstAudioMilliseconds: nil, lastPhotoCaptureMilliseconds: 2310
+        )
+        let header = PowerSample.header.split(separator: ",").map(String.init)
+        XCTAssertEqual(Array(header.suffix(4)), ["deaf_restarts", "photo_turns", "photo_failures", "last_photo_capture_ms"])
+        let columns = sample.csvLine.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        XCTAssertEqual(columns.count, header.count)
+        XCTAssertEqual(Array(columns.suffix(3)), ["4", "1", "2310"])
+    }
+}

@@ -18,12 +18,15 @@ public struct PowerSample: Equatable, Sendable {
     public var quality: QualityCounters
     /// Final transcript → first reply audio of the last turn that spoke, ms.
     public var lastLatencyFirstAudioMilliseconds: Int?
+    /// Camera attach → JPEG ready of the last photo turn, ms.
+    public var lastPhotoCaptureMilliseconds: Int?
 
     public init(
         time: Date, glassesBattery: Int?, glassesCharging: Bool, listening: Bool, speechPause: String,
         keepAliveRunning: Bool, outputs: String, appActive: Bool, phoneLocked: Bool,
         speechStallRestarts: Int, turns: Int,
-        quality: QualityCounters = QualityCounters(), lastLatencyFirstAudioMilliseconds: Int? = nil
+        quality: QualityCounters = QualityCounters(), lastLatencyFirstAudioMilliseconds: Int? = nil,
+        lastPhotoCaptureMilliseconds: Int? = nil
     ) {
         self.time = time
         self.glassesBattery = glassesBattery
@@ -38,6 +41,7 @@ public struct PowerSample: Equatable, Sendable {
         self.turns = turns
         self.quality = quality
         self.lastLatencyFirstAudioMilliseconds = lastLatencyFirstAudioMilliseconds
+        self.lastPhotoCaptureMilliseconds = lastPhotoCaptureMilliseconds
     }
 
     /// New columns are only ever appended, so older parsers stay valid.
@@ -45,6 +49,7 @@ public struct PowerSample: Equatable, Sendable {
         "time,glasses_battery,charging,listening,speech_pause,keep_alive,outputs,app_active,phone_locked,stall_restarts,turns"
         + ",forwards,armed,ignored_finals,echo_drops,stops,no_reply,last_latency_first_audio_ms"
         + ",minutes_worn,minutes_listening,deaf_restarts"
+        + ",photo_turns,photo_failures,last_photo_capture_ms"
 
     public var csvLine: String {
         let iso = ISO8601DateFormatter()
@@ -60,6 +65,8 @@ public struct PowerSample: Equatable, Sendable {
             String(quality.echoDrops), String(quality.stops), String(quality.noReplyForwards),
             lastLatencyFirstAudioMilliseconds.map(String.init) ?? "",
             String(quality.minutesWorn), String(quality.minutesListening), String(quality.deafRestarts),
+            String(quality.photoTurns), String(quality.photoFailures),
+            lastPhotoCaptureMilliseconds.map(String.init) ?? "",
         ].joined(separator: ",")
     }
 }

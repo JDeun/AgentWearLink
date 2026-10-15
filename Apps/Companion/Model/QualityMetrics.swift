@@ -32,6 +32,10 @@ public struct QualityCounters: Equatable, Sendable {
     /// False-trigger proxy: forwards whose turn ended without reply text.
     public var noReplyForwards = 0
     public var deafRestarts = 0
+    /// Requests that went out with a glasses photo.
+    public var photoTurns = 0
+    /// Visual requests that went out without one (camera failed, heat, …).
+    public var photoFailures = 0
     /// Minutes worn while listening was wanted.
     public var minutesWorn = 0
     /// Of those, minutes listening was actually up.
@@ -154,6 +158,9 @@ public struct QualityMetrics: Sendable {
     public private(set) var today = QualityCounters()
     public private(set) var todayTurns: [TurnStages] = []
     public private(set) var lastTurn: TurnStages?
+    /// Today's capture latencies (camera attach → JPEG ready), seconds.
+    public private(set) var todayPhotoCaptures: [TimeInterval] = []
+    public private(set) var lastPhotoCapture: TimeInterval?
     private var day: DateComponents
     private let calendar: Calendar
     static let maximumTurns = 500
@@ -216,6 +223,29 @@ public struct QualityMetrics: Sendable {
         if todayTurns.count > Self.maximumTurns { todayTurns.removeFirst(todayTurns.count - Self.maximumTurns) }
     }
 
+    /// A request went out with a photo.
+    public mutating func photoTurn(at date: Date = Date()) {
+        update(at: date) { $0.photoTurns += 1 }
+    }
+
+    /// A photo for a turn took `seconds` (camera attach → JPEG ready).
+    public mutating func photoCaptured(seconds: TimeInterval, at date: Date = Date()) {
+        roll(at: date)
+        lastPhotoCapture = seconds
+        todayPhotoCaptures.append(seconds)
+        if todayPhotoCaptures.count > Self.maximumTurns {
+            todayPhotoCaptures.removeFirst(todayPhotoCaptures.count - Self.maximumTurns)
+        }
+    }
+
+    public mutating func photoFailed(at date: Date = Date()) {
+        update(at: date) { $0.photoFailures += 1 }
+    }
+
+    public var medianPhotoCaptureToday: TimeInterval? {
+        Self.median(todayPhotoCaptures)
+    }
+
     /// Median of one stage over today's turns that measured it.
     public func medianToday(_ stage: KeyPath<TurnStages, TimeInterval?>) -> TimeInterval? {
         Self.median(todayTurns.compactMap { $0[keyPath: stage] })
@@ -240,6 +270,7 @@ public struct QualityMetrics: Sendable {
         day = current
         today = QualityCounters()
         todayTurns = []
+        todayPhotoCaptures = []
     }
 }
 
