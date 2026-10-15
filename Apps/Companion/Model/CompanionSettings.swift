@@ -18,6 +18,14 @@ public enum ReplyDuckingMode: String, CaseIterable, Equatable, Sendable {
     case toggleDuckOthers
 }
 
+/// EXPERIMENT: where the wake phrase is heard.
+public enum WakeSource: String, CaseIterable, Equatable, Sendable {
+    /// DAT Speech on the glasses (default).
+    case glassesSpeech
+    /// Glasses mic over Bluetooth hands-free + iOS on-device recognition.
+    case glassesMicOnPhone
+}
+
 public struct CompanionSettings: Equatable, Sendable {
     /// Set once the setup flow finished. Launch then connects automatically.
     public var setupCompleted = false
@@ -47,6 +55,7 @@ public struct CompanionSettings: Equatable, Sendable {
     public var audioCues = true
     /// "이어 말하기": after a reply, talk again without the wake phrase.
     public var followUp = true
+    public var wakeSource: WakeSource = .glassesSpeech
     /// "목소리": AVSpeechSynthesisVoice identifier; empty = system default.
     public var voiceIdentifier: String = ""
     /// Wall-clock time of the last spoken reply, for "마지막 대화 N분 전".
@@ -107,13 +116,14 @@ public struct CompanionSettingsStore {
         public static let audioCues = "awl.companion.audioCues"
         public static let followUp = "awl.companion.followUp"
         public static let voiceIdentifier = "awl.companion.voiceIdentifier"
+        public static let wakeSource = "awl.companion.wakeSource"
         public static let lastReplyAt = "awl.companion.lastReplyAt"
         public static let lastReplyLatency = "awl.companion.lastReplyLatency"
 
         static let all = [
             setupCompleted, gatewayURL, gatewayName, agentName, wakePhrases, spokenName, listenEnabled,
             telegramEnabled, telegramChatID, voiceStyle, sessionKey, replyDucking,
-            audioCues, followUp, voiceIdentifier, lastReplyAt, lastReplyLatency,
+            audioCues, followUp, voiceIdentifier, wakeSource, lastReplyAt, lastReplyLatency,
         ]
     }
 
@@ -141,6 +151,7 @@ public struct CompanionSettingsStore {
         settings.audioCues = defaults.object(forKey: Key.audioCues) as? Bool ?? true
         settings.followUp = defaults.object(forKey: Key.followUp) as? Bool ?? true
         settings.voiceIdentifier = defaults.string(forKey: Key.voiceIdentifier) ?? ""
+        settings.wakeSource = defaults.string(forKey: Key.wakeSource).flatMap(WakeSource.init(rawValue:)) ?? .glassesSpeech
         settings.lastReplyAt = defaults.object(forKey: Key.lastReplyAt) as? Date
         settings.lastReplyLatency = defaults.object(forKey: Key.lastReplyLatency) as? Double
         // Never trust a "completed" flag without an endpoint to connect to.
@@ -164,6 +175,7 @@ public struct CompanionSettingsStore {
         defaults.set(settings.audioCues, forKey: Key.audioCues)
         defaults.set(settings.followUp, forKey: Key.followUp)
         defaults.set(settings.voiceIdentifier, forKey: Key.voiceIdentifier)
+        defaults.set(settings.wakeSource.rawValue, forKey: Key.wakeSource)
         defaults.set(settings.lastReplyAt, forKey: Key.lastReplyAt)
         defaults.set(settings.lastReplyLatency, forKey: Key.lastReplyLatency)
     }

@@ -42,6 +42,8 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     private let language: String?
     /// Chosen voice; empty uses the language's default voice.
     var voiceIdentifier = ""
+    /// EXPERIMENT glasses-mic wake: the route is Bluetooth hands-free.
+    var allowHandsFree = false
     var gate: WakeGateBox?
     /// Called when a reply could not be spoken because of the route.
     var onSilenced: (() -> Void)?
@@ -91,7 +93,7 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     func speak(_ text: String, allowPhoneSpeaker: Bool) async {
         guard !text.isEmpty else { return }
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType).map(Self.kind)
-        guard allowPhoneSpeaker || AudioRoutePolicy.canSpeakAloud(outputs: outputs) else {
+        guard allowPhoneSpeaker || AudioRoutePolicy.canSpeakAloud(outputs: outputs, allowHandsFree: allowHandsFree) else {
             onEvent?("reply not spoken: route \(outputs)")
             onSilenced?()
             return

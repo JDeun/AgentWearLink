@@ -274,6 +274,15 @@ struct SettingsView: View {
                     }
                 }
             }
+            Picker(selection: binding(\.wakeSource)) {
+                Text("안경 음성 인식 (기본)").tag(WakeSource.glassesSpeech)
+                Text("안경 마이크 + iPhone 인식 (실험)").tag(WakeSource.glassesMicOnPhone)
+            } label: {
+                Text("호출 듣는 방식")
+            }
+            .onChange(of: runtime.settings.wakeSource) { _, source in
+                if source == .glassesMicOnPhone { runtime.requestSpeechRecognition() }
+            }
             Picker(selection: binding(\.replyDucking)) {
                 Text("끔 (기본)").tag(ReplyDuckingMode.off)
                 Text("실험 1: 별도 음성 세션").tag(ReplyDuckingMode.separateSynthesizerSession)

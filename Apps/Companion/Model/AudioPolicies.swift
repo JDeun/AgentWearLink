@@ -16,8 +16,8 @@ public enum AudioRoutePolicy {
     /// Replies are spoken only into the ear: glasses over A2DP/LE or
     /// headphones. Never out of the iPhone speaker (a locked phone in a
     /// pocket or on a desk would read private replies aloud).
-    public static func canSpeakAloud(outputs: [AudioOutputKind]) -> Bool {
-        outputs.contains { [.bluetoothA2DP, .bluetoothLE, .headphones].contains($0) }
+    public static func canSpeakAloud(outputs: [AudioOutputKind], allowHandsFree: Bool = false) -> Bool {
+        outputs.contains { [.bluetoothA2DP, .bluetoothLE, .headphones].contains($0) || (allowHandsFree && $0 == .bluetoothHFP) }
     }
 }
 

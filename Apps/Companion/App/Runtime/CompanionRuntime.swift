@@ -4,6 +4,7 @@ import AgentWearLinkMetaDATIntegration
 import AgentWearLinkOpenClaw
 import AVFoundation
 import Foundation
+import Speech
 import Network
 import SwiftUI
 import UIKit
@@ -88,6 +89,8 @@ final class CompanionRuntime: ObservableObject {
 
     private var runtime: AgentWearLinkRuntime?
     private var device: MetaDATDeviceAdapter?
+    /// EXPERIMENT glasses-mic wake adapter (no DAT session).
+    private var micDevice: GlassesMicSpeechAdapter?
     /// Set only after the runtime started, so health checks never use a
     /// session whose dispatcher is not ready yet.
     private var voiceSession: GatewaySession?
@@ -578,6 +581,10 @@ final class CompanionRuntime: ObservableObject {
         }
         if old.replyDucking != settings.replyDucking { speaker.duckingMode = settings.replyDucking }
         if old.voiceIdentifier != settings.voiceIdentifier { speaker.voiceIdentifier = settings.voiceIdentifier }
+        if old.wakeSource != settings.wakeSource, runtime != nil {
+            record("wake source: \(settings.wakeSource.rawValue)")
+            requestReconcile("wake source changed", restartSession: true)
+        }
         if old.effectiveWakePhrases != settings.effectiveWakePhrases, let wakeGate {
             let phrases = settings.effectiveWakePhrases
             Task { await wakeGate.replacePhrases(phrases) }
@@ -899,6 +906,10 @@ final class CompanionRuntime: ObservableObject {
             sessionKey: sessionKeyOrNil,
             turnOptions: CompanionTurnOptions.make(from: settings)
         )
+        if settings.wakeSource == .glassesMicOnPhone {
+            return await connectGlassesMic(session: session, agent: agent, attempt: attempt)
+        }
+        speaker.allowHandsFree = false
         let concreteDevice = MetaDATDeviceAdapter(applicationLifecycle: lifecycle, diagnostics: diagnostics)
         let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
         speaker.gate = gate
@@ -963,6 +974,60 @@ final class CompanionRuntime: ObservableObject {
         applySpeechPower(wearables.speechDecision, force: true)
         startWatch(session: session, attempt: attempt)
         return .connected
+    }
+
+    /// EXPERIMENT: glasses mic over HFP + on-device recognition, no DAT
+    /// session. Same agent, gate, echo guard, speech output and follow-up.
+    private func connectGlassesMic(session: GatewaySession, agent: OpenClawNativeAgentAdapter, attempt: UInt64) async -> ConnectOutcome {
+        let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
+        speaker.gate = gate
+        speaker.allowHandsFree = true
+        let sink = StreamingSpeechOutput(synthesizer: speaker)
+        let log: @Sendable (String) -> Void = { [weak self] line in Task { @MainActor in self?.record(line) } }
+        let mic = GlassesMicSpeechAdapter(
+            language: Self.speechLanguage,
+            contextualPhrases: settings.effectiveWakePhrases,
+            log: log
+        )
+        await mic.setTranscriptGate { [weak self] text in
+            let decision = await gate.evaluate(text)
+            await self?.observeTranscript(text, decision: decision)
+            if case let .forward(request) = decision { return request }
+            return nil
+        }
+        let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
+            await sink.consume(event)
+            await self?.observeOutput(event, attempt: attempt)
+        }
+        let composed = AgentWearLinkRuntime(device: mic, agent: agent, connectionOrder: .deviceFirst, diagnostics: diagnostics, output: output)
+        runtime = composed
+        micDevice = mic
+        wakeGate = gate
+        do {
+            try await composed.start()
+        } catch {
+            await composed.stop()
+            clearVoiceReferences()
+            record("glasses-mic connect failed: \(error)")
+            return .retry
+        }
+        voiceSession = session
+        record("listening (glasses mic, experiment)")
+        signals.listening = true
+        signals.speechReady = true
+        signals.listenFailed = false
+        markGatewayHealthy()
+        refreshGlasses()
+        startWatch(session: session, attempt: attempt)
+        return .connected
+    }
+
+    /// Asks for speech-recognition permission (needed by the glasses-mic
+    /// experiment). Call from the foreground.
+    func requestSpeechRecognition() {
+        SFSpeechRecognizer.requestAuthorization { status in
+            Task { @MainActor [weak self] in self?.record("speech recognition authorization \(status.rawValue)") }
+        }
     }
 
     /// Watches a live session: a supervisor that stopped for good (e.g. a
@@ -1106,7 +1171,7 @@ final class CompanionRuntime: ObservableObject {
     private func playCue(_ earcon: Earcon) {
         guard settings.audioCues else { return }
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType).map(ReplySpeaker.kind)
-        guard AudioRoutePolicy.canSpeakAloud(outputs: outputs) else { return }
+        guard AudioRoutePolicy.canSpeakAloud(outputs: outputs, allowHandsFree: speaker.allowHandsFree) else { return }
         keepAlive.play(earcon)
     }
 
@@ -1168,6 +1233,7 @@ final class CompanionRuntime: ObservableObject {
     /// Note: the keep-alive is deliberately NOT stopped here; it follows
     /// whether listening is wanted, not whether a session is up.
     private func clearVoiceReferences() {
+        micDevice = nil
         stopWaitingCues()
         followUpPending = false
         runtime = nil

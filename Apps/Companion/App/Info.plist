@@ -89,7 +89,11 @@
     </array>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Agent Wear Link connects to your Ray-Ban Meta glasses over Bluetooth.</string>
-    <key>NSCameraUsageDescription</key>
+    <key>NSMicrophoneUsageDescription</key>
+	<string>Only the glasses-microphone experiment uses it, to hear the wake phrase through the glasses.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Only the glasses-microphone experiment uses it: speech is recognized on this iPhone, never sent to a server.</string>
+	<key>NSCameraUsageDescription</key>
     <string>The camera is used only to scan the setup QR code shown by your computer.</string>
 </dict>
 </plist>

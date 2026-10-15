@@ -2305,6 +2305,22 @@
         }
       }
     },
+    "안경 마이크 + iPhone 인식 (실험)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses mic + iPhone recognition (experiment)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크 + iPhone 인식 (실험)"
+          }
+        }
+      }
+    },
     "안경 마이크 권한이 없어요": {
       "localizations": {
         "en": {
@@ -2397,6 +2413,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "안경 배터리"
+          }
+        }
+      }
+    },
+    "안경 음성 인식 (기본)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses speech recognition (default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 음성 인식 (기본)"
           }
         }
       }
@@ -4093,6 +4125,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "허용 필요"
+          }
+        }
+      }
+    },
+    "호출 듣는 방식": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake listening"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 듣는 방식"
           }
         }
       }

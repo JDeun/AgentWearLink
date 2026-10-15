@@ -1,29 +1,91 @@
 {
-  "sourceLanguage" : "ko",
-  "strings" : {
-    "NSBluetoothAlwaysUsageDescription" : {
-      "comment" : "Bluetooth permission prompt",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent Wear Link connects to your Ray-Ban Meta glasses over Bluetooth." } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Agent Wear Link가 블루투스로 Ray-Ban Meta 안경에 연결합니다." } }
+  "sourceLanguage": "ko",
+  "strings": {
+    "CFBundleDisplayName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link"
+          }
+        }
       }
     },
-    "NSCameraUsageDescription" : {
-      "comment" : "Camera permission prompt",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "The camera is used only to scan the setup QR code shown by your computer." } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "카메라는 컴퓨터에 표시된 설정 QR을 찍을 때만 사용합니다." } }
+    "NSBluetoothAlwaysUsageDescription": {
+      "comment": "Bluetooth permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link connects to your Ray-Ban Meta glasses over Bluetooth."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link가 블루투스로 Ray-Ban Meta 안경에 연결합니다."
+          }
+        }
       }
     },
-    "CFBundleDisplayName" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent Wear Link" } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Agent Wear Link" } }
+    "NSCameraUsageDescription": {
+      "comment": "Camera permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The camera is used only to scan the setup QR code shown by your computer."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카메라는 컴퓨터에 표시된 설정 QR을 찍을 때만 사용합니다."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only the glasses-microphone experiment uses it, to hear the wake phrase through the glasses."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크 실험에서만 써요. 안경으로 호출 이름을 듣기 위해서예요."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only the glasses-microphone experiment uses it: speech is recognized on this iPhone, never sent to a server."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크 실험에서만 써요. 음성은 이 iPhone 안에서만 인식하고 서버로 보내지 않아요."
+          }
+        }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }
