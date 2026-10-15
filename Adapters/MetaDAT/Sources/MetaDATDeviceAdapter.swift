@@ -193,6 +193,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var speechStallTask: Task<Void, Never>?
     private var speechStallRestarting = false
     private var speechStallRestarts = 0
+    /// Recent unrequested Speech stops (monotonic seconds) for the backoff.
+    private var unrequestedSpeechStops: [TimeInterval] = []
     /// Empty-only restarts since the last non-empty transcript (backoff).
     private var emptyOnlyRestartsInARow = 0
     /// Last fresh Speech start (connect, resume, session resume).
@@ -801,6 +803,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private func markSpeechFreshStart() {
         speechFreshStartAt = ContinuousClock.now
         emptyOnlyRestartsInARow = 0
+        // A fresh start (re-wear, unfold, resume) is a new situation.
+        unrequestedSpeechStops = []
+    }
+
+    private static func monotonicSeconds() -> TimeInterval {
+        ProcessInfo.processInfo.systemUptime
     }
 
     private func markSpeechRestarted() {
@@ -938,7 +946,13 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             speechRestartAttempts = 0
         case let .restart(attempt):
             speechRestartAttempts = attempt
-            try? await Task.sleep(for: MetaDATSpeechRestartPolicy.delay)
+            let now = Self.monotonicSeconds()
+            unrequestedSpeechStops = MetaDATSpeechRestartPolicy.recent(unrequestedSpeechStops + [now], now: now)
+            let wait = MetaDATSpeechRestartPolicy.restartDelay(recentUnrequestedStops: unrequestedSpeechStops.count)
+            if wait > MetaDATSpeechRestartPolicy.delay {
+                activityLogger?("speech stopped by itself \(unrequestedSpeechStops.count)x in 10 min — restarting in \(wait.components.seconds) s")
+            }
+            try? await Task.sleep(for: wait)
             guard !stopping, !speechPaused, generationFence.owns(generation), self.speech === speech else { return }
             activityLogger?("speech restart \(attempt)")
             speech.start()
