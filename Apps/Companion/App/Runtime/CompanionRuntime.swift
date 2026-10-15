@@ -231,6 +231,7 @@ final class CompanionRuntime: ObservableObject {
                 if let hold = signals.hold, GlassesHoldPolicy.clearsOnForeground(hold) { setHold(nil, reason: "foreground") }
                 refreshGlasses()
                 if wantsListening {
+                    devicePauseFreshEvent("foreground")
                     // iOS only lets playback start in the foreground.
                     applyKeepAlivePolicy(force: true)
                     if runtime == nil { startRecovery("foreground", immediate: true, restart: true) }
@@ -297,6 +298,7 @@ final class CompanionRuntime: ObservableObject {
         guard started, settings.setupCompleted else { return }
         clearHoldOnUserRequest()
         if !settings.listenEnabled { settings.listenEnabled = true }
+        devicePauseFreshEvent("start listening")
         if runtime == nil { startRecovery("start listening intent", immediate: true, restart: true) }
     }
 
@@ -331,6 +333,7 @@ final class CompanionRuntime: ObservableObject {
             }
         } else {
             cancelRecovery()
+            recreatingAfterPauseSince = nil
             await disconnectVoice()
             keepAlive.stop()
             if !appActive { await lifecycle.transition(to: .background) }
@@ -1037,6 +1040,7 @@ final class CompanionRuntime: ObservableObject {
     private func voiceInvocationLaunched() {
         record("voice invocation: launch app")
         guard started, settings.setupCompleted else { return }
+        devicePauseFreshEvent("voice invocation")
         if runtime == nil {
             beginWakeBackgroundTask()
             startListeningFromIntent()
@@ -1061,6 +1065,7 @@ final class CompanionRuntime: ObservableObject {
             speechRestartingSince = Date()
         }
         signals.speechPause = decision
+        if previous != .listen, decision == .listen { devicePauseFreshEvent("glasses usable again") }
         guard force || decision != previous else { return }
         if decision != previous { record("speech power: \(decision)") }
         if previous == .listen, decision != .listen {
@@ -1291,6 +1296,13 @@ final class CompanionRuntime: ObservableObject {
         bindGatewayVoice(session)
         let speech = concreteDevice.capabilities.contains(.speechInput)
         record(speech ? "listening" : "connected without speech")
+        if let since = recreatingAfterPauseSince {
+            recreatingAfterPauseSince = nil
+            let now = Date()
+            devicePause.recreatedListening(at: now)
+            record("listening again after device pause (\(Int(now.timeIntervalSince(since).rounded())) s)")
+            if speech, wearables.speechDecision == .listen { playCue(.listening) }
+        }
         wakeAnchor.refresh()
         signals.listening = true
         endWakeBackgroundTask("listening")
@@ -1427,6 +1439,9 @@ final class CompanionRuntime: ObservableObject {
         await device.setActivityLogger(log)
         await device.setSessionErrorObserver { [weak self] kind in
             Task { @MainActor in self?.handleSessionError(kind) }
+        }
+        await device.setSessionPauseObserver { [weak self] paused in
+            Task { @MainActor in self?.deviceSessionPauseChanged(paused) }
         }
         await device.setTranscriptGate { [weak self] text in
             let heardAt = Date()
@@ -1787,6 +1802,132 @@ final class CompanionRuntime: ObservableObject {
         }
     }
 
+    // MARK: Device pause (single temple tap)
+
+    /// Recreate budget and grace (see DevicePausePolicy).
+    private var devicePause = DevicePausePolicy()
+    /// When the live session was paused by the glasses; nil otherwise.
+    private var devicePausedAt: Date?
+    /// Grace starts here: the pause, or the last fresh event during it.
+    private var devicePauseWaitStart: Date?
+    private var devicePauseTask: Task<Void, Never>?
+    /// A recreate after a device pause is under way (pause time).
+    private var recreatingAfterPauseSince: Date?
+
+    private var devicePauseInputs: DevicePausePolicy.Inputs {
+        let pause = signals.speechPause
+        return .init(
+            pausedSince: devicePauseWaitStart,
+            worn: pause != .pauseNotWorn && pause != .pauseFolded,
+            callActive: !callGate.allowsReconnect,
+            held: signals.hold != nil || pause == .shedThermal,
+            listeningWanted: wantsListening
+        )
+    }
+
+    /// The glasses paused (a single tap) or resumed (a second tap) the live
+    /// session. There is no resume API: cue the wearer, then recreate the
+    /// session after a grace period unless a second tap comes first. Speech
+    /// stall/restart policies already stand down while the session is paused.
+    private func deviceSessionPauseChanged(_ paused: Bool) {
+        guard device != nil else { return }
+        let now = Date()
+        if paused {
+            guard devicePausedAt == nil else { return }
+            devicePausedAt = now
+            devicePauseWaitStart = now
+            listeningLost("device pause")
+            let inputs = devicePauseInputs
+            if DevicePausePolicy.cuesPause(inputs) { playCue(.paused) }
+            switch devicePause.decide(inputs, now: now) {
+            case let .wait(until):
+                record("session paused by device → recreating in \(Int(until.timeIntervalSince(now).rounded())) s")
+            case .recreateNow:
+                record("session paused by device → recreating in 0 s")
+            case .dontRecreate(.budgetExhausted):
+                record("session paused by device → not recreating: \(DevicePausePolicy.budgetLimit) recreates in \(Int(DevicePausePolicy.budgetWindow / 60)) min; waiting for a tap, wear, foreground or Start Listening")
+            case let .dontRecreate(reason):
+                record("session paused by device → not recreating now (\(reason.rawValue))")
+            }
+            runDevicePauseLoop()
+        } else {
+            guard let since = devicePausedAt else { return }
+            record("session resumed by device after \(Int(now.timeIntervalSince(since).rounded())) s")
+            clearDevicePause()
+            updateRecovery()
+        }
+    }
+
+    /// Re-evaluates once a second while paused (inputs such as wear or a
+    /// hold change meanwhile). Ends on resume, recreate or a final decision.
+    private func runDevicePauseLoop() {
+        devicePauseTask?.cancel()
+        devicePauseTask = Task { [weak self] in
+            var lastReason: DevicePausePolicy.Reason?
+            while !Task.isCancelled {
+                guard let self, self.devicePausedAt != nil else { return }
+                let now = Date()
+                switch self.devicePause.decide(self.devicePauseInputs, now: now) {
+                case let .wait(until):
+                    lastReason = nil
+                    try? await Task.sleep(for: .seconds(min(1, max(0.1, until.timeIntervalSince(now)))))
+                case .recreateNow:
+                    // Never cut a reply that is playing or awaited.
+                    if self.speaker.isSpeaking || self.isAwaitingReply {
+                        try? await Task.sleep(for: .seconds(1))
+                        continue
+                    }
+                    self.recreateAfterDevicePause()
+                    return
+                case let .dontRecreate(reason):
+                    switch reason {
+                    case .notWorn, .held:
+                        // Recreate once worn again / released.
+                        if reason != lastReason { self.record("device pause: waiting (\(reason.rawValue))") }
+                        lastReason = reason
+                        try? await Task.sleep(for: .seconds(1))
+                    case .notPaused, .notWanted, .call, .budgetExhausted:
+                        // The call gate rebuilds after the last call; the
+                        // budget waits for a fresh event (already logged).
+                        if reason == .call || reason == .notWanted {
+                            self.record("device pause: not recreating (\(reason.rawValue))")
+                        }
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    /// Stop the paused session and start a new one through the normal
+    /// restart path: clean voice disconnect, then recovery after the settle
+    /// delay (a new DAT session too soon after a stop fails, dat-ios #231).
+    /// The audio session is only touched once no DAT session is live.
+    private func recreateAfterDevicePause() {
+        guard let since = devicePausedAt, runtime != nil else { return }
+        devicePause.recreated(at: Date())
+        recreatingAfterPauseSince = since
+        record("device pause: recreating session after \(Int(Date().timeIntervalSince(since).rounded())) s")
+        requestReconcile("device pause", restartSession: true)
+    }
+
+    /// Don/unfold, foreground, Start Listening: the recreate budget starts
+    /// over, and a session still paused gets a fresh grace period.
+    private func devicePauseFreshEvent(_ reason: String) {
+        devicePause.freshEvent()
+        guard devicePausedAt != nil else { return }
+        devicePauseWaitStart = Date()
+        record("device pause: fresh event (\(reason)), recreating in \(Int(DevicePausePolicy.grace)) s unless tapped")
+        runDevicePauseLoop()
+    }
+
+    private func clearDevicePause() {
+        devicePausedAt = nil
+        devicePauseWaitStart = nil
+        devicePauseTask?.cancel()
+        devicePauseTask = nil
+    }
+
     // MARK: Quality metrics
 
     /// Reply audio actually started: completes the turn's latency stages.
@@ -1813,6 +1954,7 @@ final class CompanionRuntime: ObservableObject {
     /// A voice session is up and Speech is actually running.
     private var listeningUp: Bool {
         signals.listening && signals.speechPause == .listen && speechRestartingSince == nil
+            && devicePausedAt == nil
     }
 
     private func listeningLost(_ reason: String) {
@@ -1890,6 +2032,7 @@ final class CompanionRuntime: ObservableObject {
         photoTurnReplyDone = false
         signals.listening = false
         signals.speechReady = false
+        clearDevicePause()
     }
 
     private static var speechLanguage: String {

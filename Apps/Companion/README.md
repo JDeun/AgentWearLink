@@ -31,6 +31,7 @@ General "Hey Meta" requests always go to Meta AI. Meta staff confirm that a regi
 
 - **Double tap** on the glasses arms the next sentence without saying the name.
 - **Stop a reply** by saying "그만" (or 멈춰, 됐어, 조용히, 스톱, stop) while it plays, or by double tapping while it plays or is being prepared. Outside a reply, "그만" counts only after the name or a double tap.
+- **Single tap** is reserved by the glasses while the app listens: it pauses the session (it most likely does not reach your music player either), and the app can neither see the tap nor resume the session ([dat-ios #312](https://github.com/facebook/meta-wearables-dat-ios/issues/312)). The app plays two soft falling notes, and if a second tap does not resume within 6 s it starts a new session by itself and plays the "listening" tone when it hears again (at most 5 times in 10 min; a quick re-pause waits 20 s). **Tap and hold** ends the session; the app reconnects after the usual delay.
 - **"Hey Meta, open Agent Wear Link"** (English only) starts the app if it isn't running.
 - A **Shortcuts automation** can start it when the glasses connect over Bluetooth. Use the "Start listening in Agent Wear Link" action.
 
