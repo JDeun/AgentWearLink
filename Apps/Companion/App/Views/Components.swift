@@ -307,12 +307,19 @@ struct ProblemHeadline: View {
     let reason: AWLChainProblemReason
     let gatewayName: String
     let agentName: String
+    /// Which update an update-required problem is about.
+    var updateTarget: GlassesUpdateTarget?
 
     var body: some View {
         switch reason {
         case .glassesNotConnected: Text("Meta 안경이 연결되지 않았어요")
         case .glassesBatteryCritical: Text("Meta 안경 배터리가 거의 없어요")
-        case .glassesUpdateRequired: Text("Meta 안경 업데이트가 필요해요")
+        case .glassesUpdateRequired:
+            switch updateTarget {
+            case .glassesApp: Text("안경의 Agent Wear Link 업데이트가 필요해요")
+            case .companionApp: Text("Agent Wear Link 앱 업데이트가 필요해요")
+            case .glassesFirmware, nil: Text("Meta 안경 업데이트가 필요해요")
+            }
         case .metaRegistrationMissing: Text("Meta AI 앱에서 허용이 필요해요")
         case .microphoneDenied: Text("안경 마이크 권한이 필요해요")
         case .appNotRunning: Text("앱을 다시 열어 주세요")
@@ -328,12 +335,18 @@ struct ProblemHeadline: View {
 /// Hero subtitle: the likely reason, not a repeat of the headline.
 struct ProblemReasonText: View {
     let reason: AWLChainProblemReason
+    var updateTarget: GlassesUpdateTarget?
 
     var body: some View {
         switch reason {
         case .glassesNotConnected: Text("안경을 펼쳐 쓰면 자동으로 연결돼요")
         case .glassesBatteryCritical: Text("충전기에 연결해 주세요")
-        case .glassesUpdateRequired: Text("Meta AI 앱에서 업데이트해 주세요")
+        case .glassesUpdateRequired:
+            switch updateTarget {
+            case .glassesApp: Text("Meta AI 앱 › 앱 연결에서 Agent Wear Link를 확인하고 업데이트해 주세요")
+            case .companionApp: Text("안경이 이 앱의 새 버전을 요구해요. 앱을 업데이트해 주세요")
+            case .glassesFirmware, nil: Text("Meta AI 앱에서 업데이트해 주세요")
+            }
         case .metaRegistrationMissing: Text("Meta AI 앱에서 Agent Wear Link를 허용해 주세요")
         case .microphoneDenied: Text("Meta AI 앱에서 마이크를 허용해 주세요")
         case .appNotRunning: Text("앱이 종료돼 연결이 끊겼어요")

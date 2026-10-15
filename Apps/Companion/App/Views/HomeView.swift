@@ -27,6 +27,16 @@ struct HomeView: View {
                         onRestart: { runtime.restartListening() },
                         onResume: { runtime.settings.listenEnabled = true }
                     )
+                    if let battery = state.lowBattery {
+                        Label {
+                            Text("안경 배터리가 \(battery)% 남았어요 · 충전하면 더 오래 들어요")
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "battery.25percent").foregroundStyle(Theme.accent)
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondary)
+                    }
                     if runtime.signals.replyNotSpoken {
                         Card(background: Theme.raised) {
                             Label {
@@ -276,6 +286,8 @@ struct StatusBanner: View {
         case .listeningOff: (Theme.card, Theme.raised, Theme.secondary, "pause.fill")
         case .problem, .notListening: (Theme.problemBackground, Theme.problemInner, Theme.problem, "exclamationmark")
         case .thermalShed: (Theme.problemBackground, Theme.problemInner, Theme.problem, "thermometer.high")
+        case .coolingDown: (Theme.waitingBackground, Theme.waitingInner, Theme.accent, "thermometer.medium")
+        case .waitingForCharge: (Theme.waitingBackground, Theme.waitingInner, Theme.accent, "battery.0percent")
         case .checking: (Theme.card, Theme.raised, Theme.accent, "ellipsis")
         }
     }
@@ -287,8 +299,13 @@ struct StatusBanner: View {
         case .listeningOff: Text("듣기를 멈췄어요")
         case .notListening: Text("지금 듣고 있지 않아요")
         case .thermalShed: Text("안경이 뜨거워 잠시 듣기를 멈췄어요")
+        case .coolingDown: Text("안경이 식을 때까지 기다리는 중")
+        case .waitingForCharge: Text("안경 배터리가 부족해요")
         case let .problem(problem):
-            ProblemHeadline(reason: problem.reason, gatewayName: gatewayName, agentName: agentName)
+            ProblemHeadline(
+                reason: problem.reason, gatewayName: gatewayName, agentName: agentName,
+                updateTarget: state.updateTarget
+            )
         case .checking: Text("확인하는 중")
         }
     }
@@ -308,9 +325,11 @@ struct StatusBanner: View {
             default: Text("안경을 쓰면 자동으로 연결돼요")
             }
         case .thermalShed: Text("식으면 자동으로 다시 들어요")
+        case .coolingDown: Text("안경이 열 때문에 연결을 끊었어요. 식으면 자동으로 다시 연결해요")
+        case .waitingForCharge: Text("충전하면 다시 연결해요")
         case .listeningOff: Text("다시 듣기를 누르면 이어서 들어요")
         case .notListening: Text("안경 음성 인식이 시작되지 않았어요")
-        case let .problem(problem): ProblemReasonText(reason: problem.reason)
+        case let .problem(problem): ProblemReasonText(reason: problem.reason, updateTarget: state.updateTarget)
         case .checking: Text("연결 상태를 확인하고 있어요")
         }
     }

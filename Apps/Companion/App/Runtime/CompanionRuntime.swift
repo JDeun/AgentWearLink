@@ -220,6 +220,8 @@ final class CompanionRuntime: ObservableObject {
             guard started, !signalsFrozen else { return }
             if appActive {
                 await lifecycle.transition(to: .foreground)
+                // The user may have just updated in Meta AI.
+                if let hold = signals.hold, GlassesHoldPolicy.clearsOnForeground(hold) { setHold(nil, reason: "foreground") }
                 refreshGlasses()
                 if wantsListening {
                     // iOS only lets playback start in the foreground.
@@ -286,6 +288,7 @@ final class CompanionRuntime: ObservableObject {
     func startListeningFromIntent() {
         _ = startRequest.consume()
         guard started, settings.setupCompleted else { return }
+        clearHoldOnUserRequest()
         if !settings.listenEnabled { settings.listenEnabled = true }
         if runtime == nil { startRecovery("start listening intent", immediate: true, restart: true) }
     }
@@ -604,6 +607,7 @@ final class CompanionRuntime: ObservableObject {
     /// "다시 시작": rebuild the voice session now.
     func restartListening() {
         signals.listenFailed = false
+        clearHoldOnUserRequest()
         if !settings.listenEnabled {
             settings.listenEnabled = true
         } else if runtime != nil {
@@ -750,7 +754,13 @@ final class CompanionRuntime: ObservableObject {
                 guard let self, !Task.isCancelled else { return }
                 self.applyKeepAlivePolicy()
                 self.appendPowerSample()
-                if self.appActive { await self.checkNow() }
+                if self.appActive {
+                    await self.checkNow()
+                } else {
+                    // Device state is push-only: re-evaluate the thermal
+                    // dwell and any reconnect hold once a minute.
+                    self.refreshGlasses()
+                }
             }
         }
     }
@@ -925,8 +935,10 @@ final class CompanionRuntime: ObservableObject {
 
     private func refreshGlasses() {
         guard !signalsFrozen, metaConfiguration != nil else { return }
-        let snapshot = wearables.snapshot()
+        let devices = wearables.observedDevices()
+        let snapshot = GlassesStateMapper.snapshot(registered: wearables.isRegistered, devices: devices)
         signals.glasses = snapshot.glasses
+        signals.glassesUpdate = snapshot.update
         if snapshot.glasses == .connected { glassesLastSeenAt = Date() }
         applyKeepAlivePolicy()
         signals.glassesBattery = snapshot.battery
@@ -935,7 +947,80 @@ final class CompanionRuntime: ObservableObject {
         if !settings.setupCompleted, wearables.isRegistered, setup.current == .metaRegistration {
             setup.complete(.metaRegistration)
         }
-        applySpeechPower(wearables.speechDecision)
+        if lowBatteryNotice.update(battery: snapshot.battery, charging: snapshot.charging) {
+            // Logged once; listening goes on (the owner decides later).
+            record("glasses battery low (\(snapshot.battery ?? 0)%)")
+        }
+        if signals.glassesBatteryLow != lowBatteryNotice.active { signals.glassesBatteryLow = lowBatteryNotice.active }
+        let thermal = GlassesStateMapper.thermal(devices)
+        applyThermalStage(thermal)
+        if let hold = signals.hold, GlassesHoldPolicy.shouldRelease(
+            hold, thermal: thermal, battery: snapshot.battery, charging: snapshot.charging, now: Date()
+        ) {
+            setHold(nil, reason: "thermal \(thermal), battery \(snapshot.battery.map(String.init) ?? "?")\(snapshot.charging ? " charging" : "")")
+        }
+        applySpeechPower(GlassesStateMapper.speechDecision(devices, thermalStage: thermalStage.stage))
+    }
+
+    // MARK: Thermal, battery and reconnect holds
+
+    private var thermalStage = ThermalStageTracker()
+    private var lowBatteryNotice = LowBatteryNotice()
+
+    /// Meta's thermal guidance: LIGHT changes nothing, MODERATE reduces
+    /// optional work (cues, voice prefetch, stats), SEVERE+ sheds Speech
+    /// (applySpeechPower). Hysteresis lives in ThermalStageTracker.
+    private func applyThermalStage(_ level: SpeechPowerPolicy.Thermal) {
+        guard let stage = thermalStage.update(level: level, at: Date()) else { return }
+        record("thermal stage: \(stage) (level \(level))")
+        applyReducedWork()
+    }
+
+    private func applyReducedWork() {
+        let stage = thermalStage.stage
+        gatewayVoice.prefetchLimit = ThermalWorkPolicy.gatewayVoicePrefetchLimit(stage: stage)
+        let reduced = ThermalWorkPolicy.reducesSpeechStats(stage: stage)
+        if let device { Task { await device.setReducedWork(reduced) } }
+    }
+
+    /// A DeviceSessionError from the live session or a failed connect.
+    /// The case name is logged by the adapter (never the vendor text).
+    private func handleSessionError(_ kind: MetaDATSessionErrorKind) {
+        let now = Date()
+        switch kind.response {
+        case .continueSession:
+            // Meta: not blocking; the session goes on.
+            record("session warning ignored: \(kind.rawValue)")
+        case .reconnect:
+            break
+        case .coolDown:
+            setHold(.coolingDown(since: now), reason: kind.rawValue)
+        case .waitForCharge:
+            setHold(.charging(since: now, battery: signals.glassesBattery), reason: kind.rawValue)
+        case .updateGlassesApp:
+            setHold(.update(.glassesApp, since: now), reason: kind.rawValue)
+        case .updateCompanionApp:
+            setHold(.update(.companionApp, since: now), reason: kind.rawValue)
+        }
+    }
+
+    private func setHold(_ hold: GlassesHold?, reason: String) {
+        guard signals.hold != hold else { return }
+        let previous = signals.hold
+        signals.hold = hold
+        if let hold {
+            signals.listenFailed = false
+            record("reconnect held: \(hold.logName) (\(reason))")
+        } else if let previous {
+            record("reconnect hold released: \(previous.logName) (\(reason))")
+        }
+    }
+
+    /// An explicit request ("다시 시작", intent, "Hey Meta, start …") ends
+    /// a charge or update hold; heat is never overridden.
+    private func clearHoldOnUserRequest() {
+        guard let hold = signals.hold, GlassesHoldPolicy.clearsOnUserRequest(hold) else { return }
+        setHold(nil, reason: "requested")
     }
 
     /// Stops DAT Speech when the glasses are taken off, folded or too hot,
@@ -1024,6 +1109,14 @@ final class CompanionRuntime: ObservableObject {
                     try? await Task.sleep(for: .seconds(2))
                 }
                 if Task.isCancelled { break }
+                // Cooling down, waiting for charge or an update: no session
+                // attempts until the hold is released, then start over.
+                if self.signals.hold != nil {
+                    await self.waitWhileHeld()
+                    attempt = 0
+                    settle = true
+                    continue
+                }
                 if settle {
                     try? await Task.sleep(for: .seconds(RecoveryPolicy.settleDelay))
                 }
@@ -1032,6 +1125,7 @@ final class CompanionRuntime: ObservableObject {
                 let outcome = await self.connectVoice()
                 // Glasses are on but no session came up: say so on Home.
                 self.signals.listenFailed = outcome == .retry && self.wearables.hasConnectedDevice
+                    && self.signals.hold == nil
                 if outcome != .retry { break }
                 let delay = RecoveryPolicy.delay(afterFailedAttempt: attempt)
                 attempt += 1
@@ -1039,6 +1133,16 @@ final class CompanionRuntime: ObservableObject {
             }
             // Only the loop that is still current may clear the slot.
             if let self, self.recoveryGeneration == generation { self.recoveryTask = nil }
+        }
+    }
+
+    /// Polls the local device state (no session attempts) until the hold
+    /// is released by refreshGlasses or cleared by the user.
+    private func waitWhileHeld() async {
+        while !Task.isCancelled, signals.hold != nil {
+            refreshGlasses()
+            if signals.hold == nil { return }
+            try? await Task.sleep(for: .seconds(5))
         }
     }
 
@@ -1098,6 +1202,7 @@ final class CompanionRuntime: ObservableObject {
         let sink = StreamingSpeechOutput(synthesizer: speaker)
         speechSink = sink
         await configureDevice(concreteDevice, gate: gate)
+        await concreteDevice.setReducedWork(ThermalWorkPolicy.reducesSpeechStats(stage: thermalStage.stage))
 
         let output: @Sendable (InteractionEvent) async -> Void = { [weak self] event in
             await sink.consume(event)
@@ -1133,6 +1238,12 @@ final class CompanionRuntime: ObservableObject {
             await concreteDevice.stopVoiceInvocationListening()
             await composed.stop()
             clearVoiceReferences()
+            if let kind = MetaDATSessionErrorKind(classifying: error) {
+                // Not a Gateway fact: never touch the network/gateway hops.
+                record("connect failed: session error \(kind.rawValue)")
+                handleSessionError(kind)
+                return .retry
+            }
             let failure = GatewayFailure.classify(error, usedStoredGrant: true)
             record("connect failed: \(failure.rawValue)")
             // A device-side failure (glasses folded mid-connect) is not a
@@ -1280,6 +1391,9 @@ final class CompanionRuntime: ObservableObject {
             Task { @MainActor in self?.record(line) }
         }
         await device.setActivityLogger(log)
+        await device.setSessionErrorObserver { [weak self] kind in
+            Task { @MainActor in self?.handleSessionError(kind) }
+        }
         await device.setTranscriptGate { [weak self] text in
             let heardAt = Date()
             let result = await gate.evaluate(text)
@@ -1394,6 +1508,8 @@ final class CompanionRuntime: ObservableObject {
     /// Plays an earcon into the glasses only (never the iPhone speaker).
     private func playCue(_ earcon: Earcon) {
         guard settings.audioCues else { return }
+        // MODERATE heat: only the accepted/failed cues (optional work off).
+        guard ThermalWorkPolicy.allowsEarcon(earcon, stage: thermalStage.stage) else { return }
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType).map(ReplySpeaker.kind)
         guard AudioRoutePolicy.canSpeakAloud(outputs: outputs, allowHandsFree: speaker.allowHandsFree) else { return }
         keepAlive.play(earcon)
@@ -1486,6 +1602,7 @@ final class CompanionRuntime: ObservableObject {
     /// Worn, listening on, no call: the wearer expects the agent to hear.
     private var shouldListenNow: Bool {
         wantsListening && signals.glasses == .connected && signals.speechPause == .listen && callGate.allowsReconnect
+            && signals.hold == nil
     }
 
     /// A voice session is up and Speech is actually running.

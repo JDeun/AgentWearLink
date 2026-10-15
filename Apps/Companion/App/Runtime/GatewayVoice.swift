@@ -23,13 +23,18 @@ final class GatewayVoice {
     /// A clip was scheduled and the player started (latency metric).
     var onPlaybackStarted: (() -> Void)?
     var onLog: ((String) -> Void)?
+    /// Clips rendered ahead of the one playing; nil renders every queued
+    /// sentence at once. MODERATE heat sets 1 (ThermalWorkPolicy).
+    var prefetchLimit: Int?
 
     static let firstClipDeadline: Duration = .milliseconds(1500)
     static let clipDeadline: Duration = .seconds(6)
 
     private struct Item {
         let text: String
-        let clip: Task<AVAudioPCMBuffer?, Never>
+        /// Starts rendering; called at most once.
+        let render: () -> Task<AVAudioPCMBuffer?, Never>
+        var clip: Task<AVAudioPCMBuffer?, Never>?
     }
 
     private var queue: [Item] = []
@@ -47,10 +52,12 @@ final class GatewayVoice {
     ) -> Bool {
         guard let render, play != nil, let outputFormat, let format = outputFormat() else { return false }
         let deadline = queue.isEmpty && !isBusy ? Self.firstClipDeadline : Self.clipDeadline
-        let clip = Task<AVAudioPCMBuffer?, Never> {
-            await Self.fetch(text, render: render, format: format, deadline: deadline)
-        }
-        queue.append(Item(text: text, clip: clip))
+        queue.append(Item(text: text, render: {
+            Task<AVAudioPCMBuffer?, Never> {
+                await Self.fetch(text, render: render, format: format, deadline: deadline)
+            }
+        }))
+        startPrefetches()
         isBusy = true
         if !draining { drain(fallback: fallback, finished: finished, onIdle: onIdle) }
         return true
@@ -58,7 +65,7 @@ final class GatewayVoice {
 
     func stop() {
         generation += 1
-        for item in queue { item.clip.cancel() }
+        for item in queue { item.clip?.cancel() }
         queue.removeAll()
         let wasBusy = isBusy
         draining = false
@@ -77,7 +84,9 @@ final class GatewayVoice {
             var fellBack = false
             while generation == current, !queue.isEmpty {
                 let item = queue.removeFirst()
-                let buffer = fellBack ? nil : await item.clip.value
+                let clip = fellBack ? nil : (item.clip ?? item.render())
+                if !fellBack { startPrefetches() }
+                let buffer = await clip?.value
                 guard generation == current else { return }
                 if let buffer, let play, await Self.playAndWait(buffer, play: play, started: { [weak self] in
                     self?.onPlaybackStarted?()
@@ -93,6 +102,15 @@ final class GatewayVoice {
             draining = false
             isBusy = false
             onIdle()
+        }
+    }
+
+    /// Starts rendering the first `prefetchLimit` queued sentences (all
+    /// when nil) that are not rendering yet.
+    private func startPrefetches() {
+        let limit = min(prefetchLimit ?? queue.count, queue.count)
+        for index in 0..<limit where queue[index].clip == nil {
+            queue[index].clip = queue[index].render()
         }
     }
 

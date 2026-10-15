@@ -209,6 +209,38 @@
         }
       }
     },
+    "Agent Wear Link 앱 업데이트가 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link needs an update"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link 앱 업데이트가 필요해요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱 › 앱 연결에서 Agent Wear Link를 확인하고 업데이트해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In the Meta AI app, check and update Agent Wear Link under App connections"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱 › 앱 연결에서 Agent Wear Link를 확인하고 업데이트해 주세요"
+          }
+        }
+      }
+    },
     "Meta AI 앱 다시 열기": {
       "localizations": {
         "en": {
@@ -2513,6 +2545,38 @@
         }
       }
     },
+    "안경 배터리가 %lld%% 남았어요 · 충전하면 더 오래 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses battery at %lld%% · charge them to keep listening longer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 배터리가 %lld%% 남았어요 · 충전하면 더 오래 들어요"
+          }
+        }
+      }
+    },
+    "안경 배터리가 부족해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses battery is too low"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 배터리가 부족해요"
+          }
+        }
+      }
+    },
     "안경 음성 인식 (기본)": {
       "localizations": {
         "en": {
@@ -2817,6 +2881,22 @@
         }
       }
     },
+    "안경의 Agent Wear Link 업데이트가 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link on the glasses needs an update"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경의 Agent Wear Link 업데이트가 필요해요"
+          }
+        }
+      }
+    },
     "안경의 음성 인식은 이름을 한글로 받아 적어요. 적어 두면 그 이름으로도 부를 수 있어요.": {
       "localizations": {
         "en": {
@@ -2849,6 +2929,22 @@
         }
       }
     },
+    "안경이 식을 때까지 기다리는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the glasses to cool down"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 식을 때까지 기다리는 중"
+          }
+        }
+      }
+    },
     "안경이 연결되지 않았어요": {
       "localizations": {
         "en": {
@@ -2861,6 +2957,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "안경이 연결되지 않았어요"
+          }
+        }
+      }
+    },
+    "안경이 열 때문에 연결을 끊었어요. 식으면 자동으로 다시 연결해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The glasses disconnected because of heat. They reconnect by themselves once cool"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 열 때문에 연결을 끊었어요. 식으면 자동으로 다시 연결해요"
+          }
+        }
+      }
+    },
+    "안경이 이 앱의 새 버전을 요구해요. 앱을 업데이트해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The glasses need a newer version of this app. Please update it"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 이 앱의 새 버전을 요구해요. 앱을 업데이트해 주세요"
           }
         }
       }
@@ -4109,6 +4237,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "충전기에 연결해 주세요"
+          }
+        }
+      }
+    },
+    "충전하면 다시 연결해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnects once they are charging"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충전하면 다시 연결해요"
           }
         }
       }

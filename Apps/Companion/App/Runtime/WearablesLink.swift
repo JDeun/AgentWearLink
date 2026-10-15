@@ -88,6 +88,11 @@ final class WearablesLink {
         GlassesStateMapper.snapshot(registered: isRegistered, devices: observations())
     }
 
+    /// Vendor-free observations of every known device, for the pure policies.
+    func observedDevices() -> [GlassesDeviceObservation] {
+        observations()
+    }
+
     var hasConnectedDevice: Bool {
         GlassesStateMapper.hasConnectedDevice(observations())
     }
@@ -128,15 +133,28 @@ final class WearablesLink {
             case .closed: hinge = .folded
             default: hinge = .unknown
             }
+            // Every level is kept: the thermal stages (ThermalStageTracker)
+            // follow Meta's LIGHT / MODERATE / SEVERE+ guidance.
             let thermal: SpeechPowerPolicy.Thermal
             switch device.thermalLevel {
-            case .severe, .critical, .emergency, .shutdown: thermal = .severe
+            case .none: thermal = .normal
+            case .light: thermal = .light
+            case .moderate: thermal = .moderate
+            case .severe: thermal = .severe
+            case .critical: thermal = .critical
+            case .emergency: thermal = .emergency
+            case .shutdown: thermal = .shutdown
             case .unknown: thermal = .unknown
-            default: thermal = .normal
+            }
+            let update: GlassesUpdateTarget?
+            switch compatibility {
+            case .deviceUpdateRequired: update = .glassesFirmware
+            case .sdkUpdateRequired: update = .companionApp
+            default: update = nil
             }
             return GlassesDeviceObservation(
                 link: link,
-                updateRequired: compatibility == .deviceUpdateRequired || compatibility == .sdkUpdateRequired,
+                update: update,
                 battery: device.batteryLevel,
                 charging: device.chargingState == .charging,
                 wear: wear,

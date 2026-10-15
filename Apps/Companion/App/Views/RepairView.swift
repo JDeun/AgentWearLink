@@ -18,12 +18,13 @@ struct RepairView: View {
                         ProblemHeadline(
                             reason: problem.reason,
                             gatewayName: runtime.gatewayLabel,
-                            agentName: runtime.agentLabel
+                            agentName: runtime.agentLabel,
+                            updateTarget: runtime.signals.updateTarget
                         )
                         .font(.title2.weight(.bold))
                         .foregroundStyle(Theme.text)
                         .fixedSize(horizontal: false, vertical: true)
-                        ProblemReasonText(reason: problem.reason)
+                        ProblemReasonText(reason: problem.reason, updateTarget: runtime.signals.updateTarget)
                             .font(.subheadline)
                             .foregroundStyle(Color(hex: 0xD9C3A5))
                             .fixedSize(horizontal: false, vertical: true)
