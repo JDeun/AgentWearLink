@@ -190,6 +190,22 @@ final class ConnectionStatusTests: XCTestCase {
 }
 
 final class SpeechPauseStatusTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_000)
+
+    private func healthy() -> ConnectionSignals {
+        var signals = ConnectionSignals()
+        signals.glasses = .connected
+        signals.glassesBattery = 72
+        signals.microphone = .granted
+        signals.listening = true
+        signals.speechReady = true
+        signals.network = .reachable
+        signals.gateway = .ok
+        signals.lastReplyAt = now
+        for id in AWLChainLinkID.allCases { signals.checkedAt[id] = now }
+        return signals
+    }
+
     private func worn() -> ConnectionSignals {
         var signals = ConnectionSignals()
         signals.glasses = .connected
@@ -215,5 +231,66 @@ final class SpeechPauseStatusTests: XCTestCase {
         var signals = worn()
         signals.speechPause = .shedThermal
         XCTAssertEqual(HomeViewState(signals: signals, telegramConfigured: false).banner, .thermalShed)
+    }
+
+    // Session ended by heat: a wait, not "not listening".
+    func testCoolingDownIsAWaitNotAProblem() {
+        var signals = worn()
+        signals.hold = .coolingDown(since: now)
+        let state = HomeViewState(signals: signals, telegramConfigured: false)
+        XCTAssertEqual(state.banner, .coolingDown)
+        XCTAssertFalse(signals.isNotListening)
+        XCTAssertEqual(state.rows[1].state, .ok)
+        XCTAssertNil(signals.chain.firstProblem)
+    }
+
+    func testBatteryCriticalSessionEndWaitsForCharge() {
+        var signals = worn()
+        signals.glassesBattery = 9
+        signals.hold = .charging(since: now, battery: 9)
+        XCTAssertEqual(HomeViewState(signals: signals, telegramConfigured: false).banner, .waitingForCharge)
+    }
+
+    func testAnUpstreamProblemStillWinsOverAWait() {
+        var signals = worn()
+        signals.hold = .coolingDown(since: now)
+        signals.network = .unreachable
+        let banner = HomeViewState(signals: signals, telegramConfigured: false).banner
+        guard case let .problem(problem) = banner else { return XCTFail("\(banner)") }
+        XCTAssertEqual(problem.reason, .networkUnreachable)
+    }
+
+    // Update-required session errors use the existing update banner.
+    func testUpdateHoldShowsTheUpdateBannerWithItsTarget() {
+        var signals = worn()
+        signals.hold = .update(.glassesApp, since: now)
+        let state = HomeViewState(signals: signals, telegramConfigured: false)
+        guard case let .problem(problem) = state.banner else { return XCTFail("\(state.banner)") }
+        XCTAssertEqual(problem.reason, .glassesUpdateRequired)
+        XCTAssertEqual(state.updateTarget, .glassesApp)
+    }
+
+    func testCompatibilityUpdateTargets() {
+        var signals = healthy()
+        signals.glasses = .updateRequired
+        XCTAssertEqual(signals.updateTarget, .glassesFirmware)
+        signals.glassesUpdate = .companionApp
+        XCTAssertEqual(HomeViewState(signals: signals, telegramConfigured: false).updateTarget, .companionApp)
+        XCTAssertNil(HomeViewState(signals: healthy(), telegramConfigured: false).updateTarget)
+    }
+
+    func testLowBatteryIsAGentleNoticeNotABanner() {
+        var signals = healthy()
+        signals.glassesBattery = 14
+        signals.glassesBatteryLow = true
+        let state = HomeViewState(signals: signals, telegramConfigured: false)
+        XCTAssertEqual(state.banner, .allConnected(checkedAt: now))
+        XCTAssertEqual(state.lowBattery, 14)
+        signals.glassesCharging = true
+        XCTAssertNil(HomeViewState(signals: signals, telegramConfigured: false).lowBattery)
+        signals.glassesCharging = false
+        signals.glassesBattery = 4
+        // Critical is the existing problem banner, not the notice.
+        XCTAssertNil(HomeViewState(signals: signals, telegramConfigured: false).lowBattery)
     }
 }

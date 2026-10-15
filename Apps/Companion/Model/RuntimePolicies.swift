@@ -100,7 +100,9 @@ public struct StartRequestFlag {
 public struct GlassesDeviceObservation: Equatable, Sendable {
     public enum Link: Equatable, Sendable { case connected, connecting, disconnected }
     public var link: Link
-    public var updateRequired: Bool
+    /// What must be updated before DAT accepts this app (nil: nothing).
+    public var update: GlassesUpdateTarget?
+    public var updateRequired: Bool { update != nil }
     public var battery: Int?
     public var charging: Bool
     public var wear: SpeechPowerPolicy.Wear
@@ -108,12 +110,13 @@ public struct GlassesDeviceObservation: Equatable, Sendable {
     public var thermal: SpeechPowerPolicy.Thermal
 
     public init(
-        link: Link, updateRequired: Bool = false, battery: Int? = nil, charging: Bool = false,
+        link: Link, updateRequired: Bool = false, update: GlassesUpdateTarget? = nil,
+        battery: Int? = nil, charging: Bool = false,
         wear: SpeechPowerPolicy.Wear = .unknown, hinge: SpeechPowerPolicy.Hinge = .unknown,
         thermal: SpeechPowerPolicy.Thermal = .unknown
     ) {
         self.link = link
-        self.updateRequired = updateRequired
+        self.update = update ?? (updateRequired ? .glassesFirmware : nil)
         self.battery = battery
         self.charging = charging
         self.wear = wear
@@ -126,6 +129,21 @@ public struct GlassesSnapshot: Equatable, Sendable {
     public var glasses: ConnectionSignals.Glasses
     public var battery: Int?
     public var charging: Bool
+    /// Set when `glasses` is `.updateRequired`.
+    public var update: GlassesUpdateTarget?
+    /// Thermal level of the device the snapshot describes.
+    public var thermal: SpeechPowerPolicy.Thermal = .unknown
+
+    public init(
+        glasses: ConnectionSignals.Glasses, battery: Int?, charging: Bool,
+        update: GlassesUpdateTarget? = nil, thermal: SpeechPowerPolicy.Thermal = .unknown
+    ) {
+        self.glasses = glasses
+        self.battery = battery
+        self.charging = charging
+        self.update = update
+        self.thermal = thermal
+    }
 }
 
 public enum GlassesStateMapper {
@@ -133,6 +151,24 @@ public enum GlassesStateMapper {
     public static func speechDecision(_ devices: [GlassesDeviceObservation]) -> SpeechPowerPolicy.Decision {
         guard let device = devices.first(where: { $0.link == .connected }) else { return .listen }
         return SpeechPowerPolicy.decide(wear: device.wear, hinge: device.hinge, thermal: device.thermal)
+    }
+
+    /// Speech decision with the thermal part taken from the (hysteresis)
+    /// stage instead of the raw level.
+    public static func speechDecision(
+        _ devices: [GlassesDeviceObservation], thermalStage: ThermalStageTracker.Stage
+    ) -> SpeechPowerPolicy.Decision {
+        guard let device = devices.first(where: { $0.link == .connected }) else {
+            return thermalStage == .shed ? .shedThermal : .listen
+        }
+        return SpeechPowerPolicy.decide(
+            wear: device.wear, hinge: device.hinge, thermal: thermalStage == .shed ? .severe : .normal
+        )
+    }
+
+    /// The connected device's thermal level (unknown when none).
+    public static func thermal(_ devices: [GlassesDeviceObservation]) -> SpeechPowerPolicy.Thermal {
+        devices.first(where: { $0.link == .connected })?.thermal ?? .unknown
     }
 
     /// Paired glasses that are folded or in the case are listed but not
@@ -148,12 +184,16 @@ public enum GlassesStateMapper {
             ?? devices.first else {
             return GlassesSnapshot(glasses: .waiting, battery: nil, charging: false)
         }
-        if device.updateRequired {
-            return GlassesSnapshot(glasses: .updateRequired, battery: device.battery, charging: device.charging)
+        if let update = device.update {
+            return GlassesSnapshot(
+                glasses: .updateRequired, battery: device.battery, charging: device.charging, update: update
+            )
         }
         switch device.link {
         case .connected:
-            return GlassesSnapshot(glasses: .connected, battery: device.battery, charging: device.charging)
+            return GlassesSnapshot(
+                glasses: .connected, battery: device.battery, charging: device.charging, thermal: device.thermal
+            )
         case .connecting:
             return GlassesSnapshot(glasses: .connecting, battery: nil, charging: device.charging)
         case .disconnected:
@@ -193,7 +233,12 @@ public enum SilentWAV {
 public enum SpeechPowerPolicy {
     public enum Wear: Equatable, Sendable { case worn, notWorn, unknown }
     public enum Hinge: Equatable, Sendable { case open, folded, unknown }
-    public enum Thermal: Equatable, Sendable { case normal, unknown, severe }
+    /// DAT `ThermalLevel`, ordered (`normal` is DAT's `none`).
+    public enum Thermal: Int, Comparable, Sendable {
+        case unknown, normal, light, moderate, severe, critical, emergency, shutdown
+
+        public static func < (lhs: Thermal, rhs: Thermal) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
 
     public enum Decision: Equatable, Sendable {
         case listen
@@ -207,7 +252,7 @@ public enum SpeechPowerPolicy {
 
     /// Unknown states never pause: only a positive observation stops Speech.
     public static func decide(wear: Wear, hinge: Hinge, thermal: Thermal) -> Decision {
-        if thermal == .severe { return .shedThermal }
+        if thermal >= .severe { return .shedThermal }
         if hinge == .folded { return .pauseFolded }
         if wear == .notWorn { return .pauseNotWorn }
         return .listen

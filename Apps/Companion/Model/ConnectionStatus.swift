@@ -40,6 +40,14 @@ public struct ConnectionSignals: Equatable, Sendable {
     /// Speech deliberately stopped to save glasses battery (taken off,
     /// folded) or shed because the glasses are too hot.
     public var speechPause: SpeechPowerPolicy.Decision = .listen
+    /// Reconnects held back: cooling down, waiting for charge, or an update
+    /// is required (the glasses ended the session for that reason).
+    public var hold: GlassesHold?
+    /// What the glasses' compatibility says must be updated (with
+    /// `glasses == .updateRequired`).
+    public var glassesUpdate: GlassesUpdateTarget?
+    /// Glasses battery low (`LowBatteryNotice`): a gentle notice, not an error.
+    public var glassesBatteryLow = false
     public var network: Reachability = .unknown
     public var gateway: Gateway = .unknown
     public var agentFailing = false
@@ -51,6 +59,13 @@ public struct ConnectionSignals: Equatable, Sendable {
     public init() {}
 
     static let criticalBattery = 5
+
+    /// What must be updated, when anything must: a session error's hold
+    /// wins over the compatibility state.
+    public var updateTarget: GlassesUpdateTarget? {
+        if let target = hold?.updateTarget { return target }
+        return glasses == .updateRequired ? (glassesUpdate ?? .glassesFirmware) : nil
+    }
 
     /// Per-hop observations for `AWLConnectionChain`.
     public var observations: [AWLChainLinkID: AWLChainLinkStatus] {
@@ -68,11 +83,14 @@ public struct ConnectionSignals: Equatable, Sendable {
         // unobserved so the rest of the chain can still be checked.
         case .waiting, .connecting, .unknown: break
         }
+        if hold?.updateTarget != nil, glasses != .registrationRequired {
+            result[.glasses] = .broken(.glassesUpdateRequired)
+        }
 
         if microphone == .denied {
             result[.phone] = .broken(.microphoneDenied)
         } else if listenEnabled, glasses == .connected, !(listening && speechReady),
-                  speechPause == .listen, !upstreamOfPhoneBlocksListening {
+                  speechPause == .listen, hold == nil, !upstreamOfPhoneBlocksListening {
             // Glasses are here but nothing is listening yet (connecting, or
             // Speech failed to start): do not claim the phone hop is fine.
         } else {
@@ -112,7 +130,7 @@ public struct ConnectionSignals: Equatable, Sendable {
     /// Glasses are on, nothing upstream is broken, but nothing is listening.
     public var isNotListening: Bool {
         listenEnabled && glasses == .connected && microphone != .denied
-            && speechPause == .listen && !upstreamOfPhoneBlocksListening
+            && speechPause == .listen && hold == nil && !upstreamOfPhoneBlocksListening
             && ((listening && !speechReady) || (!listening && listenFailed))
     }
 
@@ -132,6 +150,12 @@ public struct HomeViewState: Equatable, Sendable {
         case notListening
         /// Speech shed because the glasses are too hot; resumes by itself.
         case thermalShed
+        /// The glasses ended the session (heat or a power peak): reconnects
+        /// by itself once they cool down.
+        case coolingDown
+        /// The glasses ended the session on a critical battery: reconnects
+        /// once they are charging or the level rises.
+        case waitingForCharge
         case listeningOff
         case problem(AWLChainProblem)
         case checking
@@ -159,6 +183,11 @@ public struct HomeViewState: Equatable, Sendable {
 
     public let banner: Banner
     public let rows: [Row]
+    /// Which update the "update required" problem is about.
+    public let updateTarget: GlassesUpdateTarget?
+    /// Battery level for the gentle low-battery notice (nil: no notice).
+    /// Not shown when the battery is critical (that is a problem banner).
+    public let lowBattery: Int?
     /// Only offered when Telegram delivery is configured.
     public let showsTelegramLink: Bool
 
@@ -195,6 +224,10 @@ public struct HomeViewState: Equatable, Sendable {
             banner = .problem(problem)
         } else if !signals.listenEnabled {
             banner = .listeningOff
+        } else if case .coolingDown = signals.hold {
+            banner = .coolingDown
+        } else if case .charging = signals.hold {
+            banner = .waitingForCharge
         } else if signals.speechPause == .shedThermal {
             banner = .thermalShed
         } else if [.pauseNotWorn, .pauseFolded].contains(signals.speechPause) {
@@ -211,6 +244,13 @@ public struct HomeViewState: Equatable, Sendable {
             banner = .checking
         }
         showsTelegramLink = telegramConfigured
+        updateTarget = signals.updateTarget
+        if signals.glassesBatteryLow, signals.glasses == .connected, let battery = signals.glassesBattery,
+           battery > ConnectionSignals.criticalBattery, !signals.glassesCharging {
+            lowBattery = battery
+        } else {
+            lowBattery = nil
+        }
     }
 
     /// The call hint ("안경에서 '…' 하고 말하세요") is only true while
