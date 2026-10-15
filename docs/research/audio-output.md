@@ -30,3 +30,17 @@ There is no DAT speaker API. The reply plays through iOS audio over Bluetooth. P
 | AgentWearLink default: the session is configured once and replies mix over music. Two ducking variants are opt-in experiments to be measured on hardware. | Design decision |
 
 Route guard: only speak when the output is Bluetooth A2DP, Bluetooth LE or headphones, so a dropped glasses link never makes the reply play aloud on the phone (BirdSpotter does the same check). Never set `.allowBluetoothHFP` or `.defaultToSpeaker`.
+
+## Reply voice (2026-10-15)
+
+Decision: the reply voice comes from a **local model only**. Reply text does not go to a cloud TTS service.
+
+| Finding | Label |
+| --- | --- |
+| Apple's on-device Korean voices include no natural male voice suited to a persona, and Siri voices are not available to third-party apps. | Reported: Apple Developer Forums; Unverified on the phone (list voices on the device) |
+| Personal Voice does not support Korean, and third-party use needs the app in the foreground. | Verified: [iOS feature availability](https://www.apple.com/ios/feature-availability/) / Reported (foreground) |
+| Local candidates with Korean: Qwen3-TTS (Apache-2.0, voice design from a text description or a short clone), CosyVoice (Apache-2.0), MeloTTS-Korean (single stock voice). Latency and memory on a small gateway host are unmeasured. | Verified: model cards ([Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base), [MeloTTS-Korean](https://huggingface.co/myshell-ai/MeloTTS-Korean)) / Unverified (performance) |
+| The OpenClaw gateway can synthesise a reply with `tts.speak` (scope `operator.write`) and return the whole clip as base64; it can point its OpenAI-compatible provider at a local server. Nothing streams. | Verified: OpenClaw TTS docs |
+| The app can schedule returned PCM on a player node in its existing audio engine, so no audio-session change is needed. Keep the on-device voice as the fallback. | Unverified (design) |
+
+For context only: cloud services (ElevenLabs, Azure, Google, OpenAI and others) offer Korean male voices and style control with low first-byte latency, but they would send every reply to a third party, so they are out of scope.

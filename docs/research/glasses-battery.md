@@ -35,6 +35,9 @@ No public project has measured DAT Speech battery use. OpenGlasses does not link
 ## What changed
 
 - **Restart backoff.** Each empty-only restart in a row doubles the limit (20, 40, 80, 160, then 300 s); a non-empty transcript resets it. For 60 s after a fresh start (connect, re-wear, unfold, session resume) the limit stays 20 s, because Speech was observed going deaf right after the glasses were put back on, and 20 s recovered it while 180 s did not. (Observed here)
+- **Speech self-stop backoff.** When Speech stops by itself, it is restarted after 750 ms up to three times. From the 4th self-stop within 10 minutes the wait is 60 s, and from the 6th it is 300 s, so the app does not fight a device that sheds Speech for power or heat.
+- **Keep-alive stops without glasses.** The silent keep-alive now stops 5 minutes after the glasses were last seen, and iOS suspends the app.
+- **Bluetooth wake instead of silent audio.** While the glasses are away, a pending Bluetooth connection replaces the keep-alive as the way back: iOS wakes or relaunches the app when they return ([waking the app](waking-the-app.md)).
 - **Power log.** The companion app writes one CSV line a minute (glasses battery, charging, listening, Speech pause state, keep-alive, audio outputs, app active, phone locked, cumulative restarts and turns) to `Application Support/power-log.csv`. No text is recorded.
 
 ## Open: A/B plan
@@ -47,5 +50,7 @@ Thirty minutes each, same glasses, starting near 90%, model and firmware written
 4. 3 + restarts
 5. Everything as shipped
 6. Control: music through the glasses (A2DP baseline)
+
+The full option ranking and a proposed three-mode design are in [wake word and power](wake-word-power.md).
 
 If Speech dominates, the strongest option is Meta's own advice: pause Speech after some idle minutes while the phone is locked, keep the session and Inputs, and resume on double tap, re-wear, unfold or unlock. That changes "just say the name" into "double tap, then speak" after idle, so it needs the wearer's decision.
