@@ -27,7 +27,10 @@ final class GatewayVoice {
     /// sentence at once. MODERATE heat sets 1 (ThermalWorkPolicy).
     var prefetchLimit: Int?
 
-    static let firstClipDeadline: Duration = .milliseconds(1500)
+    /// The Gateway's local TTS (tts.speak) returns whole clips: ~1.5-1.9 s per
+    /// sentence on the Mac mini (2026-10-15). 3 s keeps the first sentence in
+    /// the same voice; measure on device and revisit with a streaming path.
+    static let firstClipDeadline: Duration = .seconds(3)
     static let clipDeadline: Duration = .seconds(6)
 
     private struct Item {
