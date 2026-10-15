@@ -1301,7 +1301,14 @@ final class CompanionRuntime: ObservableObject {
             let now = Date()
             devicePause.recreatedListening(at: now)
             record("listening again after device pause (\(Int(now.timeIntervalSince(since).rounded())) s)")
-            if speech, wearables.speechDecision == .listen { playCue(.listening) }
+            // The listening cue means "speak now": open the follow-up window to
+            // match, so the wearer can talk without the wake phrase.
+            if speech, wearables.speechDecision == .listen, let gate = wakeGate {
+                Task {
+                    await gate.arm()
+                    playCue(.listening)
+                }
+            }
         }
         wakeAnchor.refresh()
         signals.listening = true
@@ -1838,7 +1845,16 @@ final class CompanionRuntime: ObservableObject {
             devicePauseWaitStart = now
             listeningLost("device pause")
             let inputs = devicePauseInputs
-            if DevicePausePolicy.cuesPause(inputs) { playCue(.paused) }
+            // A doff/fold can be reported a moment after the pause; cue only if
+            // the pause still looks like a tap one second later.
+            if DevicePausePolicy.cuesPause(inputs) {
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(1))
+                    guard let self, self.devicePausedAt == now,
+                          DevicePausePolicy.cuesPause(self.devicePauseInputs) else { return }
+                    self.playCue(.paused)
+                }
+            }
             switch devicePause.decide(inputs, now: now) {
             case let .wait(until):
                 record("session paused by device → recreating in \(Int(until.timeIntervalSince(now).rounded())) s")
