@@ -54,6 +54,9 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
     /// runtime/model can consume image input. Negotiated attachment limits are
     /// still revalidated for every submission and after reconnect.
     public nonisolated let supportsVisionInput: Bool
+    /// Appended to the turn's extra system prompt for image turns only, e.g.
+    /// "the attached photo is what the wearer is looking at".
+    private let visionSystemPrompt: String?
 
     private let supervisor: OpenClawGatewaySupervisor
     private let dispatcher: OpenClawRPCDispatcher
@@ -84,6 +87,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         responseBufferLimit: Int = AgentResponse.defaultBufferLimit,
         maximumStreamedTextBytes: Int = OpenClawNativeAgentAdapter.defaultMaximumStreamedTextBytes,
         supportsVisionInput: Bool = false,
+        visionSystemPrompt: String? = nil,
         turnOptions: OpenClawAgentTurnOptions = .init()
     ) {
         precondition(maximumTerminalWaitPolls > 0)
@@ -102,6 +106,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
         self.responseBufferLimit = responseBufferLimit
         self.maximumStreamedTextBytes = maximumStreamedTextBytes
         self.supportsVisionInput = supportsVisionInput
+        self.visionSystemPrompt = visionSystemPrompt
     }
 
     public func connect() async throws {
@@ -151,7 +156,7 @@ public actor OpenClawNativeAgentAdapter: AgentAdapter, VisionAgentAdapter {
 
         let client = runClient
         let sessionKey = sessionKey
-        let turnOptions = turnOptions
+        let turnOptions = turnOptions.appendingSystemPrompt(visionSystemPrompt)
         let attachment: OpenClawAgentAttachment
         do {
             attachment = try Self.makeImageAttachment(request.image)

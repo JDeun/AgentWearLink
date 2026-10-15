@@ -1,0 +1,71 @@
+name: AgentWearLinkCompanion
+options:
+  bundleIdPrefix: dev.agentwearlink
+  deploymentTarget:
+    iOS: "17.2"
+  developmentLanguage: ko
+packages:
+  AgentWearLink:
+    path: ../..
+  MetaIntegration:
+    path: ../../Adapters/MetaDAT
+  MetaWearablesDAT:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    revision: 1f38beecba83c4c8b5e343540f9cd615323ab19a
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_EMIT_LOC_STRINGS: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+targets:
+  AgentWearLinkCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Model
+    configFiles:
+      Debug: Companion.xcconfig
+      Release: Companion.xcconfig
+    dependencies:
+      - package: AgentWearLink
+        product: AgentWearLinkCore
+      - package: AgentWearLink
+        product: AgentWearLinkOpenClaw
+      - package: AgentWearLink
+        product: AgentWearLinkAppleOutput
+      - package: MetaIntegration
+        product: AgentWearLinkMetaDATIntegration
+      - package: MetaWearablesDAT
+        product: MWDATCore
+    settings:
+      base:
+        PRODUCT_NAME: AgentWearLink
+        PRODUCT_MODULE_NAME: AgentWearLinkCompanion
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: App/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    scheme:
+      testTargets:
+        - AgentWearLinkCompanionTests
+  AgentWearLinkCompanionTests:
+    type: bundle.unit-test
+    platform: iOS
+    # The pure model layer is compiled straight into the test bundle, so the
+    # tests run without launching the app or the Meta SDK.
+    sources:
+      - path: Model
+      - path: Tests
+    dependencies:
+      - package: AgentWearLink
+        product: AgentWearLinkCore
+      - package: AgentWearLink
+        product: AgentWearLinkOpenClaw
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.companion.tests
+        GENERATE_INFOPLIST_FILE: YES

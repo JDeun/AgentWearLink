@@ -446,7 +446,7 @@ public actor OpenClawRPCDispatcher {
 
     private static func requiredOperatorScope(for method: String) -> String? {
         switch method {
-        case "agent", "agent.wait", "chat.abort":
+        case "agent", "agent.wait", "chat.abort", "tts.speak":
             return "operator.write"
         default:
             return nil

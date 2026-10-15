@@ -284,6 +284,75 @@ final class OpenClawConnectAssemblerTests: XCTestCase {
         try assertProof(result, signs: "stored")
     }
 
+    func testStoredAdminGrantIsNarrowedWhenAdminIsNotRequested() async throws {
+        let identity = OpenClawDeviceIdentity.generate()
+        let identityStore = InMemoryOpenClawDeviceIdentityStore(identity: identity)
+        let credentials = InMemoryOpenClawDeviceCredentialStore()
+        try await credentials.save(
+            .init(
+                deviceID: try identity.deviceID,
+                role: "operator",
+                scopes: ["operator.read", "operator.write", "operator.admin"],
+                token: "stored"
+            )
+        )
+        let assembler = OpenClawConnectAssembler(
+            identityManager: .init(store: identityStore),
+            credentialStore: credentials
+        )
+
+        let narrowed = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write"],
+            credentials: .init(),
+            challenge: challenge
+        )
+        XCTAssertTrue(narrowed.usedStoredCredential)
+        XCTAssertEqual(narrowed.params.scopes, ["operator.read", "operator.write"])
+        try assertProof(narrowed, signs: "stored")
+
+        let admin = try await assembler.assemble(
+            version: "0.1",
+            scopes: ["operator.read", "operator.write", "operator.admin"],
+            credentials: .init(),
+            challenge: challenge
+        )
+        XCTAssertEqual(
+            admin.params.scopes,
+            ["operator.read", "operator.write", "operator.admin"]
+        )
+
+        let retry = try await assembler.assembleStoredDeviceTokenRetry(
+            version: "0.1",
+            challenge: challenge,
+            requestedScopes: ["operator.read", "operator.write"]
+        )
+        XCTAssertEqual(retry?.params.scopes, ["operator.read", "operator.write"])
+        try assertProof(try XCTUnwrap(retry), signs: "stored")
+    }
+
+    func testStoredGrantScopePolicyOnlyGatesAdmin() {
+        typealias Policy = OpenClawConnectScopePolicy
+        // Non-admin stored scopes are reused as approved, even if broader.
+        XCTAssertEqual(
+            Policy.storedGrantScopes(stored: ["operator.read", "operator.write"], requested: ["operator.read"]),
+            ["operator.read", "operator.write"]
+        )
+        // Admin opt-in on, but the stored grant has no admin: nothing is invented.
+        XCTAssertEqual(
+            Policy.storedGrantScopes(
+                stored: ["operator.read", "operator.write"],
+                requested: ["operator.read", "operator.write", "operator.admin"]
+            ),
+            ["operator.read", "operator.write"]
+        )
+        // An admin-only grant still covers the requested read+write.
+        XCTAssertEqual(
+            Policy.storedGrantScopes(stored: ["operator.admin"], requested: ["operator.read", "operator.write"]),
+            ["operator.read", "operator.write"]
+        )
+    }
+
     func testBootstrapUsedOnlyWhenNoOtherTokenExists() async throws {
         let assembler = OpenClawConnectAssembler(
             identityManager: .init(

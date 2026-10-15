@@ -23,3 +23,6 @@ Package.resolved
 *.mobileprovision
 secrets.*
 local.*
+
+# Generated Xcode projects (XcodeGen)
+Apps/Companion/*.xcodeproj/

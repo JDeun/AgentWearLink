@@ -52,7 +52,8 @@ final class MetaDATStandalonePhotoCapture: @unchecked Sendable {
 
     func capture(
         _ photo: Photo,
-        timeout: Duration
+        timeout: Duration,
+        onReady: @escaping @Sendable () -> Void = {}
     ) async throws -> Data {
         // A new attempt cannot inherit any observer or terminal byte from the
         // previous Photo generation. The parent snapshot controller enforces
@@ -133,6 +134,7 @@ final class MetaDATStandalonePhotoCapture: @unchecked Sendable {
                         guard !shutterIssued else { continue }
                         try Task.checkCancellation()
                         shutterIssued = true
+                        onReady()
                         photo.capturePhoto(resolution: .medium, quality: .medium)
                     case let .image(bytes):
                         guard shutterIssued else {

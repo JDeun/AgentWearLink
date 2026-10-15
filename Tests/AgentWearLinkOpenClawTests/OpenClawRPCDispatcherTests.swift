@@ -484,6 +484,51 @@ final class OpenClawRPCDispatcherTests: XCTestCase {
         await dispatcher.stop()
     }
 
+    func testSpeakReturnsTheGatewayClip() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(scopes: ["operator.read", "operator.write"], methods: ["health", "tts.speak"])
+        )
+        await dispatcher.start()
+        let client = OpenClawAgentRunClient(dispatcher: dispatcher)
+
+        let speakTask = Task { try await client.speak(text: "지금 밤 10시입니다, 주인님.") }
+
+        let request = try await socket.lastRequestObject()
+        XCTAssertEqual(request["method"] as? String, "tts.speak")
+        let params = try XCTUnwrap(request["params"] as? [String: Any])
+        XCTAssertEqual(params["text"] as? String, "지금 밤 10시입니다, 주인님.")
+        let id = try XCTUnwrap(request["id"] as? String)
+        await socket.push(
+            #"{"type":"res","id":"\#(id)","ok":true,"payload":{"audioBase64":"AAEC","provider":"local-cli","outputFormat":"wav","mimeType":"audio/wav","fileExtension":".wav"}}"#
+        )
+
+        let clip = try await speakTask.value
+        XCTAssertEqual(clip.provider, "local-cli")
+        XCTAssertEqual(clip.audio, Data([0, 1, 2]))
+        XCTAssertEqual(clip.mimeType, "audio/wav")
+        await dispatcher.stop()
+    }
+
+    func testSpeakNeedsOperatorWrite() async throws {
+        let socket = DispatcherSocket()
+        let dispatcher = OpenClawRPCDispatcher(
+            socket: socket,
+            state: try await readyState(scopes: ["operator.read"], methods: ["health", "tts.speak"])
+        )
+        await dispatcher.start()
+        let client = OpenClawAgentRunClient(dispatcher: dispatcher)
+        do {
+            _ = try await client.speak(text: "hi")
+            XCTFail("Expected a missing-scope rejection")
+        } catch {}
+        let sentCount = await socket.sentCount()
+        XCTAssertEqual(sentCount, 0)
+        await dispatcher.stop()
+        await socket.close()
+    }
+
     func testAgentIdentityFallsBackToAgentIDWhenNameIsMissing() throws {
         let identity = try JSONDecoder().decode(
             OpenClawAgentIdentity.self,
