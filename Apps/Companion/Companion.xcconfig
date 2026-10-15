@@ -1,0 +1,26 @@
+// Public, unprovisioned defaults for the companion app.
+//
+// Meta registration needs your Apple Team ID and a callback URL scheme. Put
+// them in an uncommitted `local.companion.xcconfig` next to this file (ignored
+// by the repository's `local.*` rule), for example:
+//
+//   AWL_META_TEAM_ID = <your Apple Team ID>
+//   AWL_META_CALLBACK_SCHEME = <your-callback-scheme>
+//   DEVELOPMENT_TEAM = <your Apple Team ID>
+//   CODE_SIGN_STYLE = Automatic
+//   PRODUCT_BUNDLE_IDENTIFIER = <your bundle id>
+//
+// Meta AI Developer Mode needs no Meta App ID or Client Token; leave both
+// empty unless you ship through a Wearables Developer Center release channel.
+// Never put an OpenClaw Gateway token into an xcconfig or plist.
+
+AWL_META_APP_ID =
+AWL_META_CLIENT_TOKEN =
+AWL_META_TEAM_ID =
+AWL_META_CALLBACK_SCHEME = agentwearlink-companion
+
+// Lives here rather than in project.yml so a local xcconfig can override it
+// from plain Xcode builds too (target settings would win over xcconfigs).
+PRODUCT_BUNDLE_IDENTIFIER = dev.agentwearlink.companion
+
+#include? "local.companion.xcconfig"

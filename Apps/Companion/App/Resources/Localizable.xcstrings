@@ -1,0 +1,4934 @@
+{
+  "sourceLanguage": "ko",
+  "strings": {
+    "%@ 확인": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checked %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 확인"
+          }
+        }
+      }
+    },
+    "%@에 닿지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 닿지 않아요"
+          }
+        }
+      }
+    },
+    "%@에 연결됐어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected to %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 연결됐어요"
+          }
+        }
+      }
+    },
+    "%@에게서 답이 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No answer from %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에게서 답이 없어요"
+          }
+        }
+      }
+    },
+    "%@에서 다시 승인받아야 해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ needs to approve this device again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 다시 승인받아야 해요"
+          }
+        }
+      }
+    },
+    "%@에서 승인이 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ needs to approve this device"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 승인이 필요해요"
+          }
+        }
+      }
+    },
+    "%@에서 응답이 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ isn't responding"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 응답이 없어요"
+          }
+        }
+      }
+    },
+    "%@초": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ s"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@초"
+          }
+        }
+      }
+    },
+    "%lld / %lld분": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld min"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld분"
+          }
+        }
+      }
+    },
+    "'이거 뭐야?'처럼 물으면 안경 카메라로 한 장 찍어 함께 보내요. 찍는 동안 안경 불빛이 켜져요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask things like 'What is this?' and the glasses camera takes one photo to send along. The glasses light is on while it does"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'이거 뭐야?'처럼 물으면 안경 카메라로 한 장 찍어 함께 보내요. 찍는 동안 안경 불빛이 켜져요"
+          }
+        }
+      }
+    },
+    "1. 요청 목록을 열어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1. List the requests"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1. 요청 목록을 열어요"
+          }
+        }
+      }
+    },
+    "10분 안에 승인되지 않았어요. 다시 요청해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It wasn't approved within 10 minutes. Please request again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10분 안에 승인되지 않았어요. 다시 요청해 주세요."
+          }
+        }
+      }
+    },
+    "1회용 연결 코드": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One-time connection code"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1회용 연결 코드"
+          }
+        }
+      }
+    },
+    "2. 지문이 %@인 요청을 승인해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2. Approve the request with fingerprint %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2. 지문이 %@인 요청을 승인해요"
+          }
+        }
+      }
+    },
+    "Agent Wear Link 앱 업데이트가 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link needs an update"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link 앱 업데이트가 필요해요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱 › 앱 연결에서 Agent Wear Link를 확인하고 업데이트해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In the Meta AI app, check and update Agent Wear Link under App connections"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱 › 앱 연결에서 Agent Wear Link를 확인하고 업데이트해 주세요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱 다시 열기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Meta AI again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱 다시 열기"
+          }
+        }
+      }
+    },
+    "Meta AI 앱 열기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Meta AI"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱 열기"
+          }
+        }
+      }
+    },
+    "Meta AI 앱에서 Agent Wear Link를 다시 허용해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Agent Wear Link again in the Meta AI app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱에서 Agent Wear Link를 다시 허용해 주세요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱에서 Agent Wear Link를 허용해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Agent Wear Link in the Meta AI app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱에서 Agent Wear Link를 허용해 주세요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱에서 마이크를 허용해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow the microphone in the Meta AI app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱에서 마이크를 허용해 주세요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱에서 안경 마이크를 허용해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow the glasses microphone in the Meta AI app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱에서 안경 마이크를 허용해 주세요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱에서 안경을 업데이트해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the glasses in the Meta AI app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱에서 안경을 업데이트해 주세요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱에서 업데이트해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update them in the Meta AI app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱에서 업데이트해 주세요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱에서 허용이 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs permission in the Meta AI app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱에서 허용이 필요해요"
+          }
+        }
+      }
+    },
+    "Meta AI 앱에서 허용하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow in the Meta AI app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱에서 허용하기"
+          }
+        }
+      }
+    },
+    "Meta AI 앱이 열리면 Agent Wear Link를 허용해 주세요. 허용하면 이 앱으로 자동으로 돌아와요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When the Meta AI app opens, allow Agent Wear Link. You'll come back here automatically."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta AI 앱이 열리면 Agent Wear Link를 허용해 주세요. 허용하면 이 앱으로 자동으로 돌아와요."
+          }
+        }
+      }
+    },
+    "Meta 안경": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta glasses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta 안경"
+          }
+        }
+      }
+    },
+    "Meta 안경 배터리가 거의 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta glasses battery is almost empty"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta 안경 배터리가 거의 없어요"
+          }
+        }
+      }
+    },
+    "Meta 안경 업데이트가 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta glasses need an update"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta 안경 업데이트가 필요해요"
+          }
+        }
+      }
+    },
+    "Meta 안경이 연결되지 않았어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta glasses aren't connected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta 안경이 연결되지 않았어요"
+          }
+        }
+      }
+    },
+    "Meta 연결 구성을 불러오지 못했어요. Meta AI 앱이 설치되어 있는지 확인해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't load the Meta configuration. Check that the Meta AI app is installed."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta 연결 구성을 불러오지 못했어요. Meta AI 앱이 설치되어 있는지 확인해 주세요."
+          }
+        }
+      }
+    },
+    "OpenClaw가 멈췄거나 컴퓨터가 잠들었을 수 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenClaw may have stopped, or the computer may be asleep"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenClaw가 멈췄거나 컴퓨터가 잠들었을 수 있어요"
+          }
+        }
+      }
+    },
+    "QR 찍기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan QR"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR 찍기"
+          }
+        }
+      }
+    },
+    "QR 한 번이면 끝, 이후 자동 연결": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One QR scan, then it reconnects by itself"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR 한 번이면 끝, 이후 자동 연결"
+          }
+        }
+      }
+    },
+    "Tailscale 앱에서 VPN On Demand를 켜 두면 이 문제가 거의 생기지 않아요. 이 앱은 Tailscale을 직접 켤 수 없어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turning on VPN On Demand in the Tailscale app mostly prevents this. This app can't turn Tailscale on by itself."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale 앱에서 VPN On Demand를 켜 두면 이 문제가 거의 생기지 않아요. 이 앱은 Tailscale을 직접 켤 수 없어요."
+          }
+        }
+      }
+    },
+    "Tailscale 앱을 열고 설정으로 가요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the Tailscale app and go to Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale 앱을 열고 설정으로 가요"
+          }
+        }
+      }
+    },
+    "Tailscale 열기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Tailscale"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale 열기"
+          }
+        }
+      }
+    },
+    "Tailscale 항상 켜기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep Tailscale on"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale 항상 켜기"
+          }
+        }
+      }
+    },
+    "Tailscale로 연결됨": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected over Tailscale"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale로 연결됨"
+          }
+        }
+      }
+    },
+    "Tailscale이 꺼져 있을 수 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale may be off"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale이 꺼져 있을 수 있어요"
+          }
+        }
+      }
+    },
+    "VPN On Demand를 켜요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on VPN On Demand"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPN On Demand를 켜요"
+          }
+        }
+      }
+    },
+    "Wi‑Fi나 셀룰러 연결을 확인해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check your Wi‑Fi or cellular connection"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi‑Fi나 셀룰러 연결을 확인해 주세요"
+          }
+        }
+      }
+    },
+    "iPhone 스피커로는 읽지 않아요. 안경이 연결되면 다음 답부터 들려요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replies are never read from the iPhone speaker. You'll hear the next one once the glasses connect."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 스피커로는 읽지 않아요. 안경이 연결되면 다음 답부터 들려요"
+          }
+        }
+      }
+    },
+    "‘%@’%@ 호출 이름으로 추가": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add “%1$@” as a wake name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’%@ 호출 이름으로 추가"
+          }
+        }
+      }
+    },
+    "‘%@’, 한국어로는 어떻게 부르세요?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How do you say “%@” in Korean?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’, 한국어로는 어떻게 부르세요?"
+          }
+        }
+      }
+    },
+    "‘승인 다시 받기’를 누르면 게이트웨이 컴퓨터에 새 승인 요청이 가요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap “Approve again” to send a new approval request to the gateway computer."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘승인 다시 받기’를 누르면 게이트웨이 컴퓨터에 새 승인 요청이 가요."
+          }
+        }
+      }
+    },
+    "‘항상’ 또는 모든 Wi‑Fi·셀룰러에서 연결을 선택해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose “Always”, or connect on every Wi‑Fi and cellular network"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘항상’ 또는 모든 Wi‑Fi·셀룰러에서 연결을 선택해요"
+          }
+        }
+      }
+    },
+    "“%@, 안녕”": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@, hello”"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@, 안녕”"
+          }
+        }
+      }
+    },
+    "게이트웨이": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이"
+          }
+        }
+      }
+    },
+    "게이트웨이 목소리": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 목소리"
+          }
+        }
+      }
+    },
+    "게이트웨이 연결하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect the gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 연결하기"
+          }
+        }
+      }
+    },
+    "게이트웨이 이름": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 이름"
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터가 켜져 있고 잠자기 상태가 아닌지 확인해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make sure the gateway computer is on and not asleep"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터가 켜져 있고 잠자기 상태가 아닌지 확인해 주세요"
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터에 닿지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach the gateway computer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터에 닿지 않아요"
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터에서 OpenClaw가 실행 중인지 확인해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make sure OpenClaw is running on the gateway computer."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터에서 OpenClaw가 실행 중인지 확인해 주세요."
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터에서 아래 명령으로 새 QR을 만든 뒤 다시 찍어 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create a new QR on the gateway computer with the command below, then scan it again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터에서 아래 명령으로 새 QR을 만든 뒤 다시 찍어 주세요."
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터에서 이 기기를 승인해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve this device on the gateway computer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터에서 이 기기를 승인해 주세요"
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터의 QR을 찍어 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the QR from your Gateway computer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터의 QR을 찍어 주세요"
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터의 터미널에서": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In a terminal on the gateway computer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터의 터미널에서"
+          }
+        }
+      }
+    },
+    "게이트웨이 컴퓨터의 터미널에서 `openclaw qr`을 실행하면 주소와 1회용 코드가 담긴 QR과 설정 코드가 나와요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run `openclaw qr` in a terminal on the gateway computer. It shows a QR and a setup code with its address and a one-time code."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이 컴퓨터의 터미널에서 `openclaw qr`을 실행하면 주소와 1회용 코드가 담긴 QR과 설정 코드가 나와요."
+          }
+        }
+      }
+    },
+    "게이트웨이가 연결을 거절했어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The gateway refused the connection"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이가 연결을 거절했어요"
+          }
+        }
+      }
+    },
+    "게이트웨이가 응답하지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The gateway isn't responding"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이가 응답하지 않아요"
+          }
+        }
+      }
+    },
+    "게이트웨이에 연결하는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to the Gateway"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "게이트웨이에 연결하는 중"
+          }
+        }
+      }
+    },
+    "고급": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Advanced"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고급"
+          }
+        }
+      }
+    },
+    "고급에서 텔레그램 채팅 ID를 입력해야 기록돼요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a Telegram chat ID under Advanced to record"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고급에서 텔레그램 채팅 ID를 입력해야 기록돼요"
+          }
+        }
+      }
+    },
+    "고품질": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enhanced"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고품질"
+          }
+        }
+      }
+    },
+    "권한 필요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs permission"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "권한 필요"
+          }
+        }
+      }
+    },
+    "기기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기"
+          }
+        }
+      }
+    },
+    "기본 목소리": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 목소리"
+          }
+        }
+      }
+    },
+    "기본값으로": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to default"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본값으로"
+          }
+        }
+      }
+    },
+    "긴 답도 안경에서 끝까지 읽어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Long answers are read out in full"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "긴 답도 안경에서 끝까지 읽어요"
+          }
+        }
+      }
+    },
+    "끄면 대화가 어디에도 남지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When off, conversations aren't recorded anywhere"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "끄면 대화가 어디에도 남지 않아요"
+          }
+        }
+      }
+    },
+    "끔 (기본)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off (default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "끔 (기본)"
+          }
+        }
+      }
+    },
+    "나중에 하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Later"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "나중에 하기"
+          }
+        }
+      }
+    },
+    "남성": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Male"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "남성"
+          }
+        }
+      }
+    },
+    "네트워크": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네트워크"
+          }
+        }
+      }
+    },
+    "다시 듣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume listening"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 듣기"
+          }
+        }
+      }
+    },
+    "다시 듣기를 누르면 이어서 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap Resume listening to continue"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 듣기를 누르면 이어서 들어요"
+          }
+        }
+      }
+    },
+    "다시 시도": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "다시 시작": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시작"
+          }
+        }
+      }
+    },
+    "다시 확인": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 확인"
+          }
+        }
+      }
+    },
+    "다음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음"
+          }
+        }
+      }
+    },
+    "다음부터는 자동으로 다시 연결돼요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From now on it reconnects automatically."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음부터는 자동으로 다시 연결돼요."
+          }
+        }
+      }
+    },
+    "답 없이 끝난 요청": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requests with no reply"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답 없이 끝난 요청"
+          }
+        }
+      }
+    },
+    "답변은 텔레그램에서 확인하세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read the reply in Telegram"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변은 텔레그램에서 확인하세요"
+          }
+        }
+      }
+    },
+    "답이 끝나고 8초 안에 말하면 이름 없이 이어서 물어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speak within 8 seconds after an answer to continue without the name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답이 끝나고 8초 안에 말하면 이름 없이 이어서 물어요"
+          }
+        }
+      }
+    },
+    "답이 오지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No answer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답이 오지 않아요"
+          }
+        }
+      }
+    },
+    "답이 올 때까지 아무 소리도 나지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing plays until the answer arrives"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답이 올 때까지 아무 소리도 나지 않아요"
+          }
+        }
+      }
+    },
+    "답할 때 다른 소리 줄이기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lower other audio during replies"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답할 때 다른 소리 줄이기"
+          }
+        }
+      }
+    },
+    "대기 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기 중"
+          }
+        }
+      }
+    },
+    "대화": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화"
+          }
+        }
+      }
+    },
+    "대화 기록은 텔레그램에서 볼 수 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation history is in Telegram"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 기록은 텔레그램에서 볼 수 있어요"
+          }
+        }
+      }
+    },
+    "두세 문장으로 답해요. 긴 답은 텔레그램에서 볼 수 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answers in two or three sentences; read long answers in Telegram"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "두세 문장으로 답해요. 긴 답은 텔레그램에서 볼 수 있어요"
+          }
+        }
+      }
+    },
+    "듣기 먹통 재시작": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deaf speech restarts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣기 먹통 재시작"
+          }
+        }
+      }
+    },
+    "듣기 시작": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Listening"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣기 시작"
+          }
+        }
+      }
+    },
+    "듣기 일시정지": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause listening"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣기 일시정지"
+          }
+        }
+      }
+    },
+    "듣기를 멈췄어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening paused"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣기를 멈췄어요"
+          }
+        }
+      }
+    },
+    "듣는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣는 중"
+          }
+        }
+      }
+    },
+    "듣는 중…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣는 중…"
+          }
+        }
+      }
+    },
+    "듣지 않음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not listening"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣지 않음"
+          }
+        }
+      }
+    },
+    "들은 말": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Heard"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "들은 말"
+          }
+        }
+      }
+    },
+    "로그 복사": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy log"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그 복사"
+          }
+        }
+      }
+    },
+    "마이크가 허용되지 않았어요. Meta AI 앱에서 Agent Wear Link의 마이크 권한을 켜 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The microphone isn't allowed. Turn on microphone access for Agent Wear Link in the Meta AI app."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마이크가 허용되지 않았어요. Meta AI 앱에서 Agent Wear Link의 마이크 권한을 켜 주세요."
+          }
+        }
+      }
+    },
+    "마지막 대화": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last conversation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 대화"
+          }
+        }
+      }
+    },
+    "마지막 응답 %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last reply %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 응답 %@"
+          }
+        }
+      }
+    },
+    "말 끝 → 답 시작": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech end → reply"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말 끝 → 답 시작"
+          }
+        }
+      }
+    },
+    "매번 이름을 불러야 해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You need to say the name every time"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매번 이름을 불러야 해요"
+          }
+        }
+      }
+    },
+    "먼저 안경을 펼쳐 쓰고 iPhone 가까이 두세요. 안경이 연결되면 버튼을 누를 수 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First unfold and wear the glasses near your iPhone. The button works once they connect."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 안경을 펼쳐 쓰고 iPhone 가까이 두세요. 안경이 연결되면 버튼을 누를 수 있어요."
+          }
+        }
+      }
+    },
+    "멈춤 (음성 · 탭)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped (voice · tap)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "멈춤 (음성 · 탭)"
+          }
+        }
+      }
+    },
+    "명령어 복사": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy command"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령어 복사"
+          }
+        }
+      }
+    },
+    "모두 연결됨": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All connected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 연결됨"
+          }
+        }
+      }
+    },
+    "모두 지우고 처음부터 설정": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erase all and set up again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 지우고 처음부터 설정"
+          }
+        }
+      }
+    },
+    "모두 지우고 처음부터 할까요?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erase everything and start over?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 지우고 처음부터 할까요?"
+          }
+        }
+      }
+    },
+    "모두 지우기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erase all"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 지우기"
+          }
+        }
+      }
+    },
+    "목소리": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "목소리"
+          }
+        }
+      }
+    },
+    "미리 듣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 듣기"
+          }
+        }
+      }
+    },
+    "바쁘거나 응답이 늦을 수 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It may be busy or slow to answer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바쁘거나 응답이 늦을 수 있어요"
+          }
+        }
+      }
+    },
+    "밖에서도 게이트웨이 컴퓨터에 닿으려면 이 iPhone에서 Tailscale이 항상 켜져 있어야 해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To reach the gateway computer away from home, Tailscale must stay on for this iPhone."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "밖에서도 게이트웨이 컴퓨터에 닿으려면 이 iPhone에서 Tailscale이 항상 켜져 있어야 해요."
+          }
+        }
+      }
+    },
+    "밖에서도 게이트웨이에 닿게 해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reach the gateway from anywhere"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "밖에서도 게이트웨이에 닿게 해요"
+          }
+        }
+      }
+    },
+    "방금 확인": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checked just now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "방금 확인"
+          }
+        }
+      }
+    },
+    "배터리가 거의 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Battery almost empty"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배터리가 거의 없어요"
+          }
+        }
+      }
+    },
+    "배터리를 아끼려고 듣기를 쉬어요. 다시 쓰면 바로 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening is paused to save battery. Put them back on to resume."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배터리를 아끼려고 듣기를 쉬어요. 다시 쓰면 바로 들어요"
+          }
+        }
+      }
+    },
+    "배터리를 아끼려고 듣기를 쉬어요. 펼쳐 쓰면 바로 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening is paused to save battery. Unfold and wear them to resume."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배터리를 아끼려고 듣기를 쉬어요. 펼쳐 쓰면 바로 들어요"
+          }
+        }
+      }
+    },
+    "벗어 두었어요 · 쓰면 다시 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taken off · resumes when worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "벗어 두었어요 · 쓰면 다시 들어요"
+          }
+        }
+      }
+    },
+    "보이는 것을 물어도 사진 없이 답해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questions about what you see are answered without a photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보이는 것을 물어도 사진 없이 답해요"
+          }
+        }
+      }
+    },
+    "복사됨": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사됨"
+          }
+        }
+      }
+    },
+    "붙여넣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "붙여넣기"
+          }
+        }
+      }
+    },
+    "사진 때문에 음악이 멈춰도 알려 드리지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You won't be told when a photo stops your music"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 때문에 음악이 멈춰도 알려 드리지 않아요"
+          }
+        }
+      }
+    },
+    "사진 요청 (보냄 · 실패)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo requests (sent · failed)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 요청 (보냄 · 실패)"
+          }
+        }
+      }
+    },
+    "사진 찍는 방식": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo method"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 찍는 방식"
+          }
+        }
+      }
+    },
+    "사진 찍는 시간 (중앙값)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo capture time (median)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 찍는 시간 (중앙값)"
+          }
+        }
+      }
+    },
+    "사진 찍는 중…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taking a photo…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 찍는 중…"
+          }
+        }
+      }
+    },
+    "사진 테스트": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo test"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 테스트"
+          }
+        }
+      }
+    },
+    "사진 테스트 (실험)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo test (experiment)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 테스트 (실험)"
+          }
+        }
+      }
+    },
+    "사진 테스트 (일반)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo test (standard)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 테스트 (일반)"
+          }
+        }
+      }
+    },
+    "사진 후 음악 안내": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Music notice after a photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 후 음악 안내"
+          }
+        }
+      }
+    },
+    "사진으로 물어보기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask with a photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진으로 물어보기"
+          }
+        }
+      }
+    },
+    "사진을 찍다 음악이 멈추면 답 끝에 iPhone에서 다시 재생하라고 알려 드려요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If a photo stops your music, the reply ends by reminding you to resume it on your iPhone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진을 찍다 음악이 멈추면 답 끝에 iPhone에서 다시 재생하라고 알려 드려요"
+          }
+        }
+      }
+    },
+    "사진을 찍지 못했어요. 로그를 확인해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't take a photo. Check the log"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진을 찍지 못했어요. 로그를 확인해 주세요"
+          }
+        }
+      }
+    },
+    "새 QR 찍기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan a new QR"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 QR 찍기"
+          }
+        }
+      }
+    },
+    "설정": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정"
+          }
+        }
+      }
+    },
+    "설정 코드": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup code"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 코드"
+          }
+        }
+      }
+    },
+    "설정 코드가 만료됐어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The setup code expired"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 코드가 만료됐어요"
+          }
+        }
+      }
+    },
+    "설정 코드를 붙여넣어 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste the setup code"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 코드를 붙여넣어 주세요"
+          }
+        }
+      }
+    },
+    "설정 코드를 읽지 못했어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't read the setup code"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 코드를 읽지 못했어요"
+          }
+        }
+      }
+    },
+    "소프트웨어 업데이트가 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Software update required"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소프트웨어 업데이트가 필요해요"
+          }
+        }
+      }
+    },
+    "숫자로 된 채팅 ID를 입력해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a numeric chat ID"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "숫자로 된 채팅 ID를 입력해 주세요"
+          }
+        }
+      }
+    },
+    "쉼표로 구분해요. 이 이름으로 시작하는 말만 에이전트에게 보내요. 안경을 두 번 톡톡 치면 이름 없이 바로 말할 수 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Separate with commas. Only speech that starts with one of these goes to the agent. Double-tap the glasses to speak without the name."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "쉼표로 구분해요. 이 이름으로 시작하는 말만 에이전트에게 보내요. 안경을 두 번 톡톡 치면 이름 없이 바로 말할 수 있어요."
+          }
+        }
+      }
+    },
+    "승인 다시 받기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인 다시 받기"
+          }
+        }
+      }
+    },
+    "승인 필요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs approval"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인 필요"
+          }
+        }
+      }
+    },
+    "승인, 기기 지문, 모든 설정을 지우고 처음 설정부터 다시 시작해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erases the approval, device fingerprint and all settings, and starts setup again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인, 기기 지문, 모든 설정을 지우고 처음 설정부터 다시 시작해요."
+          }
+        }
+      }
+    },
+    "승인되지 않았어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not approved"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인되지 않았어요"
+          }
+        }
+      }
+    },
+    "승인만 다시 받기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Re-approve this device only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인만 다시 받기"
+          }
+        }
+      }
+    },
+    "승인만 다시 받을까요?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Re-approve this device?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인만 다시 받을까요?"
+          }
+        }
+      }
+    },
+    "승인을 기다리고 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for approval"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인을 기다리고 있어요"
+          }
+        }
+      }
+    },
+    "승인을 너무 오래 기다렸어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waited too long for approval"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인을 너무 오래 기다렸어요"
+          }
+        }
+      }
+    },
+    "승인했어요, 다시 확인": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I approved it — check again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인했어요, 다시 확인"
+          }
+        }
+      }
+    },
+    "식으면 자동으로 다시 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening resumes once they cool down"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "식으면 자동으로 다시 들어요"
+          }
+        }
+      }
+    },
+    "실험 1: 별도 음성 세션": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experiment 1: separate speech session"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험 1: 별도 음성 세션"
+          }
+        }
+      }
+    },
+    "실험 2: 답할 때 음악 줄이기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experiment 2: duck music while replying"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험 2: 답할 때 음악 줄이기"
+          }
+        }
+      }
+    },
+    "실험 기능이에요. 안경 연결이 끊길 수 있어 기본은 꺼져 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimental. It may drop the glasses connection, so it's off by default."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험 기능이에요. 안경 연결이 끊길 수 있어 기본은 꺼져 있어요"
+          }
+        }
+      }
+    },
+    "실험 방식은 Meta의 실험 기능이라 개발용 빌드에서만 동작해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The experiment uses an experimental Meta feature and works only in development builds"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험 방식은 Meta의 실험 기능이라 개발용 빌드에서만 동작해요"
+          }
+        }
+      }
+    },
+    "실험: 단독 사진": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experiment: standalone photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험: 단독 사진"
+          }
+        }
+      }
+    },
+    "쓰면 자동으로 연결돼요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connects automatically when worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "쓰면 자동으로 연결돼요"
+          }
+        }
+      }
+    },
+    "아래 iPhone 목소리로 읽어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads with the iPhone voice below"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래 iPhone 목소리로 읽어요"
+          }
+        }
+      }
+    },
+    "아직 대화가 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No conversation yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 대화가 없어요"
+          }
+        }
+      }
+    },
+    "아직 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 없어요"
+          }
+        }
+      }
+    },
+    "안경 마이크 + iPhone 인식 (실험)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses mic + iPhone recognition (experiment)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크 + iPhone 인식 (실험)"
+          }
+        }
+      }
+    },
+    "안경 마이크 권한이 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No glasses microphone permission"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크 권한이 없어요"
+          }
+        }
+      }
+    },
+    "안경 마이크 권한이 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses microphone permission needed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크 권한이 필요해요"
+          }
+        }
+      }
+    },
+    "안경 마이크 허용하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow glasses microphone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크 허용하기"
+          }
+        }
+      }
+    },
+    "안경 마이크로 말을 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listens through the glasses microphone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크로 말을 들어요"
+          }
+        }
+      }
+    },
+    "안경 마이크로 말을 들어요. 버튼을 누르면 Meta AI 앱에서 허용 여부를 물어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app listens through the glasses microphone. Tap the button and Meta AI will ask for permission."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 마이크로 말을 들어요. 버튼을 누르면 Meta AI 앱에서 허용 여부를 물어요."
+          }
+        }
+      }
+    },
+    "안경 배터리": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses battery"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 배터리"
+          }
+        }
+      }
+    },
+    "안경 배터리가 %lld%% 남았어요 · 충전하면 더 오래 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses battery at %lld%% · charge them to keep listening longer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 배터리가 %lld%% 남았어요 · 충전하면 더 오래 들어요"
+          }
+        }
+      }
+    },
+    "안경 배터리가 부족해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses battery is too low"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 배터리가 부족해요"
+          }
+        }
+      }
+    },
+    "안경 음성 인식 (기본)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses speech recognition (default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 음성 인식 (기본)"
+          }
+        }
+      }
+    },
+    "안경 음성 인식이 시작되지 않았어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition on the glasses didn't start"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경 음성 인식이 시작되지 않았어요"
+          }
+        }
+      }
+    },
+    "안경과 연결하는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to the glasses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경과 연결하는 중"
+          }
+        }
+      }
+    },
+    "안경에서 “%@, …” 하고 말하세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On your glasses, say “%@, …”"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경에서 “%@, …” 하고 말하세요"
+          }
+        }
+      }
+    },
+    "안경으로 듣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listen through glasses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경으로 듣기"
+          }
+        }
+      }
+    },
+    "안경으로 들을 수 없어 답을 소리 내지 않았어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The reply wasn't spoken because the glasses can't play audio right now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경으로 들을 수 없어 답을 소리 내지 않았어요"
+          }
+        }
+      }
+    },
+    "안경으로 부르면 에이전트에게 연결해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calling from the glasses connects to your agent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경으로 부르면 에이전트에게 연결해요"
+          }
+        }
+      }
+    },
+    "안경으로 불러도 응답하지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calls from the glasses won't be answered"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경으로 불러도 응답하지 않아요"
+          }
+        }
+      }
+    },
+    "안경으로 한 번 불러 확인해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Call once from the glasses to check"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경으로 한 번 불러 확인해요"
+          }
+        }
+      }
+    },
+    "안경을 iPhone 가까이 두세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep the glasses near the iPhone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 iPhone 가까이 두세요"
+          }
+        }
+      }
+    },
+    "안경을 기다리고 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the glasses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 기다리고 있어요"
+          }
+        }
+      }
+    },
+    "안경을 기다리는 중…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the glasses…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 기다리는 중…"
+          }
+        }
+      }
+    },
+    "안경을 쓰고 아래처럼 말해 보세요. 들은 말과 호출 여부가 여기에 바로 보여요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Put on the glasses and say the phrase below. What was heard and whether it woke the agent show up here."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 쓰고 아래처럼 말해 보세요. 들은 말과 호출 여부가 여기에 바로 보여요."
+          }
+        }
+      }
+    },
+    "안경을 쓰고 있지 않으면 iPhone 스피커로 들려요. 더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plays on the iPhone speaker when you are not wearing the glasses. Download more voices in iPhone Settings › Accessibility › Spoken Content › Voices."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 쓰고 있지 않으면 iPhone 스피커로 들려요. 더 많은 목소리는 iPhone 설정 › 손쉬운 사용 › 읽기 및 말하기 › 음성 › 한국어에서 내려받을 수 있어요."
+          }
+        }
+      }
+    },
+    "안경을 쓰면 보여요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shown when worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 쓰면 보여요"
+          }
+        }
+      }
+    },
+    "안경을 쓰면 자동으로 연결돼요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connects automatically when you put them on"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 쓰면 자동으로 연결돼요"
+          }
+        }
+      }
+    },
+    "안경을 충전해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charge the glasses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 충전해 주세요"
+          }
+        }
+      }
+    },
+    "안경을 케이스에서 꺼내 펼쳐 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Take the glasses out of the case and unfold them"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 케이스에서 꺼내 펼쳐 주세요"
+          }
+        }
+      }
+    },
+    "안경을 펼쳐 쓰면 자동으로 연결돼요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unfold and wear them to connect automatically"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경을 펼쳐 쓰면 자동으로 연결돼요"
+          }
+        }
+      }
+    },
+    "안경의 Agent Wear Link 업데이트가 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Wear Link on the glasses needs an update"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경의 Agent Wear Link 업데이트가 필요해요"
+          }
+        }
+      }
+    },
+    "안경의 음성 인식은 이름을 한글로 받아 적어요. 적어 두면 그 이름으로도 부를 수 있어요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition on the glasses writes the name in Hangul. Add it here to call by that name too."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경의 음성 인식은 이름을 한글로 받아 적어요. 적어 두면 그 이름으로도 부를 수 있어요."
+          }
+        }
+      }
+    },
+    "안경이 뜨거워 잠시 듣기를 멈췄어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The glasses are hot, so listening is paused"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 뜨거워 잠시 듣기를 멈췄어요"
+          }
+        }
+      }
+    },
+    "안경이 식을 때까지 기다리는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the glasses to cool down"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 식을 때까지 기다리는 중"
+          }
+        }
+      }
+    },
+    "안경이 연결되지 않았어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glasses aren't connected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 연결되지 않았어요"
+          }
+        }
+      }
+    },
+    "안경이 열 때문에 연결을 끊었어요. 식으면 자동으로 다시 연결해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The glasses disconnected because of heat. They reconnect by themselves once cool"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 열 때문에 연결을 끊었어요. 식으면 자동으로 다시 연결해요"
+          }
+        }
+      }
+    },
+    "안경이 이 앱의 새 버전을 요구해요. 앱을 업데이트해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The glasses need a newer version of this app. Please update it"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안경이 이 앱의 새 버전을 요구해요. 앱을 업데이트해 주세요"
+          }
+        }
+      }
+    },
+    "알림음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sound cues"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알림음"
+          }
+        }
+      }
+    },
+    "암호화되지 않은 공개 주소는 쓸 수 없어요. Tailscale 주소를 입력해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unencrypted public addresses aren't allowed. Enter a Tailscale address."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "암호화되지 않은 공개 주소는 쓸 수 없어요. Tailscale 주소를 입력해 주세요."
+          }
+        }
+      }
+    },
+    "앞 단계가 끊겨 확인할 수 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't check until the step above is fixed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앞 단계가 끊겨 확인할 수 없어요"
+          }
+        }
+      }
+    },
+    "앱 실행 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App running"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 실행 중"
+          }
+        }
+      }
+    },
+    "앱을 다시 열어 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the app again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱을 다시 열어 주세요"
+          }
+        }
+      }
+    },
+    "앱이 실행 중이 아니에요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app isn't running"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱이 실행 중이 아니에요"
+          }
+        }
+      }
+    },
+    "앱이 종료돼 연결이 끊겼어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app was closed, so the connection dropped"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱이 종료돼 연결이 끊겼어요"
+          }
+        }
+      }
+    },
+    "업데이트 필요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update needed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트 필요"
+          }
+        }
+      }
+    },
+    "에이전트": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트"
+          }
+        }
+      }
+    },
+    "에이전트 답을 받을 텔레그램 채팅의 숫자 ID예요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The numeric ID of the Telegram chat that receives replies"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 답을 받을 텔레그램 채팅의 숫자 ID예요"
+          }
+        }
+      }
+    },
+    "에이전트가 있는 컴퓨터 · 승인됨": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computer running your agent · approved"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 있는 컴퓨터 · 승인됨"
+          }
+        }
+      }
+    },
+    "에이전트가 있는 컴퓨터의 로컬 음성 모델로 읽어요. 느리거나 안 되면 아래 목소리로 바로 바꿔 읽어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads with the local voice model on the agent's computer. If it is slow or unavailable, the voice below takes over at once"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 있는 컴퓨터의 로컬 음성 모델로 읽어요. 느리거나 안 되면 아래 목소리로 바로 바꿔 읽어요"
+          }
+        }
+      }
+    },
+    "에이전트에게 묻지 않는 점검이라 대화 기록에 남지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This check doesn't ask the agent, so nothing is added to the conversation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트에게 묻지 않는 점검이라 대화 기록에 남지 않아요"
+          }
+        }
+      }
+    },
+    "에이전트에게 보내지 않아요. 사진은 이 화면에만 보이고 저장하거나 기록하지 않아요. 단계별 시간과 음악 상태만 로그에 남아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not sent to the agent. The photo appears only on this screen and is never saved or logged; only stage timings and music state go to the log."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트에게 보내지 않아요. 사진은 이 화면에만 보이고 저장하거나 기록하지 않아요. 단계별 시간과 음악 상태만 로그에 남아요."
+          }
+        }
+      }
+    },
+    "에이전트의 답을 텔레그램 대화에도 남겨요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also posts the agent's replies to a Telegram chat"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트의 답을 텔레그램 대화에도 남겨요"
+          }
+        }
+      }
+    },
+    "에코로 걸러낸 말": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dropped as echo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에코로 걸러낸 말"
+          }
+        }
+      }
+    },
+    "여성": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Female"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여성"
+          }
+        }
+      }
+    },
+    "연결": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결"
+          }
+        }
+      }
+    },
+    "연결 끊김": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 끊김"
+          }
+        }
+      }
+    },
+    "연결 문제 해결": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fix connection"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 문제 해결"
+          }
+        }
+      }
+    },
+    "연결 방법": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection method"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 방법"
+          }
+        }
+      }
+    },
+    "연결 상태 기록만 담겨요. 토큰과 말한 내용은 기록하지 않아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contains connection events only. Tokens and what you said are never logged."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 상태 기록만 담겨요. 토큰과 말한 내용은 기록하지 않아요."
+          }
+        }
+      }
+    },
+    "연결 상태를 확인하고 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking the connection"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 상태를 확인하고 있어요"
+          }
+        }
+      }
+    },
+    "연결됨": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결됨"
+          }
+        }
+      }
+    },
+    "연결하면 게이트웨이에 승인 요청이 가요. 승인할 때 이 기기 지문 %@이 맞는지 확인하세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting sends an approval request to the Gateway. When approving, check that the device fingerprint is %@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결하면 게이트웨이에 승인 요청이 가요. 승인할 때 이 기기 지문 %@이 맞는지 확인하세요."
+          }
+        }
+      }
+    },
+    "연습도 실제 요청으로 보내져서 에이전트가 답하고 대화 기록에도 남아요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Practice sends a real request: the agent answers and it appears in your conversation."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연습도 실제 요청으로 보내져서 에이전트가 답하고 대화 기록에도 남아요."
+          }
+        }
+      }
+    },
+    "예: gateway-host.tailnet.ts.net": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. gateway-host.tailnet.ts.net"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: gateway-host.tailnet.ts.net"
+          }
+        }
+      }
+    },
+    "예: 한글로 쓴 이름": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name written in Hangul"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: 한글로 쓴 이름"
+          }
+        }
+      }
+    },
+    "예: 한글로 쓴 이름 (선택)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name written in Hangul (optional)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: 한글로 쓴 이름 (선택)"
+          }
+        }
+      }
+    },
+    "완료": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료"
+          }
+        }
+      }
+    },
+    "요청을 받으면 '띵', 기다리는 동안 '톡톡', 이어 말할 수 있을 때 짧은 소리가 나요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A chime when a request is heard, soft ticks while waiting, and a short tone when you can continue"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청을 받으면 '띵', 기다리는 동안 '톡톡', 이어 말할 수 있을 때 짧은 소리가 나요"
+          }
+        }
+      }
+    },
+    "요청이 거절됐거나 권한이 부족해요. 다시 요청해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request was rejected or lacks permissions. Please request again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청이 거절됐거나 권한이 부족해요. 다시 요청해 주세요."
+          }
+        }
+      }
+    },
+    "위 버튼으로 승인을 다시 요청해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request approval again with the button above"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위 버튼으로 승인을 다시 요청해 주세요"
+          }
+        }
+      }
+    },
+    "음성 인식이 멈춰 있어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition is stopped"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 인식이 멈춰 있어요"
+          }
+        }
+      }
+    },
+    "응답 없음": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not responding"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응답 없음"
+          }
+        }
+      }
+    },
+    "응답함": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answered"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응답함"
+          }
+        }
+      }
+    },
+    "이 iPhone": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This iPhone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone"
+          }
+        }
+      }
+    },
+    "이 iPhone의 Tailscale을 켜 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on Tailscale on this iPhone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone의 Tailscale을 켜 주세요"
+          }
+        }
+      }
+    },
+    "이 iPhone의 Tailscale이 켜져 있는지, 컴퓨터가 깨어 있는지 확인해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check that Tailscale is on for this iPhone and that the computer is awake."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone의 Tailscale이 켜져 있는지, 컴퓨터가 깨어 있는지 확인해 주세요."
+          }
+        }
+      }
+    },
+    "이 기기 승인을 기다리는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for this device to be approved"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기 승인을 기다리는 중"
+          }
+        }
+      }
+    },
+    "이 기기 승인이 필요해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device needs approval"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기 승인이 필요해요"
+          }
+        }
+      }
+    },
+    "이 기기 지문": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device fingerprint"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기 지문"
+          }
+        }
+      }
+    },
+    "이 기기에서 카메라를 쓸 수 없어요. 코드를 붙여넣거나 주소를 직접 입력해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The camera isn't available on this device. Paste the code or enter the address."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기에서 카메라를 쓸 수 없어요. 코드를 붙여넣거나 주소를 직접 입력해 주세요."
+          }
+        }
+      }
+    },
+    "이 빌드에는 Meta 등록 정보(Team ID, 콜백 스킴)가 없어요. local.companion.xcconfig를 채운 뒤 다시 빌드해 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This build has no Meta registration details (Team ID, callback scheme). Fill in local.companion.xcconfig and rebuild."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 빌드에는 Meta 등록 정보(Team ID, 콜백 스킴)가 없어요. local.companion.xcconfig를 채운 뒤 다시 빌드해 주세요."
+          }
+        }
+      }
+    },
+    "이 앱은 Tailscale 상태를 직접 확인하거나 켤 수 없어요. 연결이 끊기면 원인과 해결 방법을 보여 드려요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app can't check or turn on Tailscale. If the connection drops, it shows the cause and how to fix it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 앱은 Tailscale 상태를 직접 확인하거나 켤 수 없어요. 연결이 끊기면 원인과 해결 방법을 보여 드려요."
+          }
+        }
+      }
+    },
+    "이 앱이 Meta 안경을 쓸 수 있게 해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lets this app use your Meta glasses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 앱이 Meta 안경을 쓸 수 있게 해요"
+          }
+        }
+      }
+    },
+    "이 주소는 쓸 수 없어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This address can't be used"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 주소는 쓸 수 없어요"
+          }
+        }
+      }
+    },
+    "이 화면은 승인되면 자동으로 넘어가요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This screen moves on by itself once approved"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 화면은 승인되면 자동으로 넘어가요"
+          }
+        }
+      }
+    },
+    "이렇게 해 보세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try this"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이렇게 해 보세요"
+          }
+        }
+      }
+    },
+    "이름 없이 들린 말": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Heard without the name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름 없이 들린 말"
+          }
+        }
+      }
+    },
+    "이어 말하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow-up without the name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이어 말하기"
+          }
+        }
+      }
+    },
+    "일반 (기본)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard (default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일반 (기본)"
+          }
+        }
+      }
+    },
+    "잠시 후 다시 불러 보세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Call again in a moment"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잠시 후 다시 불러 보세요"
+          }
+        }
+      }
+    },
+    "저장": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장"
+          }
+        }
+      }
+    },
+    "저장된 설정으로 안경과 에이전트를 다시 연결하고 듣기 시작해요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnects the glasses and the agent with the saved settings and starts listening."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 설정으로 안경과 에이전트를 다시 연결하고 듣기 시작해요."
+          }
+        }
+      }
+    },
+    "저장된 승인을 지우고 게이트웨이 연결 단계로 돌아가요. 게이트웨이 컴퓨터에서 다시 승인할 때까지 안경 호출이 멈춰요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removes the stored approval and returns to the gateway step. Calls from the glasses stop until you approve again on the gateway computer."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 승인을 지우고 게이트웨이 연결 단계로 돌아가요. 게이트웨이 컴퓨터에서 다시 승인할 때까지 안경 호출이 멈춰요."
+          }
+        }
+      }
+    },
+    "저장된 승인이 더 이상 유효하지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The stored approval is no longer valid"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 승인이 더 이상 유효하지 않아요"
+          }
+        }
+      }
+    },
+    "전달 → 첫 답 (중앙값)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward → first text (median)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전달 → 첫 답 (중앙값)"
+          }
+        }
+      }
+    },
+    "전달한 요청": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requests forwarded"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전달한 요청"
+          }
+        }
+      }
+    },
+    "전체 기기 지문": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full device fingerprint"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 기기 지문"
+          }
+        }
+      }
+    },
+    "접혀 있어요 · 펼쳐 쓰면 다시 들어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folded · resumes when unfolded and worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "접혀 있어요 · 펼쳐 쓰면 다시 들어요"
+          }
+        }
+      }
+    },
+    "주소 (예: gateway-host.tailnet.ts.net)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Address (e.g. gateway-host.tailnet.ts.net)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주소 (예: gateway-host.tailnet.ts.net)"
+          }
+        }
+      }
+    },
+    "주소 다시 입력": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the address again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주소 다시 입력"
+          }
+        }
+      }
+    },
+    "주소 형식이 올바르지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The address isn't valid"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주소 형식이 올바르지 않아요"
+          }
+        }
+      }
+    },
+    "주소를 직접 입력해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the address"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주소를 직접 입력해 주세요"
+          }
+        }
+      }
+    },
+    "지금 다시 확인": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 다시 확인"
+          }
+        }
+      }
+    },
+    "지금 듣고 있지 않아요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not listening right now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 듣고 있지 않아요"
+          }
+        }
+      }
+    },
+    "직접 입력": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter manually"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "직접 입력"
+          }
+        }
+      }
+    },
+    "진단 로그": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics log"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단 로그"
+          }
+        }
+      }
+    },
+    "진단 로그 (개발자용)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics log (developer)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단 로그 (개발자용)"
+          }
+        }
+      }
+    },
+    "짧게 말로 답하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Short spoken answers"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "짧게 말로 답하기"
+          }
+        }
+      }
+    },
+    "찍은 사진": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Captured photo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "찍은 사진"
+          }
+        }
+      }
+    },
+    "착용 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "착용 중"
+          }
+        }
+      }
+    },
+    "착용 중 듣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening while worn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "착용 중 듣기"
+          }
+        }
+      }
+    },
+    "처음 설정": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처음 설정"
+          }
+        }
+      }
+    },
+    "처음부터 다시": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start over"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처음부터 다시"
+          }
+        }
+      }
+    },
+    "첫 답 → 첫 소리 (중앙값)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First text → first audio (median)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "첫 답 → 첫 소리 (중앙값)"
+          }
+        }
+      }
+    },
+    "충전 안 함": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not charging"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충전 안 함"
+          }
+        }
+      }
+    },
+    "충전 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charging"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충전 중"
+          }
+        }
+      }
+    },
+    "충전 필요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs charging"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충전 필요"
+          }
+        }
+      }
+    },
+    "충전기에 연결해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect them to a charger"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충전기에 연결해 주세요"
+          }
+        }
+      }
+    },
+    "충전하면 다시 연결해요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnects once they are charging"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충전하면 다시 연결해요"
+          }
+        }
+      }
+    },
+    "취소": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
+    "카메라 권한이 없어요. 설정에서 허용하거나 코드를 붙여넣어 주세요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No camera access. Allow it in Settings or paste the code."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카메라 권한이 없어요. 설정에서 허용하거나 코드를 붙여넣어 주세요."
+          }
+        }
+      }
+    },
+    "카메라 미리보기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera preview"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카메라 미리보기"
+          }
+        }
+      }
+    },
+    "컴퓨터에서 OpenClaw 게이트웨이를 다시 시작해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart the OpenClaw gateway on the computer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터에서 OpenClaw 게이트웨이를 다시 시작해 주세요"
+          }
+        }
+      }
+    },
+    "컴퓨터에서 이 기기를 승인해 주세요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve this device on the computer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터에서 이 기기를 승인해 주세요"
+          }
+        }
+      }
+    },
+    "켜 두었어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It's on"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜 두었어요"
+          }
+        }
+      }
+    },
+    "코드 붙여넣기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste code"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드 붙여넣기"
+          }
+        }
+      }
+    },
+    "코드는 이번 연결에만 쓰고 저장하지 않아요. 승인된 뒤에는 이 기기 전용 인증으로 자동 연결돼요.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The code is used for this connection only and never stored. After approval, this device reconnects with its own credential."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드는 이번 연결에만 쓰고 저장하지 않아요. 승인된 뒤에는 이 기기 전용 인증으로 자동 연결돼요."
+          }
+        }
+      }
+    },
+    "텔레그램 채팅 ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram chat ID"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "텔레그램 채팅 ID"
+          }
+        }
+      }
+    },
+    "텔레그램에 기록": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record in Telegram"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "텔레그램에 기록"
+          }
+        }
+      }
+    },
+    "품질 지표 (오늘)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality (today)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "품질 지표 (오늘)"
+          }
+        }
+      }
+    },
+    "프리미엄": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Premium"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프리미엄"
+          }
+        }
+      }
+    },
+    "한 번만 하면 돼요 · %lld/%lld단계": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One time only · step %lld of %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 번만 하면 돼요 · %lld/%lld단계"
+          }
+        }
+      }
+    },
+    "한국어로 부르는 이름": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Korean name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한국어로 부르는 이름"
+          }
+        }
+      }
+    },
+    "허용 필요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs permission"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허용 필요"
+          }
+        }
+      }
+    },
+    "호출 대기 (이름 · 두 번 탭)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Armed (name · double tap)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 대기 (이름 · 두 번 탭)"
+          }
+        }
+      }
+    },
+    "호출 듣는 방식": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake listening"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 듣는 방식"
+          }
+        }
+      }
+    },
+    "호출 연습하기": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Practice a call"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 연습하기"
+          }
+        }
+      }
+    },
+    "호출 이름": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake names"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 이름"
+          }
+        }
+      }
+    },
+    "호출 이름으로 시작하지 않아 무시했어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignored: it didn't start with a wake name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 이름으로 시작하지 않아 무시했어요"
+          }
+        }
+      }
+    },
+    "호출됐어요 — 에이전트에게 보냈어요": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Woke the agent — request sent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출됐어요 — 에이전트에게 보냈어요"
+          }
+        }
+      }
+    },
+    "확인 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 중"
+          }
+        }
+      }
+    },
+    "확인하는 중": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인하는 중"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
