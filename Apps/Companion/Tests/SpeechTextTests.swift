@@ -60,8 +60,8 @@ final class EchoWindowQueueTests: XCTestCase {
         // Still one queued: the window is not shortened.
         XCTAssertTrue(window.suppresses(at: t0.addingTimeInterval(9)))
         window.finishedSpeaking(at: t0.addingTimeInterval(10))
-        XCTAssertTrue(window.suppresses(at: t0.addingTimeInterval(13.9)))
-        XCTAssertFalse(window.suppresses(at: t0.addingTimeInterval(14.1)))
+        XCTAssertTrue(window.suppresses(at: t0.addingTimeInterval(10 + EchoWindow.echoFilter - 0.1)))
+        XCTAssertFalse(window.suppresses(at: t0.addingTimeInterval(10 + EchoWindow.echoFilter + 0.1)))
     }
 }
 
