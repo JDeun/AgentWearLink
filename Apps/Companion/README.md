@@ -78,6 +78,8 @@ xcodebuild -project AgentWearLinkCompanion.xcodeproj -scheme AgentWearLinkCompan
   -destination 'platform=iOS Simulator,name=iPhone 17' test
 ```
 
+`test` runs the unit tests (`Tests/`) and the screen UI tests (`UITests/`). The UI tests launch the Debug app with `-AWLPreview <fixture>` screen fixtures, so they need no glasses, Tailnet or gateway. Add `-only-testing:AgentWearLinkCompanionTests` to run the unit tests alone. CI runs both on an iPhone simulator.
+
 For a physical device, create an uncommitted `local.companion.xcconfig` next to `Companion.xcconfig`. It holds your team ID, callback URL scheme and bundle identifier, and the `local.*` rule in `.gitignore` keeps it out of git. `Companion.xcconfig` includes it, so it applies to Xcode and command-line builds alike:
 
 ```bash

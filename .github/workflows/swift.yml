@@ -26,6 +26,7 @@ jobs:
       meta_host: ${{ steps.filter.outputs.meta_host }}
       meta_ui: ${{ steps.filter.outputs.meta_ui }}
       ios_reference: ${{ steps.filter.outputs.ios_reference }}
+      companion: ${{ steps.filter.outputs.companion }}
       openclaw_contract: ${{ steps.filter.outputs.openclaw_contract }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -87,6 +88,21 @@ jobs:
               - 'Package.swift'
               - 'Package.resolved'
               - 'scripts/install-xcodegen.sh'
+              - '.github/workflows/swift.yml'
+            # The companion app compiles the root products and the concrete
+            # Meta DAT integration, so their sources gate it too.
+            companion:
+              - 'Apps/Companion/**'
+              - 'Sources/AgentWearLinkCore/**'
+              - 'Sources/AgentWearLinkOpenClaw/**'
+              - 'Sources/AgentWearLinkAppleOutput/**'
+              - 'Adapters/MetaDAT/Sources/**'
+              - 'Adapters/MetaDAT/Package.swift'
+              - 'Package.swift'
+              - 'Package.resolved'
+              - 'scripts/install-xcodegen.sh'
+              - 'scripts/select_ios_simulator.py'
+              - 'scripts/boot_ios_simulator.py'
               - '.github/workflows/swift.yml'
             openclaw_contract:
               - 'Sources/AgentWearLinkOpenClaw/**'
@@ -356,22 +372,83 @@ jobs:
           echo "Behavioral MockDeviceKit pairing remains app-hosted XCUITest evidence (#122); the package test that requires linked-app Keychain context is intentionally skipped."
           echo "No package-hosted mock test is treated as physical-device evidence."
 
+  companion-app:
+    needs: changes
+    if: needs.changes.outputs.companion == 'true'
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Show Xcode, Swift, and simulator versions
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun simctl list runtimes
+      - name: Select available iPhone simulator
+        run: |
+          SIMULATOR_UDID="$(xcrun simctl list devices available -j | python3 scripts/select_ios_simulator.py)"
+          echo "Using iPhone simulator: ${SIMULATOR_UDID}"
+          echo "AWL_IOS_SIMULATOR_UDID=${SIMULATOR_UDID}" >> "$GITHUB_ENV"
+      - name: Install pinned XcodeGen
+        run: |
+          bash scripts/install-xcodegen.sh
+          echo "$PWD/.build/tools" >> "$GITHUB_PATH"
+      - name: Generate companion app project
+        working-directory: Apps/Companion
+        run: |
+          xcodegen --version
+          xcodegen generate --spec project.yml
+      # Public CI is unprovisioned: no local.companion.xcconfig, no Meta
+      # registration, no Tailnet and no Gateway credentials. The Release
+      # build proves DEBUG-only screen fixtures are not required to compile.
+      - name: Compile companion app (Release, iOS Simulator)
+        timeout-minutes: 12
+        working-directory: Apps/Companion
+        run: |
+          xcodebuild -project AgentWearLinkCompanion.xcodeproj -scheme AgentWearLinkCompanion -configuration Release -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
+      - name: Build companion unit and UI test bundles
+        timeout-minutes: 12
+        working-directory: Apps/Companion
+        run: |
+          xcodebuild -project AgentWearLinkCompanion.xcodeproj -scheme AgentWearLinkCompanion -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing build-for-testing
+      - name: Boot selected iPhone Simulator
+        # Same bounded helper as the Meta DAT job (cold CoreSimulator boots).
+        timeout-minutes: 5
+        run: python3 scripts/boot_ios_simulator.py "${AWL_IOS_SIMULATOR_UDID}"
+      - name: Run companion unit tests
+        timeout-minutes: 5
+        working-directory: Apps/Companion
+        run: |
+          xcodebuild -project AgentWearLinkCompanion.xcodeproj -scheme AgentWearLinkCompanion -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing -only-testing:AgentWearLinkCompanionTests test-without-building
+      # Each test relaunches the DEBUG app with an -AWLPreview fixture
+      # (frozen signals, no Meta SDK session, no Gateway). This is UI
+      # evidence only, never physical-device evidence. About 7 minutes on
+      # an M-series laptop; bound generously for hosted runners.
+      - name: Run companion screen UI tests
+        timeout-minutes: 15
+        working-directory: Apps/Companion
+        run: |
+          xcodebuild -project AgentWearLinkCompanion.xcodeproj -scheme AgentWearLinkCompanion -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing -only-testing:AgentWearLinkCompanionUITests test-without-building
+
   test:
     needs:
       - changes
       - core-test
       - meta-dat-integration
+      - companion-app
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require Core and applicable Meta gates
+      - name: Require Core and applicable Meta and companion gates
         shell: bash
         env:
           CORE_RESULT: ${{ needs.core-test.result }}
           META_RESULT: ${{ needs.meta-dat-integration.result }}
           META_CHANGED: ${{ needs.changes.outputs.meta }}
           IOS_REFERENCE_CHANGED: ${{ needs.changes.outputs.ios_reference }}
+          COMPANION_RESULT: ${{ needs.companion-app.result }}
+          COMPANION_CHANGED: ${{ needs.changes.outputs.companion }}
         run: |
           set -euo pipefail
 
@@ -392,6 +469,16 @@ jobs:
 
           if [[ "$meta_required" != "true" && "$META_RESULT" != "success" && "$META_RESULT" != "skipped" ]]; then
             echo "Unexpected Meta DAT gate result: $META_RESULT" >&2
+            exit 1
+          fi
+
+          if [[ "$COMPANION_CHANGED" == "true" && "$COMPANION_RESULT" != "success" ]]; then
+            echo "Companion app gate is required but did not succeed: $COMPANION_RESULT" >&2
+            exit 1
+          fi
+
+          if [[ "$COMPANION_CHANGED" != "true" && "$COMPANION_RESULT" != "success" && "$COMPANION_RESULT" != "skipped" ]]; then
+            echo "Unexpected companion app gate result: $COMPANION_RESULT" >&2
             exit 1
           fi
 

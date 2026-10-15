@@ -52,6 +52,7 @@ targets:
     scheme:
       testTargets:
         - AgentWearLinkCompanionTests
+        - AgentWearLinkCompanionUITests
   AgentWearLinkCompanionTests:
     type: bundle.unit-test
     platform: iOS
@@ -69,3 +70,18 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.companion.tests
         GENERATE_INFOPLIST_FILE: YES
+  AgentWearLinkCompanionUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    # Launches the DEBUG app with `-AWLPreview <fixture>` screen fixtures
+    # (App/Runtime/CompanionPreviewFixture.swift): frozen signals, no Meta
+    # SDK session, no Gateway and no writes to the real settings.
+    sources:
+      - path: UITests
+    dependencies:
+      - target: AgentWearLinkCompanion
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.agentwearlink.companion.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: AgentWearLinkCompanion
