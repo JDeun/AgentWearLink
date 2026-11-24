@@ -109,7 +109,8 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     var voiceIdentifier = ""
     /// EXPERIMENT glasses-mic wake: the route is Bluetooth hands-free.
     var allowHandsFree = false
-    /// "게이트웨이 목소리": speak with the Gateway's local TTS when connected.
+    /// "게이트웨이 목소리": speak with the Gateway computer's local TTS
+    /// (streamed when configured, else `tts.speak` when connected).
     var useGatewayVoice = false
     var gatewayVoice: GatewayVoice?
     var gate: WakeGateBox?
@@ -470,7 +471,9 @@ final class SilentKeepAlive {
 
     /// Plays one decoded gateway clip; `done` runs when it finished playing.
     func playSpeech(_ buffer: AVAudioPCMBuffer, done: @escaping @Sendable () -> Void) -> Bool {
-        guard isRunning, let speechPlayer else { return false }
+        // A buffer converted for an engine that has since restarted with
+        // another format would raise in scheduleBuffer.
+        guard isRunning, let speechPlayer, buffer.format == cueFormat else { return false }
         speechPlayer.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in done() }
         if !speechPlayer.isPlaying { speechPlayer.play() }
         return true

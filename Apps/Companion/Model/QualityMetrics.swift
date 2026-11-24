@@ -36,6 +36,8 @@ public struct QualityCounters: Equatable, Sendable {
     public var photoTurns = 0
     /// Visual requests that went out without one (camera failed, heat, …).
     public var photoFailures = 0
+    /// Reply sentences the streaming voice handed to the fallback chain.
+    public var streamFallbacks = 0
     /// Minutes worn while listening was wanted.
     public var minutesWorn = 0
     /// Of those, minutes listening was actually up.
@@ -57,6 +59,8 @@ public struct TurnStages: Equatable, Sendable {
     public enum Voice: String, Sendable {
         case system
         case gateway
+        /// The Gateway computer's TTS, streamed over the tailnet.
+        case stream
     }
 
     public var finalToForward: TimeInterval?
@@ -161,6 +165,10 @@ public struct QualityMetrics: Sendable {
     /// Today's capture latencies (camera attach → JPEG ready), seconds.
     public private(set) var todayPhotoCaptures: [TimeInterval] = []
     public private(set) var lastPhotoCapture: TimeInterval?
+    /// Today's streaming-voice first audio per sentence (request or turn →
+    /// first buffer scheduled), seconds.
+    public private(set) var todayStreamFirstAudio: [TimeInterval] = []
+    public private(set) var lastStreamFirstAudio: TimeInterval?
     private var day: DateComponents
     private let calendar: Calendar
     static let maximumTurns = 500
@@ -242,6 +250,24 @@ public struct QualityMetrics: Sendable {
         update(at: date) { $0.photoFailures += 1 }
     }
 
+    /// A streamed sentence started playing `seconds` after it was needed.
+    public mutating func streamFirstAudio(seconds: TimeInterval, at date: Date = Date()) {
+        roll(at: date)
+        lastStreamFirstAudio = seconds
+        todayStreamFirstAudio.append(seconds)
+        if todayStreamFirstAudio.count > Self.maximumTurns {
+            todayStreamFirstAudio.removeFirst(todayStreamFirstAudio.count - Self.maximumTurns)
+        }
+    }
+
+    public mutating func streamFallback(at date: Date = Date()) {
+        update(at: date) { $0.streamFallbacks += 1 }
+    }
+
+    public var medianStreamFirstAudioToday: TimeInterval? {
+        Self.median(todayStreamFirstAudio)
+    }
+
     public var medianPhotoCaptureToday: TimeInterval? {
         Self.median(todayPhotoCaptures)
     }
@@ -271,6 +297,7 @@ public struct QualityMetrics: Sendable {
         today = QualityCounters()
         todayTurns = []
         todayPhotoCaptures = []
+        todayStreamFirstAudio = []
     }
 }
 

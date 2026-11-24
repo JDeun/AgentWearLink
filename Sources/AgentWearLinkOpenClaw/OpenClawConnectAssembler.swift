@@ -121,7 +121,10 @@ public struct OpenClawConnectAssembler: Sendable {
         let scopes: [String]
         if usedStoredCredential,
            let stored {
-            scopes = stored.scopes
+            scopes = OpenClawConnectScopePolicy.storedGrantScopes(
+                stored: stored.scopes,
+                requested: requestedScopes
+            )
         } else {
             scopes = requestedScopes
         }
@@ -166,7 +169,8 @@ public struct OpenClawConnectAssembler: Sendable {
         version: String,
         challenge: OpenClawConnectChallenge,
         clientIdentity: OpenClawGatewayClientIdentity = .backend,
-        locale: String = "en-US"
+        locale: String = "en-US",
+        requestedScopes: [String]? = nil
     ) async throws -> OpenClawAssembledConnect? {
         let identity = try await identityManager.loadOrCreate()
         let deviceID = try identity.deviceID
@@ -176,11 +180,14 @@ public struct OpenClawConnectAssembler: Sendable {
         ) else {
             return nil
         }
+        let scopes = requestedScopes.map {
+            OpenClawConnectScopePolicy.storedGrantScopes(stored: stored.scopes, requested: $0)
+        } ?? stored.scopes
 
         let proof = try proofBuilder.makeProof(
             identity: identity,
             client: clientIdentity,
-            scopes: stored.scopes,
+            scopes: scopes,
             token: stored.token,
             challenge: challenge
         )
@@ -190,7 +197,7 @@ public struct OpenClawConnectAssembler: Sendable {
             params: OpenClawConnectParams(
                 version: version,
                 clientIdentity: clientIdentity,
-                scopes: stored.scopes,
+                scopes: scopes,
                 auth: auth,
                 locale: locale,
                 device: proof
@@ -336,5 +343,28 @@ public struct OpenClawConnectAssembler: Sendable {
         requestedRole: String
     ) -> String {
         "bootstrap-primary-v1|\(requestedRole)"
+    }
+}
+
+/// Which scopes a reconnect with a stored device grant asks for.
+///
+/// A stored grant's scopes are normally reused as approved (the Gateway
+/// accepts any subset of the token's scopes). `operator.admin` is the one
+/// exception: it is sent only while the caller asks for it, so switching an
+/// admin opt-in off narrows the live connection on the next connect without
+/// re-pairing. The stored grant itself is left unchanged.
+public enum OpenClawConnectScopePolicy {
+    public static let adminScope = "operator.admin"
+
+    public static func storedGrantScopes(stored: [String], requested: [String]) -> [String] {
+        guard stored.contains(adminScope), !requested.contains(adminScope) else {
+            return stored
+        }
+        var scopes = stored.filter { $0 != adminScope }
+        // Admin implies every operator scope; keep at least what was asked.
+        for scope in requested where !scopes.contains(scope) {
+            scopes.append(scope)
+        }
+        return scopes
     }
 }

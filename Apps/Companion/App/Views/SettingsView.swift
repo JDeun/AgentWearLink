@@ -135,6 +135,14 @@ struct SettingsView: View {
             detail: "에이전트가 있는 컴퓨터의 로컬 음성 모델로 읽어요. 느리거나 안 되면 아래 목소리로 바로 바꿔 읽어요",
             warning: "아래 iPhone 목소리로 읽어요"
         )
+        if runtime.settings.gatewayVoice {
+            LabeledContent {
+                Text(runtime.voiceStreamConfigured ? "설정됨" : "설정 안 됨")
+            } label: {
+                Text("스트리밍 음성")
+            }
+            .font(.footnote)
+        }
         Picker(selection: binding(\.voiceIdentifier)) {
             Text("기본 목소리").tag("")
             ForEach(options) { option in
@@ -328,6 +336,7 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.navigationLink)
+            adminScopeToggle
             DisclosureGroup(isExpanded: $showFullFingerprint) {
                 Text(verbatim: DeviceFingerprint.grouped(runtime.deviceID))
                     .font(.caption.monospaced())
@@ -341,6 +350,29 @@ struct SettingsView: View {
         } header: {
             Text("고급")
         }
+    }
+
+    /// Default off. Off again narrows the next connection to read+write.
+    private var adminScopeToggle: some View {
+        Toggle(isOn: binding(\.adminScope)) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("관리자 권한(대화 공유)").font(.body.weight(.semibold))
+                Text("켜면 안경 대화도 텔레그램과 같은 도구를 쓰고 같은 대화 흐름을 이어가요. 켠 뒤 '승인만 다시 받기'를 눌러 게이트웨이 컴퓨터에서 다시 승인해야 적용돼요")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondary)
+                if runtime.settings.adminScope {
+                    Label {
+                        Text("이 iPhone에 게이트웨이 설정을 바꾸고 명령을 실행할 수 있는 승인이 저장돼요. iPhone을 잃어버리면 게이트웨이 컴퓨터에서 이 기기를 바로 제거하세요. 끄면 다음 연결부터 읽기·쓰기 권한으로만 접속해요")
+                    } icon: {
+                        Image(systemName: "exclamationmark.shield.fill")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(Theme.problem)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .tint(Theme.accent)
     }
 
     private var diagnosticsSection: some View {
@@ -590,6 +622,8 @@ private struct QualitySection: View {
             }
             latency("전달 → 첫 답 (중앙값)", metrics.medianToday(\.forwardToFirstText))
             latency("첫 답 → 첫 소리 (중앙값)", metrics.medianToday(\.firstTextToFirstAudio))
+            latency("스트리밍 첫 소리 (중앙값)", metrics.medianStreamFirstAudioToday)
+            row("스트리밍 → 대체 음성", "\(today.streamFallbacks)")
             latency("사진 찍는 시간 (중앙값)", metrics.medianPhotoCaptureToday)
         } header: {
             Text("품질 지표 (오늘)")

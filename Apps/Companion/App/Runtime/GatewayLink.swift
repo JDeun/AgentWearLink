@@ -34,7 +34,6 @@ private struct EmptyParams: Encodable, Sendable {}
 struct GatewayLink: Sendable {
     static let keychainService = "dev.agentwearlink.companion.openclaw"
     static let appVersion = "0.1.0-companion"
-    static let scopes = ["operator.read", "operator.write"]
 
     private let identityStore = KeychainOpenClawDeviceIdentityStore(service: keychainService)
     private let credentialStore = KeychainOpenClawDeviceCredentialStore(service: keychainService)
@@ -83,6 +82,7 @@ struct GatewayLink: Sendable {
     func makeSession(
         endpoint: OpenClawEndpoint,
         credentials: OpenClawConnectCredentials,
+        adminScope: Bool,
         diagnostics: AWLDiagnosticRecorder?
     ) throws -> GatewaySession {
         let socket = try URLSessionOpenClawWebSocket(endpoint: endpoint)
@@ -101,7 +101,9 @@ struct GatewayLink: Sendable {
             state: state,
             socket: socket,
             appVersion: Self.appVersion,
-            scopes: Self.scopes,
+            // operator.admin only while "관리자 권한(대화 공유)" is on; a stored
+            // admin grant is narrowed to read+write when it is off.
+            scopes: GatewayScopes.requested(adminEnabled: adminScope),
             credentials: credentials,
             clientIdentity: .backend,
             locale: Locale.preferredLanguages.first ?? "ko-KR",

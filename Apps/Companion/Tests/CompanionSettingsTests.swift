@@ -20,6 +20,22 @@ final class CompanionSettingsTests: XCTestCase {
         XCTAssertTrue(settings.voiceStyle)
         XCTAssertFalse(settings.telegramEnabled)
         XCTAssertEqual(settings.replyDucking, .off)
+        XCTAssertFalse(settings.adminScope)
+    }
+
+    func testAdminScopeIsOptInAndRoundTrips() {
+        let store = CompanionSettingsStore(defaults: defaults)
+        XCTAssertEqual(GatewayScopes.requested(adminEnabled: store.load().adminScope), ["operator.read", "operator.write"])
+        var settings = store.load()
+        settings.adminScope = true
+        store.save(settings)
+        XCTAssertTrue(store.load().adminScope)
+        XCTAssertEqual(
+            GatewayScopes.requested(adminEnabled: store.load().adminScope),
+            ["operator.read", "operator.write", "operator.admin"]
+        )
+        store.reset()
+        XCTAssertFalse(store.load().adminScope)
     }
 
     func testRoundTripAndReset() {
@@ -36,6 +52,7 @@ final class CompanionSettingsTests: XCTestCase {
         settings.telegramChatID = "-100123"
         settings.voiceStyle = false
         settings.replyDucking = .separateSynthesizerSession
+        settings.adminScope = true
         settings.lastReplyAt = Date(timeIntervalSince1970: 1_000)
         settings.lastReplyLatency = 3.5
         store.save(settings)
