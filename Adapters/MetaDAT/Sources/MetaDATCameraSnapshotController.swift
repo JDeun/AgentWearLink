@@ -179,7 +179,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
             } catch {
                 if let readyAt = ready.instant {
                     lock.withLock { lastTimings?.readyMilliseconds = Self.milliseconds(readyAt - photoBegan) }
-                } else if !(error is CancellationError) {
+                } else if !(error is CancellationError), !(error is MetaDATCameraFailure) {
                     // BirdSpotter: Photo.start() on a cold camera can sit at
                     // `starting` forever. Say which stage it never left.
                     throw AWLError.device("Meta DAT standalone photo never reached started (cold camera?)")
@@ -204,15 +204,23 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
             let stream = camera.stream
             firstFrameReadiness.reset()
             photoResultListener.cancel()
+            let failureLatch = MetaDATCameraFailureLatch()
+            // Arm once before start, not just at shutter time. Preserve typed
+            // refusals even if they arrive between first frame and shutter.
+            let errorToken = stream.errorPublisher.listen { error in
+                failureLatch.record(MetaDATCameraFailure(error))
+            }
+            defer { Task { await errorToken.cancel() } }
 
             do {
                 // waitForFirstFrame installs the first-frame listener and cancel
                 // gate before stream.start() can synchronously deliver a frame.
-                try await waitForFirstFrame(stream, token: token)
+                try await waitForFirstFrame(stream, token: token, failure: failureLatch)
                 lap(\.readyMilliseconds)
                 try ensureCurrent(token)
 
-                raw = try await capturePhoto(stream, token: token)
+                try failureLatch.check()
+                raw = try await capturePhoto(stream, token: token, failure: failureLatch)
                 lap(\.photoMilliseconds)
                 try ensureCurrent(token)
 
@@ -221,6 +229,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
                     maximumBytes: MetaDATPhotoNormalizer.defaultMaximumBytes
                 )
 
+                try failureLatch.check()
                 // Stop at once: every streamed second keeps the LED on, holds
                 // the sensor and (dat-ios #256) may keep music paused.
                 stream.stop()
@@ -291,7 +300,8 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
 
     private func waitForFirstFrame(
         _ stream: MWDATCamera.Stream,
-        token: UInt64
+        token: UInt64,
+        failure: MetaDATCameraFailureLatch
     ) async throws {
         let readiness = firstFrameReadiness
         let gate = waitGate
@@ -306,6 +316,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
                         continuation.finish()
                     }
 
+                    failure.observe { continuation.finish(throwing: $0) }
                     let waitToken = gate.install {
                         readiness.reset(ifCurrent: frameLease)
                         continuation.finish(throwing: CancellationError())
@@ -332,7 +343,9 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
                 throw CancellationError()
             }
             try ensureCurrent(token)
+            try failure.check()
         } catch MetaDATPhotoRaceError.timeout {
+            try failure.check()
             throw AWLError.device(
                 "Meta DAT camera did not produce a first frame before timeout"
             )
@@ -341,7 +354,8 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
 
     private func capturePhoto(
         _ stream: MWDATCamera.Stream,
-        token: UInt64
+        token: UInt64,
+        failure: MetaDATCameraFailureLatch
     ) async throws -> Data {
         let listener = photoResultListener
         let gate = waitGate
@@ -355,12 +369,11 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
                     _ = continuation.yield(data)
                     continuation.finish()
                 },
-                onError: {
-                    continuation.finish(throwing: AWLError.device(
-                        "Meta DAT camera stream failed during photo capture"
-                    ))
-                }
+                // Capture-wide listener is authoritative; don't race it with
+                // a generic untyped failure that could mask a power refusal.
+                onError: {}
             )
+            failure.observe { continuation.finish(throwing: $0) }
 
             let waitToken = gate.install {
                 listener.cancel(ifCurrent: photoLease)
@@ -372,6 +385,7 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
             }
         }
 
+        try failure.check()
         guard MetaDATPhotoShutter.trigger(stream) else {
             gate.cancel()
             throw AWLError.device("Meta DAT camera rejected the photo shutter request")
@@ -391,8 +405,10 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
                 throw CancellationError()
             }
             try ensureCurrent(token)
+            try failure.check()
             return data
         } catch MetaDATPhotoRaceError.timeout {
+            try failure.check()
             throw AWLError.device(
                 "Meta DAT photo transfer did not complete before timeout"
             )

@@ -632,8 +632,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             throw AWLError.capabilityUnavailable("Meta DAT media session is not started")
         }
         let generation = generationFence.current
+        var powerRefused = false
         defer {
-            if generationFence.owns(generation), deviceSession === session, session.state == .started {
+            if !powerRefused, generationFence.owns(generation), deviceSession === session, session.state == .started {
                 reviveSpeechAfterPhoto(generation: generation)
             }
         }
@@ -677,6 +678,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         do {
             result = try await cameraSnapshotController.capture(from: session, mode: mode)
         } catch {
+            if let failure = error as? MetaDATCameraFailure, failure.isPowerRefusal {
+                // Do not automatically revive Speech because a camera
+                // refused load. The host applies a camera-local hold.
+                powerRefused = true
+            }
             diagnostics?.record(.init(
                 kind: .metaSnapshotFailed,
                 interactionID: interactionID,

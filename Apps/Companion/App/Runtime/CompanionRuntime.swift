@@ -1012,7 +1012,12 @@ final class CompanionRuntime: ObservableObject {
         if signals.glassesBatteryLow != lowBatteryNotice.active { signals.glassesBatteryLow = lowBatteryNotice.active }
         let thermal = GlassesStateMapper.thermal(devices)
         applyThermalStage(thermal)
-        if let hold = signals.hold, GlassesHoldPolicy.shouldRelease(
+        if let hold = cameraPowerHold, snapshot.glasses == .connected,
+           GlassesHoldPolicy.shouldRelease(hold, thermal: thermal, battery: snapshot.battery, charging: snapshot.charging, now: Date()) {
+            cameraPowerHold = nil
+            record("camera power hold released")
+        }
+        if let hold = signals.hold, snapshot.glasses == .connected, GlassesHoldPolicy.shouldRelease(
             hold, thermal: thermal, battery: snapshot.battery, charging: snapshot.charging, now: Date()
         ) {
             setHold(nil, reason: "thermal \(thermal), battery \(snapshot.battery.map(String.init) ?? "?")\(snapshot.charging ? " charging" : "")")
@@ -1024,6 +1029,23 @@ final class CompanionRuntime: ObservableObject {
 
     private var thermalStage = ThermalStageTracker()
     private var lowBatteryNotice = LowBatteryNotice()
+    private var cameraPowerHold: GlassesHold?
+
+    private var powerRecoveryBlocked: Bool {
+        CameraPowerPolicy.blocksReconnect(stage: thermalStage.stage, sessionHold: signals.hold,
+                                         battery: signals.glassesBattery, charging: signals.glassesCharging)
+    }
+
+    private var cameraPowerAllowed: Bool {
+        CameraPowerPolicy.allowsCapture(stage: thermalStage.stage, localHold: cameraPowerHold, sessionHold: signals.hold)
+    }
+
+    private func noteCameraPowerFailure(_ error: any Error, adapter: MetaDATDeviceAdapter) {
+        guard device === adapter, let failure = error as? MetaDATCameraFailure,
+              let hold = CameraPowerPolicy.hold(for: failure, battery: signals.glassesBattery, now: Date()) else { return }
+        cameraPowerHold = hold
+        record("camera power hold: \(failure.rawValue)")
+    }
 
     /// Meta's thermal guidance: LIGHT changes nothing, MODERATE reduces
     /// optional work (cues, voice prefetch, stats), SEVERE+ sheds Speech
@@ -1075,7 +1097,7 @@ final class CompanionRuntime: ObservableObject {
     }
 
     /// An explicit request ("다시 시작", intent, "Hey Meta, start …") ends
-    /// a charge or update hold; heat is never overridden.
+    /// an update hold; heat and charge holds require observed recovery.
     private func clearHoldOnUserRequest() {
         guard let hold = signals.hold, GlassesHoldPolicy.clearsOnUserRequest(hold) else { return }
         setHold(nil, reason: "requested")
@@ -1192,7 +1214,7 @@ final class CompanionRuntime: ObservableObject {
                 if Task.isCancelled { break }
                 // Cooling down, waiting for charge or an update: no session
                 // attempts until the hold is released, then start over.
-                if self.signals.hold != nil {
+                if self.powerRecoveryBlocked {
                     await self.waitWhileHeld()
                     attempt = 0
                     settle = true
@@ -1220,9 +1242,9 @@ final class CompanionRuntime: ObservableObject {
     /// Polls the local device state (no session attempts) until the hold
     /// is released by refreshGlasses or cleared by the user.
     private func waitWhileHeld() async {
-        while !Task.isCancelled, signals.hold != nil {
+        while !Task.isCancelled, powerRecoveryBlocked {
             refreshGlasses()
-            if signals.hold == nil { return }
+            if !powerRecoveryBlocked { return }
             try? await Task.sleep(for: .seconds(5))
         }
     }
@@ -1237,6 +1259,7 @@ final class CompanionRuntime: ObservableObject {
 
     private func connectVoice() async -> ConnectOutcome {
         guard runtime == nil, !connectionFence.isStarting, !disconnectInProgress,
+              !powerRecoveryBlocked, callGate.allowsReconnect,
               wearables.isRegistered, let endpoint = currentEndpoint else { return .retry }
         switch await gatewayLink.grantStatus(for: endpoint) {
         case .missing:
@@ -1250,7 +1273,13 @@ final class CompanionRuntime: ObservableObject {
         case .approved:
             break
         }
-        guard let attempt = connectionFence.begin() else { return .retry }
+        // Grant lookup suspended: re-check power and calls before audio
+        // activation or any new session. Experimental HFP must not take
+        // over ongoing music during automatic recovery.
+        guard !powerRecoveryBlocked, callGate.allowsReconnect, wantsListening,
+              runtime == nil, !Task.isCancelled,
+              settings.wakeSource != .glassesMicOnPhone || !AVAudioSession.sharedInstance().isOtherAudioPlaying,
+              let attempt = connectionFence.begin() else { return .retry }
         // The only safe moment to (re)activate the audio session (#292).
         keepAlive.prepareForDATSession()
         voiceConnecting = true
@@ -1502,8 +1531,11 @@ final class CompanionRuntime: ObservableObject {
                 self.updateDATSpeechReadiness(for: device)
             }
         }
-        await device.setSessionErrorObserver { [weak self] kind in
-            Task { @MainActor in self?.handleSessionError(kind) }
+        await device.setSessionErrorObserver { [weak self, weak device] kind in
+            Task { @MainActor in
+                guard let self, let device, self.device === device else { return }
+                self.handleSessionError(kind)
+            }
         }
         await device.setSessionPauseObserver { [weak self] paused in
             Task { @MainActor in self?.deviceSessionPauseChanged(paused) }
@@ -1651,8 +1683,8 @@ final class CompanionRuntime: ObservableObject {
     /// (the DAT session is live); only reads whether other audio plays.
     private func capturePhotoForTurn(_ id: InteractionID) async -> PhotoCaptureOutcome {
         guard let device else { return .unavailable(reason: "no glasses session") }
-        guard ThermalWorkPolicy.allowsPhoto(stage: thermalStage.stage) else {
-            return .unavailable(reason: "heat")
+        guard cameraPowerAllowed else {
+            return .unavailable(reason: "camera power hold")
         }
         let method = settings.photoCaptureMethod
         let watch = PhotoMusicWatch(playingBefore: AVAudioSession.sharedInstance().isOtherAudioPlaying)
@@ -1668,6 +1700,7 @@ final class CompanionRuntime: ObservableObject {
             watchMusicAfterPhoto(watch)
             return .photo(result.image)
         } catch {
+            noteCameraPowerFailure(error, adapter: device)
             if let partial = await device.lastSnapshotTimings { record(partial.logLine + " (failed)") }
             let reason = Self.photoFailureReason(error)
             record("photo failed [\(method.rawValue)]: \(reason)")
@@ -1682,6 +1715,7 @@ final class CompanionRuntime: ObservableObject {
     /// Stable, text-free failure categories (AWL's own messages only).
     private static func photoFailureReason(_ error: Error) -> String {
         if error is CancellationError { return "cancelled" }
+        if let failure = error as? MetaDATCameraFailure { return failure.rawValue }
         if let error = error as? AWLError {
             switch error {
             case let .capabilityUnavailable(message), let .device(message): return message
@@ -1761,9 +1795,18 @@ final class CompanionRuntime: ObservableObject {
             photoTest = .failed(method)
             return
         }
+        guard cameraPowerAllowed else {
+            record("photo test blocked by camera power hold")
+            photoTest = .failed(method)
+            return
+        }
         photoTest = .running(method)
         let permission = await wearables.cameraPermission(request: true)
         record("photo test [\(method.rawValue)]: camera permission \(permission)")
+        guard self.device === device, cameraPowerAllowed else {
+            photoTest = .failed(method)
+            return
+        }
         let before = PhotoMusicWatch(playingBefore: AVAudioSession.sharedInstance().isOtherAudioPlaying)
         playCue(.shutter)
         do {
@@ -1775,6 +1818,7 @@ final class CompanionRuntime: ObservableObject {
                 photoTest = .failed(method)
             }
         } catch {
+            noteCameraPowerFailure(error, adapter: device)
             if let partial = await device.lastSnapshotTimings { record("photo test " + partial.logLine + " (failed)") }
             record("photo test [\(method.rawValue)] failed: \(Self.photoFailureReason(error))")
             photoTest = .failed(method)

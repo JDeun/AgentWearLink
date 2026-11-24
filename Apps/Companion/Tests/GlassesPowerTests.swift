@@ -1,11 +1,12 @@
 import XCTest
+import AgentWearLinkMetaDATIntegration
 
 final class GlassesPowerTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 10_000)
 
     // MARK: Holds
 
-    func testCoolingReleasesAtModerateOrAfterTenMinutes() {
+    func testCoolingRequiresObservedRecoveryEvenAfterTenMinutes() {
         let hold = GlassesHold.coolingDown(since: t0)
         func release(_ thermal: SpeechPowerPolicy.Thermal, after seconds: TimeInterval) -> Bool {
             GlassesHoldPolicy.shouldRelease(hold, thermal: thermal, battery: 50, charging: false, now: t0 + seconds)
@@ -19,7 +20,8 @@ final class GlassesPowerTests: XCTestCase {
         XCTAssertFalse(release(.normal, after: 1))
         XCTAssertTrue(release(.normal, after: GlassesHoldPolicy.minimumHold))
         XCTAssertFalse(release(.emergency, after: 599))
-        XCTAssertTrue(release(.emergency, after: 600))
+        XCTAssertFalse(release(.emergency, after: 600))
+        XCTAssertFalse(release(.unknown, after: 86_400))
     }
 
     func testChargingReleasesOnChargeOrARise() {
@@ -33,7 +35,9 @@ final class GlassesPowerTests: XCTestCase {
         XCTAssertTrue(release(6, charging: true))
         XCTAssertFalse(release(6, charging: true, after: 10))
         XCTAssertFalse(release(nil))
-        XCTAssertTrue(release(nil, after: GlassesHoldPolicy.chargingMaximum))
+        XCTAssertFalse(release(nil, after: 86_400))
+        XCTAssertFalse(release(5, charging: true, after: 86_400))
+        XCTAssertFalse(release(6, after: 86_400))
         let unknownLevel = GlassesHold.charging(since: t0, battery: nil)
         XCTAssertFalse(GlassesHoldPolicy.shouldRelease(unknownLevel, thermal: .normal, battery: 15, charging: false, now: t0 + 180))
         XCTAssertTrue(GlassesHoldPolicy.shouldRelease(unknownLevel, thermal: .normal, battery: 16, charging: false, now: t0 + 180))
@@ -50,7 +54,7 @@ final class GlassesPowerTests: XCTestCase {
 
     func testExplicitRequestsNeverOverrideHeat() {
         XCTAssertFalse(GlassesHoldPolicy.clearsOnUserRequest(.coolingDown(since: t0)))
-        XCTAssertTrue(GlassesHoldPolicy.clearsOnUserRequest(.charging(since: t0, battery: 3)))
+        XCTAssertFalse(GlassesHoldPolicy.clearsOnUserRequest(.charging(since: t0, battery: 3)))
         XCTAssertTrue(GlassesHoldPolicy.clearsOnUserRequest(.update(.companionApp, since: t0)))
         XCTAssertTrue(GlassesHoldPolicy.clearsOnForeground(.update(.glassesFirmware, since: t0)))
         XCTAssertFalse(GlassesHoldPolicy.clearsOnForeground(.coolingDown(since: t0)))
@@ -149,5 +153,35 @@ final class GlassesPowerTests: XCTestCase {
         XCTAssertEqual(GlassesDeviceObservation(link: .connected, updateRequired: true).update, .glassesFirmware)
         let sdk = GlassesDeviceObservation(link: .connected, update: .companionApp)
         XCTAssertEqual(GlassesStateMapper.snapshot(registered: true, devices: [sdk]).update, .companionApp)
+    }
+
+    func testUnknownThermalInterruptsCoolingDwell() {
+        var tracker = ThermalStageTracker()
+        XCTAssertEqual(tracker.update(level: .severe, at: t0), .shed)
+        XCTAssertNil(tracker.update(level: .normal, at: t0 + 1))
+        XCTAssertNil(tracker.update(level: .unknown, at: t0 + 62))
+        XCTAssertNil(tracker.update(level: .normal, at: t0 + 1000))
+        XCTAssertEqual(tracker.stage, .shed)
+        XCTAssertEqual(tracker.update(level: .normal, at: t0 + 1060), .normal)
+    }
+
+    func testCameraPowerRefusalIsLocalAndBlocksFurtherSnapshots() {
+        let heat = CameraPowerPolicy.hold(for: .thermalHot, battery: 50, now: t0)
+        XCTAssertEqual(heat, .coolingDown(since: t0))
+        XCTAssertEqual(CameraPowerPolicy.hold(for: .peakPowerLimit, battery: 80, now: t0), heat)
+        XCTAssertEqual(CameraPowerPolicy.hold(for: .deviceHealthCritical, battery: nil, now: t0), heat)
+        XCTAssertEqual(CameraPowerPolicy.hold(for: .batteryLow, battery: 10, now: t0), .charging(since: t0, battery: 10))
+        XCTAssertNil(CameraPowerPolicy.hold(for: .streamFailed, battery: nil, now: t0))
+        XCTAssertFalse(CameraPowerPolicy.allowsCapture(stage: .normal, localHold: heat, sessionHold: nil))
+        XCTAssertFalse(CameraPowerPolicy.allowsCapture(stage: .normal, localHold: nil, sessionHold: heat))
+        XCTAssertTrue(CameraPowerPolicy.allowsCapture(stage: .normal, localHold: nil, sessionHold: nil))
+        XCTAssertFalse(CameraPowerPolicy.blocksReconnect(stage: .normal, sessionHold: nil, battery: 50, charging: false))
+    }
+
+    func testRecoveryAdmissionRejectsHeatAndCriticalBattery() {
+        XCTAssertTrue(CameraPowerPolicy.blocksReconnect(stage: .shed, sessionHold: nil, battery: 80, charging: true))
+        XCTAssertTrue(CameraPowerPolicy.blocksReconnect(stage: .normal, sessionHold: nil, battery: 5, charging: false))
+        XCTAssertTrue(CameraPowerPolicy.blocksReconnect(stage: .normal, sessionHold: .coolingDown(since: t0), battery: 80, charging: false))
+        XCTAssertFalse(CameraPowerPolicy.blocksReconnect(stage: .reduced, sessionHold: nil, battery: 40, charging: false))
     }
 }

@@ -19,6 +19,7 @@ final class MetaDATSessionErrorPolicyTests: XCTestCase {
         (.dwaUnavailable, .dwaUnavailable, .updateGlassesApp),
         (.insufficientSDKVersion, .insufficientSDKVersion, .updateCompanionApp),
         (.dwaOutOfStuRange, .dwaOutOfStuRange, .continueSession),
+        (.notRegistered, .notRegistered, .reconnect),
     ]
 
     func testEveryPublicCaseIsClassified() {

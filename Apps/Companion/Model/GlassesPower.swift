@@ -1,4 +1,5 @@
 import Foundation
+import AgentWearLinkMetaDATIntegration
 
 /// What needs updating when the glasses refuse this app.
 public enum GlassesUpdateTarget: String, Equatable, Sendable {
@@ -42,11 +43,8 @@ public enum GlassesHoldPolicy {
     /// already looks fine (a peak-power shutdown can come at a normal level,
     /// and a stale reading must not turn the hold into a reconnect loop).
     public static let minimumHold: TimeInterval = 120
-    /// Cooling: reconnect at the latest after this, whatever the level says.
-    public static let coolingMaximum: TimeInterval = 10 * 60
-    /// Charging: try again after this even without a rise (the level may
-    /// not be reported while the session is down).
-    public static let chargingMaximum: TimeInterval = 30 * 60
+    /// No elapsed-time escape hatch: known hot or missing telemetry is
+    /// not proof of recovery. Device measurements are SDK snapshots.
     /// The battery rose this many points since the hold: try again.
     public static let batteryRise = 3
     /// Glasses-side updates: try again after this (the user may have updated
@@ -65,16 +63,14 @@ public enum GlassesHoldPolicy {
             guard now.timeIntervalSince(since) >= minimumHold else { return false }
             // Meta: CRITICAL and above is unusable, SEVERE throttles
             // everything; MODERATE or cooler is safe to start again.
-            if thermal != .unknown, thermal <= .moderate { return true }
-            return now.timeIntervalSince(since) >= coolingMaximum
+            return thermal != .unknown && thermal <= .moderate
         case let .charging(since, held):
             guard now.timeIntervalSince(since) >= minimumHold else { return false }
+            guard thermal < .severe, let battery, (0...100).contains(battery),
+                  battery > ConnectionSignals.criticalBattery else { return false }
             if charging { return true }
-            if let battery {
-                if let held, battery >= held + batteryRise { return true }
-                if held == nil, battery > GlassesBatteryPolicy.lowThreshold { return true }
-            }
-            return now.timeIntervalSince(since) >= chargingMaximum
+            if let held { return battery >= held + batteryRise }
+            return battery > GlassesBatteryPolicy.lowThreshold
         case let .update(target, since):
             // A new app build never arrives by waiting.
             guard target != .companionApp else { return false }
@@ -83,11 +79,11 @@ public enum GlassesHoldPolicy {
     }
 
     /// "다시 시작", the Start Listening intent or "Hey Meta, start …": the
-    /// wearer asks explicitly. Heat is never overridden (the glasses would
-    /// refuse anyway and get hotter).
+    /// wearer asks explicitly. Power/heat holds cannot be overridden without
+    /// observed recovery; update prompts retain their existing behavior.
     public static func clearsOnUserRequest(_ hold: GlassesHold) -> Bool {
-        if case .coolingDown = hold { return false }
-        return true
+        if case .update = hold { return true }
+        return false
     }
 
     /// Back in the foreground: the user may have updated in Meta AI.
@@ -127,6 +123,12 @@ public struct ThermalStageTracker: Equatable, Sendable {
     /// Returns the new stage when it changed.
     @discardableResult
     public mutating func update(level: SpeechPowerPolicy.Thermal, at now: Date) -> Stage? {
+        // Unknown is not cooling. Never downgrade an existing stage on
+        // missing telemetry, and interrupt any pending release dwell.
+        guard level != .unknown else {
+            belowSince = nil
+            return nil
+        }
         let target = Self.target(for: level)
         if target > stage {
             stage = target
@@ -145,6 +147,31 @@ public struct ThermalStageTracker: Equatable, Sendable {
         stage = target
         belowSince = nil
         return target
+    }
+}
+
+/// Local camera hold is separate from a terminal session hold. A refused
+/// snapshot does not prove that a healthy independent voice channel is down.
+public enum CameraPowerPolicy {
+    public static func hold(for failure: MetaDATCameraFailure, battery: Int?, now: Date) -> GlassesHold? {
+        switch failure {
+        case .thermalHot, .peakPowerLimit, .deviceHealthCritical:
+            return .coolingDown(since: now)
+        case .batteryLow:
+            return .charging(since: now, battery: battery)
+        case .streamFailed:
+            return nil
+        }
+    }
+
+    public static func allowsCapture(stage: ThermalStageTracker.Stage, localHold: GlassesHold?, sessionHold: GlassesHold?) -> Bool {
+        ThermalWorkPolicy.allowsPhoto(stage: stage) && localHold == nil && sessionHold == nil
+    }
+
+    public static func blocksReconnect(stage: ThermalStageTracker.Stage, sessionHold: GlassesHold?, battery: Int?, charging: Bool) -> Bool {
+        if stage == .shed || sessionHold != nil { return true }
+        guard let battery, (0...100).contains(battery), !charging else { return false }
+        return battery <= ConnectionSignals.criticalBattery
     }
 }
 

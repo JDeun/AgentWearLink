@@ -1,7 +1,7 @@
 import Foundation
 import MWDATCore
 
-/// Every public `DeviceSessionError` case (DAT iOS 1.0.0 headers), by name
+/// Every public `DeviceSessionError` case (DAT iOS 1.1.0 headers), by name
 /// only. The vendor description (and `unexpectedError`'s payload) is never
 /// carried: it may echo device or account details.
 public enum MetaDATSessionErrorKind: String, CaseIterable, Sendable {
@@ -20,6 +20,7 @@ public enum MetaDATSessionErrorKind: String, CaseIterable, Sendable {
     case dwaUnavailable
     case insufficientSDKVersion
     case dwaOutOfStuRange
+    case notRegistered
 
     public init(_ error: DeviceSessionError) {
         switch error {
@@ -38,6 +39,7 @@ public enum MetaDATSessionErrorKind: String, CaseIterable, Sendable {
         case .dwaUnavailable: self = .dwaUnavailable
         case .insufficientSDKVersion: self = .insufficientSDKVersion
         case .dwaOutOfStuRange: self = .dwaOutOfStuRange
+        case .notRegistered: self = .notRegistered
         @unknown default: self = .unexpectedError
         }
     }
@@ -65,7 +67,7 @@ public enum MetaDATSessionErrorKind: String, CaseIterable, Sendable {
         // Meta: terminal; only a new app build helps.
         case .insufficientSDKVersion: return .updateCompanionApp
         case .noEligibleDevice, .sessionAlreadyStopped, .sessionAlreadyExists, .sessionIdle,
-             .capabilityAlreadyActive, .capabilityNotFound, .unexpectedError:
+             .capabilityAlreadyActive, .capabilityNotFound, .unexpectedError, .notRegistered:
             return .reconnect
         }
     }

@@ -88,13 +88,17 @@ final class MetaDATStandalonePhotoCapture: @unchecked Sendable {
                     continuation.finish()
                 }
             }
-            let errorToken = photo.errorPublisher.listen { [weak self] _ in
+            let errorToken = photo.errorPublisher.listen { [weak self] error in
                 guard let self, self.generation.isCurrent(lease) else { return }
                 // Vendor errors may contain user/device context. Do not expose
                 // SDK details or private photo bytes to Core/diagnostics.
-                continuation.finish(throwing: AWLError.device(
-                    "Meta DAT standalone photo capture failed"
-                ))
+                if case .deviceHealthCritical = error {
+                    continuation.finish(throwing: MetaDATCameraFailure.deviceHealthCritical)
+                } else {
+                    continuation.finish(throwing: AWLError.device(
+                        "Meta DAT standalone photo capture failed"
+                    ))
+                }
             }
             let installed = self.lock.withLock { () -> Bool in
                 guard self.generation.isCurrent(lease) else { return false }
