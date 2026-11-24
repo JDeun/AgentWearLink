@@ -328,22 +328,70 @@ jobs:
         if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true' || needs.changes.outputs.ios_reference == 'true'
         working-directory: Adapters/MetaDAT/TestApp
         run: |
-          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/awl-meta-host" -skipPackagePluginValidation build
+      - name: Verify built Meta DAT host privacy configuration
+        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true' || needs.changes.outputs.ios_reference == 'true'
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, plistlib
+          base = pathlib.Path(os.environ["RUNNER_TEMP"]) / "awl-meta-host" / "Build" / "Products"
+          plists = list(base.glob("*/AgentWearLinkMetaDATIOSHost.app/Info.plist"))
+          if not plists:
+              raise SystemExit("Built Meta DAT host Info.plist not found")
+          for path in plists:
+              with path.open("rb") as f:
+                  dat = plistlib.load(f).get("MWDAT", {})
+              if dat.get("Analytics", {}).get("OptOut") is not True or "CrashReporting" in dat:
+                  raise SystemExit("Built host Meta DAT privacy configuration mismatch")
+          print("Verified built Meta DAT host analytics/crash-reporting opt-out.")
+          PY
       - name: Build MockDeviceKit UI test bundle
         if: needs.changes.outputs.meta_ui == 'true'
-        timeout-minutes: 8
+        timeout-minutes: 10
         working-directory: Adapters/MetaDAT/TestApp
         run: |
-          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing build-for-testing
+          # Xcode 26.6 returned only generic destination placeholders after
+          # package tests despite a previously booted UDID (#632/#677).
+          # Compile the host and test runner without relying on that UDID.
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/awl-meta-ui" -skipPackagePluginValidation -parallel-testing-enabled NO build-for-testing
+          python3 - <<'PY'
+          import os, pathlib, plistlib
+          base = pathlib.Path(os.environ["RUNNER_TEMP"]) / "awl-meta-ui" / "Build" / "Products"
+          runs = sorted(base.glob("*.xctestrun"))
+          if len(runs) != 1:
+              raise SystemExit(f"Expected one fresh host xctestrun; found {len(runs)}")
+          with runs[0].open("rb") as f:
+              payload = plistlib.load(f)
+          def contains_target(value):
+              if isinstance(value, dict):
+                  return ("AgentWearLinkMetaDATUITests" in value
+                          or any(contains_target(v) for v in value.values()))
+              if isinstance(value, list):
+                  return any(contains_target(v) for v in value)
+              return isinstance(value, str) and "AgentWearLinkMetaDATUITests" in value
+          if not contains_target(payload):
+              raise SystemExit("Generated xctestrun does not include the Meta DAT UI test target")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"AWL_META_UI_XCTESTRUN={runs[0]}\n")
+          print(f"Verified fresh UI test plan: {runs[0].name}")
+          PY
+      - name: Revalidate iPhone simulator for host UI tests
+        if: needs.changes.outputs.meta_ui == 'true'
+        timeout-minutes: 5
+        run: |
+          # Refresh simulator inventory immediately before running the actual
+          # test products. Never treat destination failure as a passing test.
+          xcrun simctl list devices available
+          SIMULATOR_UDID="$(xcrun simctl list devices available -j | python3 scripts/select_ios_simulator.py)"
+          python3 scripts/boot_ios_simulator.py "$SIMULATOR_UDID"
+          echo "AWL_META_UI_SIMULATOR_UDID=$SIMULATOR_UDID" >> "$GITHUB_ENV"
       - name: Run MockDeviceKit server rendezvous UI test
         if: needs.changes.outputs.meta_ui == 'true'
-        # PR #595 completed all UI assertions but hit the five-minute action
-        # deadline during XCTest teardown. Bound at eight minutes; never
-        # reinterpret a timed-out UI process as a passing test.
-        timeout-minutes: 8
-        working-directory: Adapters/MetaDAT/TestApp
+        # Use the fresh generated xctestrun, not scheme destination discovery.
+        # All UI assertions still execute and a timeout remains a failure.
+        timeout-minutes: 10
         run: |
-          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination "platform=iOS Simulator,id=${AWL_IOS_SIMULATOR_UDID}" -skipPackagePluginValidation -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing test-without-building
+          xcodebuild test-without-building -xctestrun "$AWL_META_UI_XCTESTRUN" -destination "platform=iOS Simulator,id=${AWL_META_UI_SIMULATOR_UDID}" -destination-timeout 90 -parallel-testing-enabled NO -maximum-parallel-testing-workers 1 -disable-concurrent-destination-testing
       - name: Explain compatibility-only boundary
         if: needs.changes.outputs.meta_behavior != 'true'
         run: |
