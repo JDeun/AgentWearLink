@@ -33,7 +33,7 @@ jobs:
         run: bash scripts/install-xcodegen.sh
       - name: Generate project
         working-directory: Tools/BLEDiscovery
-        run: xcodegen generate
+        run: "$GITHUB_WORKSPACE/.build/tools/xcodegen" generate
       - name: Build isolated iOS simulator app
         working-directory: Tools/BLEDiscovery
         run: xcodebuild -project BLEDiscovery.xcodeproj -scheme BLEDiscovery -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/awl-ble-research" CODE_SIGNING_ALLOWED=NO build

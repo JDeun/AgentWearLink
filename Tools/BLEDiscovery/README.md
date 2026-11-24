@@ -19,7 +19,7 @@ swift test --package-path Tools/BLEDiscovery
 python3 Tools/BLEDiscovery/check_read_only.py
 bash scripts/install-xcodegen.sh
 cd Tools/BLEDiscovery
-xcodegen generate
+../../.build/tools/xcodegen generate
 xcodebuild -project BLEDiscovery.xcodeproj -scheme BLEDiscovery -configuration Release -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
