@@ -75,6 +75,27 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         liveCapabilities.value
     }
 
+    /// Distinguishes SDK state, healthy callback delivery, and observation of
+    /// recognition activity. No text, audio, device ID or credentials exposed.
+    public var speechHealth: MetaDATSpeechHealth {
+        let sessionStarted = !stopping && deviceSession?.state == .started
+        let phase: MetaDATSpeechHealth.Phase
+        switch speech?.state {
+        case .starting?: phase = .starting
+        case .started?: phase = .started
+        case .stopping?: phase = .stopping
+        case .stopped?: phase = .stopped
+        case nil: phase = .detached
+        }
+        return speechDelivery?.health(sessionStarted: sessionStarted, phase: phase)
+            ?? MetaDATSpeechHealth(sessionStarted: sessionStarted, phase: phase, deliveryActive: false)
+    }
+
+    private func refreshMediaReadiness() {
+        let health = speechHealth
+        liveCapabilities.update(sessionReady: health.sessionStarted, speechReady: health.isSDKReady)
+    }
+
     private let wearables: any WearablesInterface
     // Independent of DeviceSession: host may start Voice Invocation before
     // connecting a camera/Speech media session.
@@ -445,8 +466,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 timeout: connectTimeout
             )
 
+            guard generationFence.owns(generation), !stopping,
+                  deviceSession === session else { throw CancellationError() }
             selectedDeviceLinkLossGate.markSessionStarted()
-            liveCapabilities.update(sessionReady: true)
+            refreshMediaReadiness()
 
             do {
                 try await startSpeech(
@@ -455,9 +478,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 )
                 guard generationFence.owns(generation), !stopping,
                       deviceSession === session else { throw CancellationError() }
-                // An immediate overflow or vendor error may have retired the
-                // attachment during the async setup. Never re-advertise it.
-                liveCapabilities.update(speechReady: speechDelivery != nil && speech != nil)
+                // A start request is not a started Speech. The current state
+                // and delivery ownership determine the capability.
+                refreshMediaReadiness()
             } catch {
                 guard MetaDATSpeechSetupPolicy.mayContinueWithoutSpeech(error) else {
                     // Session-generation retirement and unexpected failures
@@ -483,6 +506,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             guard generationFence.owns(generation), !stopping,
                   deviceSession === session else { throw CancellationError() }
             liveCapabilities.update(cameraReady: cameraReady)
+            refreshMediaReadiness()
 
             // Do not create a second stateStream() after consuming .started.
             // Continue the same stream in one observer so SDK stream semantics cannot
@@ -497,6 +521,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 for await state in stateStream {
                     guard !Task.isCancelled else { break }
 
+                    await self?.observeMediaSessionState(state, generation: generation)
                     if state == .stopped {
                         await self?.handleUnexpectedStop(generation: generation)
                         break
@@ -518,6 +543,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             throw AWLError.device("Meta DAT device session is not connected")
         }
 
+        guard session.state == .started else {
+            throw AWLError.capabilityUnavailable("Meta DAT media session is not started")
+        }
         let generation = generationFence.current
         let cameraGranted: Bool
         do {
@@ -537,6 +565,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
               !stopping,
               deviceSession === session else {
             throw CancellationError()
+        }
+        guard session.state == .started else {
+            throw AWLError.capabilityUnavailable("Meta DAT media session is not started")
         }
         guard cameraGranted else {
             liveCapabilities.update(cameraReady: false)
@@ -566,7 +597,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
         guard generationFence.owns(generation),
               !stopping,
-              deviceSession === session else {
+              deviceSession === session,
+              session.state == .started else {
             throw CancellationError()
         }
 
@@ -657,7 +689,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         }
         speechRestartAttempts = 0
         self.speech = speech
+        delivery.resetCallbackEvidence()
         speech.start()
+        refreshMediaReadiness()
 
         guard generationFence.owns(generation), !stopping else {
             throw AWLError.device("Meta DAT Speech setup was superseded")
@@ -717,6 +751,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         guard !stopping, generationFence.owns(generation),
               speechDelivery === delivery, let speech else { return }
         guard speech.state == state else { return }
+        if state != .started {
+            delivery.resetCallbackEvidence()
+        }
+        refreshMediaReadiness()
         activityLogger?("speech \(state)")
         let observed: MetaDATSpeechRestartPolicy.ObservedState
         switch state {
@@ -734,7 +772,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                   speechDelivery === delivery, self.speech === speech,
                   speech.state == .stopped, deviceSession?.state == .started else { return }
             activityLogger?("speech restart \(attempt)")
+            delivery.resetCallbackEvidence()
             speech.start()
+            refreshMediaReadiness()
         case .giveUp:
             activityLogger?("speech restart limit reached")
         case .none:
@@ -961,6 +1001,22 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         diagnostics?.record(.init(kind: .metaBackgroundRetired, generation: generation))
         emitMediaFailure("Meta DAT media retired on app background")
         tearDownSession(expectedGeneration: generation)
+    }
+
+    private func observeMediaSessionState(_ state: DeviceSessionState, generation: UInt64) {
+        guard !stopping, generationFence.owns(generation), let session = deviceSession else { return }
+        // A pause is a media boundary even if a later resume has already
+        // changed the live snapshot. Retire any in-flight photo/evidence;
+        // never resume a prior capture automatically.
+        if state == .paused {
+            cameraSnapshotController.invalidate()
+            speechDelivery?.resetCallbackEvidence()
+        }
+        if session.state != .started {
+            liveCapabilities.update(sessionReady: false, speechReady: false)
+        } else {
+            refreshMediaReadiness()
+        }
     }
 
     private func handleUnexpectedStop(generation: UInt64) {

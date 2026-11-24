@@ -43,6 +43,10 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
     private var closed = false
     private var failurePending = false
     private var overflowed = false
+    // Measured before buffering/coalescing. No raw transcript is retained
+    // here and a slow consumer cannot masquerade as SDK callback silence.
+    private var lastCallbackAt: ContinuousClock.Instant?
+    private var lastNonEmptyCallbackAt: ContinuousClock.Instant?
 
     init(
         limit: Int = 8,
@@ -78,6 +82,10 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
         // processing. Tests can inject monotonic times without sleeping.
         let received = Received(transcript: transcript, receivedAt: receivedAt ?? .now)
         let oversized = transcript.text.utf8.count > maximumTranscriptBytes
+        lastCallbackAt = received.receivedAt
+        if !oversized, !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lastNonEmptyCallbackAt = received.receivedAt
+        }
         if !oversized, let waiter {
             self.waiter = nil
             lock.unlock()
@@ -118,6 +126,25 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
         onOverflow(self)
         waiting?.resume(returning: .failed(.finalTranscriptOverflow))
         if let token { Task { await token.cancel() } }
+    }
+
+    func health(sessionStarted: Bool, phase: MetaDATSpeechHealth.Phase) -> MetaDATSpeechHealth {
+        lock.withLock {
+            MetaDATSpeechHealth(
+                sessionStarted: sessionStarted,
+                phase: phase,
+                deliveryActive: !closed,
+                lastCallbackAt: lastCallbackAt,
+                lastNonEmptyCallbackAt: lastNonEmptyCallbackAt
+            )
+        }
+    }
+
+    func resetCallbackEvidence() {
+        lock.withLock {
+            lastCallbackAt = nil
+            lastNonEmptyCallbackAt = nil
+        }
     }
 
     /// Commit an already normalized final only while its delivery is healthy.

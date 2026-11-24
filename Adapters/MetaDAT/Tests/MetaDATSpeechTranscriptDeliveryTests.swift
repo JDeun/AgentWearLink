@@ -122,4 +122,37 @@ final class MetaDATSpeechTranscriptDeliveryTests: XCTestCase {
         let end = await iterator.next()
         XCTAssertNil(end)
     }
+
+    func testCallbackEvidenceIsIndependentOfPartialEvictionAndConsumer() async {
+        let delivery = MetaDATSpeechTranscriptDelivery(limit: 1)
+        let time = ContinuousClock.now
+        delivery.offer(transcript("final"), receivedAt: time)
+        // Buffer is full of finals; both partials are discarded, but their
+        // receipt is still evidence of the upstream callback path.
+        delivery.offer(transcript("partial", final: false), receivedAt: time.advanced(by: .seconds(1)))
+        delivery.offer(transcript("", final: false), receivedAt: time.advanced(by: .seconds(2)))
+        let health = delivery.health(sessionStarted: true, phase: .started)
+        XCTAssertTrue(health.isSDKReady)
+        XCTAssertEqual(health.lastCallbackAt, time.advanced(by: .seconds(2)))
+        XCTAssertEqual(health.lastNonEmptyCallbackAt, time.advanced(by: .seconds(1)))
+        XCTAssertEqual(health.callbackEvidence(now: time.advanced(by: .seconds(2)), freshness: .seconds(1)), .recentNonEmptyCallback)
+        delivery.resetCallbackEvidence()
+        XCTAssertEqual(delivery.health(sessionStarted: true, phase: .started).callbackEvidence(freshness: .seconds(1)), .notObserved)
+        // Clearing evidence must not clear an admitted final.
+        var iterator = delivery.events().makeAsyncIterator()
+        let final = await iterator.next()
+        XCTAssertEqual(final, .transcript(transcript("final"), receivedAt: time))
+        delivery.cancel()
+        XCTAssertFalse(delivery.health(sessionStarted: true, phase: .started).isSDKReady)
+    }
+
+    func testOverflowImmediatelyInvalidatesSDKReadiness() {
+        let delivery = MetaDATSpeechTranscriptDelivery(limit: 1)
+        delivery.offer(transcript("one"))
+        XCTAssertTrue(delivery.health(sessionStarted: true, phase: .started).isSDKReady)
+        delivery.offer(transcript("two"))
+        let health = delivery.health(sessionStarted: true, phase: .started)
+        XCTAssertFalse(health.isSDKReady)
+        XCTAssertEqual(health.callbackEvidence(freshness: .seconds(1)), .unavailable)
+    }
 }
