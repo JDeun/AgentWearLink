@@ -1,0 +1,93 @@
+import XCTest
+
+final class CompanionSettingsTests: XCTestCase {
+    private var defaults: UserDefaults!
+    private let suite = "CompanionSettingsTests"
+
+    override func setUp() {
+        defaults = UserDefaults(suiteName: suite)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testDefaultsAreListeningAndVoiceStyleOn() {
+        let settings = CompanionSettingsStore(defaults: defaults).load()
+        XCTAssertFalse(settings.setupCompleted)
+        XCTAssertTrue(settings.listenEnabled)
+        XCTAssertTrue(settings.voiceStyle)
+        XCTAssertFalse(settings.telegramEnabled)
+        XCTAssertEqual(settings.replyDucking, .off)
+        XCTAssertFalse(settings.adminScope)
+    }
+
+    func testAdminScopeIsOptInAndRoundTrips() {
+        let store = CompanionSettingsStore(defaults: defaults)
+        XCTAssertEqual(GatewayScopes.requested(adminEnabled: store.load().adminScope), ["operator.read", "operator.write"])
+        var settings = store.load()
+        settings.adminScope = true
+        store.save(settings)
+        XCTAssertTrue(store.load().adminScope)
+        XCTAssertEqual(
+            GatewayScopes.requested(adminEnabled: store.load().adminScope),
+            ["operator.read", "operator.write", "operator.admin"]
+        )
+        store.reset()
+        XCTAssertFalse(store.load().adminScope)
+    }
+
+    func testRoundTripAndReset() {
+        let store = CompanionSettingsStore(defaults: defaults)
+        var settings = CompanionSettings()
+        settings.setupCompleted = true
+        settings.gatewayURL = "wss://gateway.example.ts.net"
+        settings.agentName = "Nova"
+        settings.gatewayName = "Studio"
+        settings.spokenName = "노바"
+        settings.wakePhrases = ["Nova", "노바"]
+        settings.listenEnabled = false
+        settings.telegramEnabled = true
+        settings.telegramChatID = "-100123"
+        settings.voiceStyle = false
+        settings.replyDucking = .separateSynthesizerSession
+        settings.adminScope = true
+        settings.lastReplyAt = Date(timeIntervalSince1970: 1_000)
+        settings.lastReplyLatency = 3.5
+        store.save(settings)
+        XCTAssertEqual(store.load(), settings)
+
+        store.reset()
+        XCTAssertEqual(store.load(), CompanionSettings())
+    }
+
+    func testSetupNeverCountsAsCompleteWithoutAnEndpoint() {
+        defaults.set(true, forKey: CompanionSettingsStore.Key.setupCompleted)
+        XCTAssertFalse(CompanionSettingsStore(defaults: defaults).load().setupCompleted)
+    }
+
+    func testStoresNoTokenLikeKeys() {
+        XCTAssertFalse(CompanionSettingsStore.Key.all.contains { $0.lowercased().contains("token") })
+    }
+
+    func testEffectiveWakePhrasesFallBackToAgentName() {
+        var settings = CompanionSettings()
+        settings.agentName = "Nova"
+        XCTAssertEqual(settings.effectiveWakePhrases.first, "Nova")
+        settings.spokenName = "노바"
+        XCTAssertEqual(settings.effectiveWakePhrases(korean: true), ["Nova", "hey Nova", "노바", "노바야", "헤이 노바"])
+        settings.wakePhrases = ["  ", "Hey Nova"]
+        XCTAssertEqual(settings.effectiveWakePhrases, ["Hey Nova"])
+    }
+
+    func testTelegramConfiguredNeedsToggleAndValidChatID() {
+        var settings = CompanionSettings()
+        settings.telegramChatID = "12345"
+        XCTAssertFalse(settings.isTelegramDeliveryConfigured)
+        settings.telegramEnabled = true
+        XCTAssertTrue(settings.isTelegramDeliveryConfigured)
+        settings.telegramChatID = "@channel"
+        XCTAssertFalse(settings.isTelegramDeliveryConfigured)
+    }
+}

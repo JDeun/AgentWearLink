@@ -120,7 +120,8 @@ public actor OpenClawGatewayConnection {
                    version: appVersion,
                    challenge: challenge,
                    clientIdentity: clientIdentity,
-                   locale: locale
+                   locale: locale,
+                   requestedScopes: scopes
                ) {
                 try ensureActiveConnect(generation)
                 assembled = retryAssembly

@@ -68,7 +68,7 @@ final class ProbeSessionTests: XCTestCase {
         XCTAssertTrue(session.startScan(token: token))
         for _ in 0..<ProbeSession.candidateLimit {
             XCTAssertEqual(session.record(token: token, peripheralID: UUID(),
-                                          observation: ProbeObservation(localName: "private")), .accepted)
+                                          observation: ProbeObservation(localName: "private", systemConnectedSnapshot: true)), .accepted)
         }
         XCTAssertEqual(session.record(token: token, peripheralID: UUID(),
                                       observation: ProbeObservation(systemConnectedSnapshot: true)), .capacityExceeded)
