@@ -3,6 +3,23 @@ import MWDATMockDeviceTestClient
 
 @MainActor
 final class AgentWearLinkMetaDATUITests: XCTestCase {
+    // DAT 1.1 kit.pairGlasses only pairs; explicit power/wear transitions
+    // replace the old flat API's implicit readiness behavior.
+    private func pairReadyGlasses(using client: MockDeviceTestClient) async throws -> MockDeviceTestGlasses {
+        let glasses = try await client.kit.pairGlasses(model: .rayBanMeta)
+        do {
+            try await glasses.powerOn()
+            try await glasses.unfold()
+            try await glasses.don()
+            return glasses
+        } catch {
+            // Keep the original typed SDK failure; the host also terminates
+            // unconditionally if a test exits before its normal unpair.
+            try? await client.kit.unpairDevice(glasses)
+            throw error
+        }
+    }
+
     func testMockDeviceServerRendezvousAndPairLifecycle() async throws {
         let portFile = NSTemporaryDirectory() + "awl-mwdat-\(UUID().uuidString).port"
         defer { try? FileManager.default.removeItem(atPath: portFile) }
@@ -31,18 +48,10 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             return
         }
 
-        let paired = await client.pairDevice()
-        let deviceID = try XCTUnwrap(paired)
+        let glasses = try await pairReadyGlasses(using: client)
 
-        let poweredOn = await client.powerOn(deviceId: deviceID)
-        XCTAssertTrue(poweredOn)
-        let unfolded = await client.unfold(deviceId: deviceID)
-        XCTAssertTrue(unfolded)
-        let donned = await client.don(deviceId: deviceID)
-        XCTAssertTrue(donned)
-
-        let deviceState = await client.getDeviceState()
-        XCTAssertNotNil(deviceState, "Mock server must expose the paired device state")
+        let pairedDevices = try await client.kit.pairedDevices
+        XCTAssertTrue(pairedDevices.contains(glasses), "Mock kit must expose the paired glasses")
 
         let configurePhoto = app.buttons["awl-meta-configure-photo-fixture"]
         XCTAssertTrue(configurePhoto.waitForExistence(timeout: 5))
@@ -87,7 +96,7 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         XCTAssertEqual(
             XCTWaiter.wait(for: [standaloneCaptured], timeout: 30),
             .completed,
-            "Experimental Camera.photo did not deliver bounded JPEG: state=\\(photoState.label)"
+            "Experimental Camera.photo did not deliver bounded JPEG: state=\(photoState.label)"
         )
 
         // Drive the SDK's own cameraCapture failure injector through
@@ -125,8 +134,9 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             "Denied camera permission did not fail predictably: state=\(photoState.label)"
         )
 
-        let unpaired = await client.unpairDevice(deviceId: deviceID)
-        XCTAssertTrue(unpaired)
+        try await client.kit.unpairDevice(glasses)
+        let remaining = try await client.kit.pairedDevices
+        XCTAssertFalse(remaining.contains(glasses))
     }
     func testReferenceForegroundWakeOptInSurvivesRelaunchAndIsRevocable() throws {
         // No Meta registration, personal Tailnet or Gateway credentials are
@@ -189,14 +199,7 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             XCTFail("Voice MockDeviceKit test server unavailable")
             return
         }
-        let paired = await client.pairDevice()
-        let deviceID = try XCTUnwrap(paired)
-        let poweredOn = await client.powerOn(deviceId: deviceID)
-        let unfolded = await client.unfold(deviceId: deviceID)
-        let donned = await client.don(deviceId: deviceID)
-        XCTAssertTrue(poweredOn)
-        XCTAssertTrue(unfolded)
-        XCTAssertTrue(donned)
+        let glasses = try await pairReadyGlasses(using: client)
 
         let voiceState = app.staticTexts["awl-meta-voice-state"]
         XCTAssertTrue(voiceState.waitForExistence(timeout: 5))
@@ -212,7 +215,7 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         // Pinned real MockDeviceKit client -> VoiceInvocationsStream ->
         // Meta response handle -> concrete DeviceAdapter.events(), without
         // establishing any camera/Speech DeviceSession.
-        _ = await client.sendLaunchAppAction(deviceId: deviceID)
+        _ = try await glasses.services.voiceInvocation.simulateLaunchAppAction()
         let acknowledged = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", "voice-acknowledged"),
             object: voiceState
@@ -223,8 +226,9 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             "Acknowledged voice launch never reached the production adapter"
         )
 
-        let unpaired = await client.unpairDevice(deviceId: deviceID)
-        XCTAssertTrue(unpaired)
+        try await client.kit.unpairDevice(glasses)
+        let remaining = try await client.kit.pairedDevices
+        XCTAssertFalse(remaining.contains(glasses))
     }
 
 
@@ -249,14 +253,7 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
         let client = MockDeviceTestClient(portFilePath: portFile)
         let serverReady = await client.waitForServer(timeout: 15)
         XCTAssertTrue(serverReady)
-        let paired = await client.pairDevice()
-        let deviceID = try XCTUnwrap(paired)
-        let powered = await client.powerOn(deviceId: deviceID)
-        let unfolded = await client.unfold(deviceId: deviceID)
-        let donned = await client.don(deviceId: deviceID)
-        XCTAssertTrue(powered)
-        XCTAssertTrue(unfolded)
-        XCTAssertTrue(donned)
+        let glasses = try await pairReadyGlasses(using: client)
 
         let wake = app.staticTexts["awl-meta-wake-state"]
         XCTAssertTrue(wake.waitForExistence(timeout: 10))
@@ -268,7 +265,7 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
 
         // The Meta response handle is acknowledged before this separate
         // foreground media/Speech startup; LaunchApp contains no user text.
-        _ = await client.sendLaunchAppAction(deviceId: deviceID)
+        _ = try await glasses.services.voiceInvocation.simulateLaunchAppAction()
         let acknowledged = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", "wake-acknowledged"),
             object: wake
@@ -299,8 +296,9 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             "Final DAT Speech did not reach Core and terminal MockAgent output: \(wake.label)"
         )
 
-        let unpaired = await client.unpairDevice(deviceId: deviceID)
-        XCTAssertTrue(unpaired)
+        try await client.kit.unpairDevice(glasses)
+        let remaining = try await client.kit.pairedDevices
+        XCTAssertFalse(remaining.contains(glasses))
     }
 
 }

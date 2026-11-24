@@ -7,5 +7,5 @@ import MWDATCore
 import MWDATCamera
 
 public enum MetaDATIntegrationBuildMarker {
-    public static let pinnedSDKVersion = "1.0.0"
+    public static let pinnedSDKVersion = "1.1.0"
 }

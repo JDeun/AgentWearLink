@@ -6,9 +6,9 @@ This document records the SDK assumptions for the first AgentWearLink device ada
 
 As of 2026-10-06, Meta's Wearables FAQ states that **Device Access Toolkit 1.0 is a stable, supported release**, rolling out from 2026-09-30. Some public iOS repository text still retains older **developer preview** wording. AWL therefore records and pins the exact package version used for validation instead of inferring capability/release-channel status from a single marketing label.
 
-AWL's human-readable SDK baseline is **1.0.0**, but build reproducibility is anchored to the immutable upstream source revision `1f38beecba83c4c8b5e343540f9cd615323ab19a` (the commit currently referenced by the `1.0.0` package tag). Both `Adapters/MetaDAT/Package.swift` and the generated TestApp package reference must use that same revision. CI resolves the package and verifies the resulting `Package.resolved` revision before compilation.
+AWL's current SDK baseline is **1.1.0** (released 2026-11-20), pinned to the immutable upstream revision `2c772e03e6a2e74282ac6564c2424acf6e58d8f0`. The integration package and generated TestApp reference must use that revision, as must Companion when its integration PR lands. See the [pinned changelog](https://github.com/meta/meta-wearables-dat-ios/blob/2c772e03e6a2e74282ac6564c2424acf6e58d8f0/CHANGELOG.md) for the version-specific changes. CI resolves the package and verifies the resulting `Package.resolved` revision before compilation.
 
-An intentional DAT upgrade must be a focused dependency change: resolve the target upstream version/tag to its commit SHA, update both package references plus the expected revision in `scripts/verify-meta-dat-revision.sh`, run the Meta compile/app-host gates, and refresh compatibility evidence. Do not change only the semantic version label or only one of the two package references.
+An intentional DAT upgrade must be a focused dependency change: resolve the target upstream version/tag to its commit SHA, update all applicable package references, the integration build marker, its regression test, and the expected revision in `scripts/verify-meta-dat-revision.sh`, run the Meta compile/app-host gates, and refresh compatibility evidence. Do not change only the semantic version label or only one of the two package references.
 
 The current public sample uses:
 
@@ -35,7 +35,7 @@ Follow the current official CameraAccess sample requirements rather than hard-co
 
 The iOS reference application needs the SDK's current URL callback, Bluetooth, external-accessory and local-network declarations. Microphone/audio background permissions should only be added when the app actually records glasses microphone audio.
 
-Do not copy stale Info.plist values from old DAT preview examples without comparing them to the current official sample.
+Do not copy stale Info.plist values from old DAT preview examples without comparing them to the current official sample. In DAT 1.1.0, `MWDAT.Analytics.OptOut=true` opts out of both analytics and crash reporting; the separate `CrashReporting.OptOut` key was removed.
 
 ## Implementation rule
 

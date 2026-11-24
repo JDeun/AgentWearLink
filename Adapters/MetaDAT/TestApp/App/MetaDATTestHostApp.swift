@@ -91,7 +91,7 @@ struct MetaDATTestHostApp: App {
                     }
                     .accessibilityIdentifier("awl-meta-capture-mock-photo")
                     .disabled(state != "photo-fixture-ready")
-                    // DEBUG-only explicit opt-in: pinned DAT 1.0.0 marks
+                    // DEBUG-only explicit opt-in: pinned DAT 1.1.0 marks
                     // standalone Camera.photo experimental/non-publishable.
                     Button("Capture experimental standalone mock photo") {
                         Task {
