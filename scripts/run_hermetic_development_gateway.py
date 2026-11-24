@@ -79,6 +79,31 @@ def safe_probe_phase(path: Path) -> str:
 
 
 
+_GRANT_STAGES = frozenset({"grant-issuance", "stored-grant-reconnect"})
+_PROBE_EXIT_LABELS = {0: "success", 1: "handshake-or-protocol-failure",
+                      2: "preflight-rejected", 3: "pairing-required",
+                      124: "probe-timeout", 127: "probe-binary-unavailable"}
+
+
+def grant_stage_evidence(*, stage: str, path: Path, exit_code: int,
+                         elapsed_seconds: float, gateway_alive: bool) -> str:
+    """Report independent stage evidence without raw child/Gateway output."""
+    if stage not in _GRANT_STAGES:
+        raise ValueError("Unknown grant contract stage")
+    category = _PROBE_EXIT_LABELS.get(exit_code, "unexpected-exit")
+    phase = safe_probe_phase(path / "probe-phase")
+    result = safe_probe_result(path / "probe-result")
+    elapsed_ms = max(0, int(elapsed_seconds * 1000))
+    return (f"Isolated Gateway grant stage={stage} exit={category} "
+            f"phase={phase} failure={result} elapsed-ms={elapsed_ms} "
+            f"gateway-alive={'yes' if gateway_alive else 'no'}")
+
+
+def grant_stage_passed(*, exit_code: int, path: Path) -> bool:
+    # Exit zero alone must not substitute for authenticated health evidence.
+    return (exit_code == 0 and safe_probe_phase(path / "probe-phase") == "health-accepted")
+
+
 def may_retry_negative_gateway_startup(
     *, phase: str, exit_code: int, attempt: int, max_attempts: int
 ) -> bool:
@@ -886,11 +911,14 @@ def main(argv: list[str] | None = None) -> int:
                     node=node, checkout=checkout, env=env, probe_env=probe_env,
                     temp=temp, deadline=deadline)
             attempt_limit = 6 if contract else 3
+            grant_contract = (args.expect_grant_reconnect or
+                              args.expect_native_keychain_grant_reconnect)
             for approval_attempt in range(attempt_limit):
                 if contract:
                     # A failed attempt cannot lend stale evidence to the next.
                     (temp / "probe-phase").unlink(missing_ok=True)
                     (temp / "probe-result").unlink(missing_ok=True)
+                first_started = time.monotonic()
                 try:
                     remaining = max(1, int(deadline - time.monotonic()))
                     result = subprocess.run(
@@ -900,10 +928,24 @@ def main(argv: list[str] | None = None) -> int:
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                         timeout=remaining, check=False,
                     )
-                except (OSError, subprocess.TimeoutExpired):
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    if grant_contract:
+                        print(grant_stage_evidence(
+                            stage="grant-issuance", path=temp,
+                            exit_code=124 if isinstance(error, subprocess.TimeoutExpired) else 127,
+                            elapsed_seconds=time.monotonic() - first_started,
+                            gateway_alive=gateway.poll() is None), file=sys.stderr)
                     print("Isolated Gateway runner: bounded probes failed.",
                           file=sys.stderr)
                     return 1
+                if grant_contract:
+                    print(grant_stage_evidence(
+                        stage="grant-issuance", path=temp, exit_code=result.returncode,
+                        elapsed_seconds=time.monotonic() - first_started,
+                        gateway_alive=gateway.poll() is None), file=sys.stderr, flush=True)
+                    if result.returncode == 0 and not grant_stage_passed(exit_code=0, path=temp):
+                        print("Grant issuance lacks authenticated health evidence.", file=sys.stderr)
+                        return 1
                 if contract:
                     if args.expect_pairing_required and result.returncode == 3:
                         print("Isolated real Gateway rejected unapproved read-only identity as expected.")
@@ -966,6 +1008,7 @@ def main(argv: list[str] | None = None) -> int:
                         second["AWL_DEV_GATEWAY_RECONNECT_STORED_ONLY"] = "1"
                         (temp / "probe-phase").unlink(missing_ok=True)
                         (temp / "probe-result").unlink(missing_ok=True)
+                        second_started = time.monotonic()
                         try:
                             reconnect = subprocess.run(
                                 [sys.executable, str(ROOT / "scripts" /
@@ -976,11 +1019,18 @@ def main(argv: list[str] | None = None) -> int:
                                 timeout=max(1, int(deadline - time.monotonic())),
                                 check=False,
                             )
-                        except (OSError, subprocess.TimeoutExpired):
-                            print("Isolated real Gateway device-grant reconnect timed out.",
-                                  file=sys.stderr)
+                        except (OSError, subprocess.TimeoutExpired) as error:
+                            print(grant_stage_evidence(
+                                stage="stored-grant-reconnect", path=temp,
+                                exit_code=124 if isinstance(error, subprocess.TimeoutExpired) else 127,
+                                elapsed_seconds=time.monotonic() - second_started,
+                                gateway_alive=gateway.poll() is None), file=sys.stderr)
                             return 1
-                        if reconnect.returncode == 0:
+                        print(grant_stage_evidence(
+                            stage="stored-grant-reconnect", path=temp, exit_code=reconnect.returncode,
+                            elapsed_seconds=time.monotonic() - second_started,
+                            gateway_alive=gateway.poll() is None), file=sys.stderr, flush=True)
+                        if grant_stage_passed(exit_code=reconnect.returncode, path=temp):
                             if args.expect_native_keychain_grant_reconnect:
                                 print("Isolated real Gateway-issued read-only grant "
                                       "persisted in native macOS Keychain; a second "
