@@ -39,8 +39,9 @@ struct ProbeCandidate: Identifiable, Equatable {
     var serviceDataPresent = false
     var systemConnectedSnapshot = false
     var connectable: Bool?
+    var firstAdvertisementElapsedMS: Int?
 
-    mutating func merge(_ observation: ProbeObservation) {
+    mutating func merge(_ observation: ProbeObservation, elapsedMS: Int?) {
         if let name = observation.localName, !name.isEmpty {
             // Transient, untrusted display hint; never part of the report.
             let bounded = String(name.prefix(40)).filter { character in
@@ -51,6 +52,9 @@ struct ProbeCandidate: Identifiable, Equatable {
                 }
             }
             if !bounded.isEmpty { localLabel = bounded }
+        }
+        if observation.advertisement, firstAdvertisementElapsedMS == nil {
+            firstAdvertisementElapsedMS = elapsedMS
         }
         advertisement = advertisement || observation.advertisement
         serviceAdvertised = serviceAdvertised || observation.serviceAdvertised
@@ -73,6 +77,8 @@ struct ProbeSession {
     private var indexes: [UUID: Int] = [:]
     private(set) var confirmedID: Int?
     private(set) var didRequestScan = false
+    private(set) var scanRequestedElapsedMS: Int?
+    private(set) var finishedElapsedMS: Int?
 
     mutating func begin(token: UUID) -> Bool {
         guard !status.isActive else { return false }
@@ -88,36 +94,45 @@ struct ProbeSession {
         return true
     }
 
-    mutating func markScanRequested(token: UUID) -> Bool {
+    mutating func markScanRequested(token: UUID, elapsedMS: Int? = nil) -> Bool {
         guard self.token == token, status == .scanning, !didRequestScan else { return false }
         didRequestScan = true
+        scanRequestedElapsedMS = elapsedMS.flatMap { $0 >= 0 ? $0 : nil }
         return true
     }
 
     mutating func record(token: UUID, peripheralID: UUID,
-                         observation: ProbeObservation) -> RecordResult {
+                         observation: ProbeObservation, elapsedMS: Int? = nil) -> RecordResult {
         guard self.token == token, status == .scanning,
-              !observation.advertisement || didRequestScan else { return .ignored }
+              !observation.advertisement || didRequestScan,
+              observation.advertisement || observation.systemConnectedSnapshot else { return .ignored }
+        let callbackElapsed = elapsedMS.flatMap { value -> Int? in
+            guard let requested = scanRequestedElapsedMS, value >= requested else { return nil }
+            return value
+        }
         if let index = indexes[peripheralID] {
-            candidates[index].merge(observation)
+            candidates[index].merge(observation, elapsedMS: callbackElapsed)
             return .accepted
         }
         guard candidates.count < Self.candidateLimit else { return .capacityExceeded }
         let index = candidates.count
         var candidate = ProbeCandidate(id: index + 1)
-        candidate.merge(observation)
+        candidate.merge(observation, elapsedMS: callbackElapsed)
         indexes[peripheralID] = index
         candidates.append(candidate)
         return .accepted
     }
 
     @discardableResult
-    mutating func finish(token: UUID, status outcome: ProbeStatus) -> Bool {
+    mutating func finish(token: UUID, status outcome: ProbeStatus, elapsedMS: Int? = nil) -> Bool {
         guard self.token == token, status.isActive, !outcome.isActive,
               outcome != .idle else { return false }
         guard outcome != .completed || (status == .scanning && didRequestScan) else { return false }
         self.token = nil
         status = outcome
+        finishedElapsedMS = elapsedMS.flatMap { value in
+            value >= (scanRequestedElapsedMS ?? 0) ? value : nil
+        }
         indexes.removeAll()
         // Only a full scan can be reviewed/confirmed. Abort discards all hints.
         if outcome != .completed { candidates.removeAll() }
@@ -143,10 +158,44 @@ struct ProbeSession {
             guard let value else { return "not-observed" }
             return value ? "yes" : "no"
         }
-        // Deliberately excludes UUIDs (including service filter), names, RSSI,
-        // bytes, timestamps, manufacturer data and other peripheral metadata.
+        let outcome: String
+        switch status {
+        case .idle: outcome = "not-run"
+        case .waitingForBluetooth, .scanning: outcome = "in-progress"
+        case .completed:
+            if let candidate {
+                if candidate.advertisement && candidate.systemConnectedSnapshot {
+                    outcome = "owner-confirmed-both-observations"
+                } else if candidate.advertisement {
+                    outcome = "owner-confirmed-advertisement-callback"
+                } else {
+                    outcome = "owner-confirmed-system-snapshot"
+                }
+            } else {
+                outcome = candidates.isEmpty ? "inconclusive-no-match" : "inconclusive-identity-unconfirmed"
+            }
+        default: outcome = "inconclusive-aborted"
+        }
+        func milliseconds(_ value: Int?) -> String { value.map { String($0) } ?? "not-observed" }
+        let scanElapsed: Int?
+        if let start = scanRequestedElapsedMS, let end = finishedElapsedMS, end >= start {
+            scanElapsed = end - start
+        } else { scanElapsed = nil }
+        let firstCallback: Int?
+        if let start = scanRequestedElapsedMS, let first = candidate?.firstAdvertisementElapsedMS, first >= start {
+            firstCallback = first - start
+        } else { firstCallback = nil }
+        // Elapsed monotonic intervals only, never absolute timestamps or identifiers.
+        // Scan request-to-finish measures app observation, not RF duty cycle or wake latency.
+        // No UUIDs, names, RSSI, bytes, manufacturer data or other private metadata.
         return [
+            "report-version=2",
             "status=\(status.rawValue)",
+            "gate-a-observation=\(outcome)",
+            "run-elapsed-ms=\(milliseconds(finishedElapsedMS))",
+            "scan-request-to-finish-ms=\(milliseconds(scanElapsed))",
+            "confirmed-first-callback-from-request-ms=\(milliseconds(firstCallback))",
+            "transport-feasibility=not-established",
             "scan-requested=\(flag(didRequestScan))",
             "candidate-count=\(candidates.count)",
             "owner-confirmed=\(flag(candidate != nil))",

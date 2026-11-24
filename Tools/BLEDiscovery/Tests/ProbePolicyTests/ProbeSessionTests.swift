@@ -71,7 +71,7 @@ final class ProbeSessionTests: XCTestCase {
                                           observation: ProbeObservation(localName: "private")), .accepted)
         }
         XCTAssertEqual(session.record(token: token, peripheralID: UUID(),
-                                      observation: ProbeObservation()), .capacityExceeded)
+                                      observation: ProbeObservation(systemConnectedSnapshot: true)), .capacityExceeded)
         XCTAssertEqual(session.candidates.count, ProbeSession.candidateLimit)
         XCTAssertTrue(session.finish(token: token, status: .candidateLimit))
         XCTAssertTrue(session.candidates.isEmpty)
@@ -108,6 +108,50 @@ final class ProbeSessionTests: XCTestCase {
         XCTAssertTrue(session.report.contains("advertisement-callback=no"))
         XCTAssertTrue(session.report.contains("requested-service-advertised=not-observed"))
         XCTAssertTrue(session.report.contains("requested-service-data-present=not-observed"))
+    }
+
+    func testElapsedEvidenceAndGateClassification() {
+        var session = ProbeSession()
+        let token = UUID(), device = UUID()
+        XCTAssertTrue(session.begin(token: token))
+        XCTAssertTrue(session.startScan(token: token))
+        XCTAssertTrue(session.markScanRequested(token: token, elapsedMS: 2400))
+        XCTAssertEqual(session.record(token: token, peripheralID: device,
+                                      observation: ProbeObservation(), elapsedMS: 2500), .ignored)
+        XCTAssertEqual(session.record(token: token, peripheralID: device,
+                                      observation: ProbeObservation(advertisement: true),
+                                      elapsedMS: 2700), .accepted)
+        XCTAssertEqual(session.record(token: token, peripheralID: device,
+                                      observation: ProbeObservation(advertisement: true),
+                                      elapsedMS: 2800), .accepted)
+        XCTAssertTrue(session.finish(token: token, status: .completed, elapsedMS: 15020))
+        XCTAssertTrue(session.report.contains("gate-a-observation=inconclusive-identity-unconfirmed"))
+        XCTAssertTrue(session.report.contains("confirmed-first-callback-from-request-ms=not-observed"))
+        XCTAssertTrue(session.confirm(id: 1, independentlyIdentified: true))
+        XCTAssertTrue(session.report.contains("gate-a-observation=owner-confirmed-advertisement-callback"))
+        XCTAssertTrue(session.report.contains("run-elapsed-ms=15020"))
+        XCTAssertTrue(session.report.contains("scan-request-to-finish-ms=12620"))
+        XCTAssertTrue(session.report.contains("confirmed-first-callback-from-request-ms=300"))
+        XCTAssertTrue(session.report.contains("transport-feasibility=not-established"))
+        session.revokeConfirmation()
+        XCTAssertTrue(session.report.contains("confirmed-first-callback-from-request-ms=not-observed"))
+    }
+
+    func testEmptyAndAbortedScansRemainInconclusive() {
+        var session = ProbeSession()
+        let token = UUID()
+        XCTAssertTrue(session.report.contains("gate-a-observation=not-run"))
+        XCTAssertTrue(session.begin(token: token))
+        XCTAssertTrue(session.startScan(token: token))
+        XCTAssertTrue(session.markScanRequested(token: token, elapsedMS: 100))
+        XCTAssertTrue(session.finish(token: token, status: .completed, elapsedMS: 15000))
+        XCTAssertTrue(session.report.contains("gate-a-observation=inconclusive-no-match"))
+        let fresh = UUID()
+        XCTAssertTrue(session.begin(token: fresh))
+        XCTAssertTrue(session.finish(token: fresh, status: .poweredOff, elapsedMS: 25))
+        XCTAssertTrue(session.report.contains("gate-a-observation=inconclusive-aborted"))
+        XCTAssertTrue(session.report.contains("scan-request-to-finish-ms=not-observed"))
+        XCTAssertTrue(session.report.contains("transport-feasibility=not-established"))
     }
 
     func testNoIdentityOrCapabilityInferredFromMultipleMatches() {

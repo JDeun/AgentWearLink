@@ -12,6 +12,7 @@ final class BLEProbe: NSObject, ObservableObject, CBCentralManagerDelegate {
     private var filter: CBUUID?
     private var timeout: DispatchWorkItem?
     private var deadline: DispatchTime?
+    private var startedAt: DispatchTime?
 
     func start(service: String, ownerConsent: Bool) {
         dispatchPrecondition(condition: .onQueue(.main))
@@ -20,7 +21,9 @@ final class BLEProbe: NSObject, ObservableObject, CBCentralManagerDelegate {
         let token = UUID()
         guard session.begin(token: token) else { return }
         filter = CBUUID(string: normalized)
-        let limit = DispatchTime.now() + .seconds(ProbeSession.durationSeconds)
+        let start = DispatchTime.now()
+        startedAt = start
+        let limit = start + .seconds(ProbeSession.durationSeconds)
         deadline = limit
         let task = DispatchWorkItem { [weak self] in self?.expire(token: token) }
         timeout = task
@@ -67,13 +70,21 @@ final class BLEProbe: NSObject, ObservableObject, CBCentralManagerDelegate {
         return token
     }
 
+    private func elapsedMS() -> Int? {
+        guard let start = startedAt else { return nil }
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now >= start.uptimeNanoseconds else { return nil }
+        return Int(clamping: (now - start.uptimeNanoseconds) / 1_000_000)
+    }
+
     private func finish(token: UUID, outcome: ProbeStatus) {
-        guard session.finish(token: token, status: outcome) else { return }
+        guard session.finish(token: token, status: outcome, elapsedMS: elapsedMS()) else { return }
         // Invalidate the identity before releasing the manager or timer.
         let retired = manager
         manager = nil
         filter = nil
         deadline = nil
+        startedAt = nil
         timeout?.cancel()
         timeout = nil
         if let retired {
@@ -94,15 +105,16 @@ final class BLEProbe: NSObject, ObservableObject, CBCentralManagerDelegate {
                 let observation = ProbeObservation(localName: peripheral.name,
                                                    systemConnectedSnapshot: true)
                 if session.record(token: token, peripheralID: peripheral.identifier,
-                                  observation: observation) == .capacityExceeded {
+                                  observation: observation, elapsedMS: elapsedMS()) == .capacityExceeded {
                     finish(token: token, outcome: .candidateLimit)
                     return
                 }
             }
             guard currentToken(for: central) == token else { return }
+            // Mark immediately before the request on the same serial queue.
+            guard session.markScanRequested(token: token, elapsedMS: elapsedMS()) else { return }
             central.scanForPeripherals(withServices: [filter],
                                        options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
-            _ = session.markScanRequested(token: token)
         case .unknown:
             if session.status == .scanning { finish(token: token, outcome: .unknownState) }
         case .resetting: finish(token: token, outcome: .resetting)
@@ -127,7 +139,7 @@ final class BLEProbe: NSObject, ObservableObject, CBCentralManagerDelegate {
             advertisement: true,
             serviceAdvertised: services.contains(filter) || overflow.contains(filter),
             serviceDataPresent: serviceData?[filter] != nil,
-            connectable: (advertisementData[CBAdvertisementDataIsConnectableKey] as? NSNumber)?.boolValue
+            connectable: (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
         )
         if session.record(token: token, peripheralID: peripheral.identifier,
                           observation: observation) == .capacityExceeded {

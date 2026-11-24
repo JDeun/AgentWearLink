@@ -25,6 +25,12 @@ xcodebuild -project BLEDiscovery.xcodeproj -scheme BLEDiscovery -configuration R
 
 For physical evidence, open the generated project, select your own development signing team and install on your iPhone. Use an independently identified, personally owned test accessory and its documented, authorized service UUID as a positive control before trying the owned glasses. Leave the official Meta companion and existing pairing unchanged; no channel/credential probing. Start only while the app is active; if the first OS permission prompt interrupts the run, return to the app, re-enter the filter and explicitly start again. Test denied permission, Bluetooth off, no match, duplicate matches, cancel and background/lock (clear/stop; no auto restart). Record iOS/app commit, test condition, firmware version if known, and only the sanitized report. Do not enter a guessed proprietary service or identifier. If no authorized service is available, record blocked rather than expanding the scan.
 
+## Repeatable observation procedure
+
+For each authorized test service, run three independent foreground observations with the same firmware/iOS/position and device state. Start with a personally owned documented positive-control accessory; then observe the target only if a documented or explicitly authorized service is available. Test separately with the official companion idle and connected; do not alter pairing or initiate competing sessions. Record the condition and trial number manually with the sanitized report; no screenshots, device IDs or raw advertisement payloads. If ownership cannot be independently confirmed, leave the result unconfirmed. If no authorized service is known, record blocked rather than guessing or broadening the scan.
+
+Report v2 records the app's elapsed monotonic initialization/observation intervals, the first callback for the explicitly confirmed candidate relative to the scan request, and the categorical Gate A observation. The entire run has a 15-second requested deadline; an OS/main-queue scheduling delay can make measured request-to-finish exceed that deadline. This is not radio airtime, connection latency, wake latency, or evidence of actual service access. An empty scan is inconclusive; an OS snapshot is not a local connection. All reports explicitly state that transport feasibility is not established.
+
 ## Interpretation and next gate
 
 - Positive control visibility establishes only that iOS discovery works in that setup.
@@ -32,4 +38,4 @@ For physical evidence, open the generated project, select your own development s
 - No authorized service or ambiguous identity: Gate A remains blocked/inconclusive.
 - No local GATT, PSM, L2CAP, companion authorization, event delivery, lock-screen wake, Korean Alfred, or battery claim. Gate B requires a manufacturer-supported or otherwise explicitly authorized transport and separate review. Do not extend this tool to open a channel or change ownership.
 
-Policy tests cover validation, run fencing, deduplication, caps, consent/identity confirmation and report privacy. CI builds the simulator app and checks the static API boundary. Neither proves actual device visibility, OS authorization behavior, physical teardown, or low-power wake feasibility.
+Policy tests cover validation, run fencing, deduplication, caps, consent/identity confirmation and report privacy. CI builds the simulator app, checks the static API boundary and verifies the built bundle's privacy configuration. Neither proves actual device visibility, OS authorization behavior, physical teardown, or low-power wake feasibility.
