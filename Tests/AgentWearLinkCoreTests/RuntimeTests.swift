@@ -828,6 +828,56 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(restartedAgentState.cancelled.count, 2)
     }
 
+    func testGlobalDeliveryOverloadCancelsAllInteractionsAndTearsDownRuntime() async throws {
+        let device = RestartableEndingDevice()
+        let agent = RuntimeHoldingAgent()
+        let recorder = RuntimeRecorder()
+        let runtime = AgentWearLinkRuntime(device: device, agent: agent) { event in
+            await recorder.append(event)
+        }
+
+        try await runtime.start()
+
+        let first = InteractionID()
+        let second = InteractionID()
+        device.emit(.text(first, "first"))
+        device.emit(.text(second, "second"))
+        try await agent.waitUntilRequestCount(2)
+
+        device.emit(.failed(nil, .overloaded("device event buffer exceeded")))
+
+        try await agent.waitUntilCancelCount(2)
+        try await recorder.waitUntilCount(1)
+        try await waitUntilTestCondition("global overload runtime teardown") {
+            let state = await agent.snapshot()
+            return state.disconnects == 1
+        }
+
+        let agentState = await agent.snapshot()
+        XCTAssertEqual(agentState.connects, 1)
+        XCTAssertEqual(agentState.disconnects, 1)
+        XCTAssertEqual(Set(agentState.requested), Set([first, second]))
+        XCTAssertEqual(agentState.cancelled.count, 2)
+        XCTAssertEqual(Set(agentState.cancelled), Set([first, second]))
+
+        let deviceState = device.snapshot()
+        XCTAssertEqual(deviceState.disconnects, 1)
+        XCTAssertFalse(deviceState.hasActiveSubscription)
+
+        let events = await recorder.events
+        XCTAssertEqual(events, [.failed(nil, .overloaded("device event buffer exceeded"))])
+
+        // A terminal global failure retires only the failed generation; the
+        // runtime remains restartable after teardown completes.
+        try await runtime.start()
+        await runtime.stop()
+
+        let restartedAgentState = await agent.snapshot()
+        XCTAssertEqual(restartedAgentState.connects, 2)
+        XCTAssertEqual(restartedAgentState.disconnects, 2)
+        XCTAssertEqual(restartedAgentState.cancelled.count, 2)
+    }
+
     func testUnexpectedDeviceEventStreamFinishFailsAndCleansUpRuntime() async throws {
         let device = RestartableEndingDevice()
         let agent = LifecycleAgent()

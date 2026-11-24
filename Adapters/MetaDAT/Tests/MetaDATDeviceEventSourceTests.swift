@@ -40,6 +40,7 @@ final class MetaDATDeviceEventSourceTests: XCTestCase {
 
         source.yield(.sessionStarted(firstID))
         source.yield(.sessionStarted(secondID))
+        source.yield(.sessionEnded(firstID))
 
         var iterator = stream.makeAsyncIterator()
         let terminal = await iterator.next()
@@ -47,7 +48,7 @@ final class MetaDATDeviceEventSourceTests: XCTestCase {
         guard case let .failed(id, .overloaded(message)) = terminal else {
             return XCTFail("Expected typed overload terminal event, got \(String(describing: terminal))")
         }
-        XCTAssertEqual(id, secondID)
+        XCTAssertNil(id)
         XCTAssertTrue(message.contains("buffer capacity exceeded"))
         let end = await iterator.next()
         XCTAssertNil(end)

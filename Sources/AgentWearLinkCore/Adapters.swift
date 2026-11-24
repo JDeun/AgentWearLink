@@ -25,8 +25,9 @@ public protocol DeviceAdapter: Sendable {
     /// Implementations must not rely on the default unbounded `AsyncStream`
     /// buffering policy. Use a finite buffer (at least one retained event), or
     /// an equivalent coalescing strategy. If delivery cannot be kept lossless
-    /// under that policy, surface overload explicitly rather than allowing
-    /// memory growth or silent loss.
+    /// under that policy, discard the invalid pending sequence and emit exactly
+    /// one generation-wide .failed(nil, .overloaded(...)) before ending it.
+    /// Do not deliver remaining control/text events after known loss.
     func events() -> AsyncStream<InteractionEvent>
 }
 

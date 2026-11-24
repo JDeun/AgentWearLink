@@ -75,93 +75,10 @@ public enum MetaDATEvent: Sendable, Equatable {
 }
 
 /// Normalizes Meta DAT session semantics into AgentWearLink Core contracts.
-private final class MetaDATInteractionEventSource: @unchecked Sendable {
-    private static let bufferLimit = 64
-
-    private struct Subscription {
-        let generation: UInt64
-        let continuation: AsyncStream<InteractionEvent>.Continuation
-    }
-
-    private let lock = NSLock()
-    private var nextGeneration: UInt64 = 0
-    private var subscription: Subscription?
-
-    func stream() -> AsyncStream<InteractionEvent> {
-        AsyncStream(
-            bufferingPolicy: .bufferingNewest(Self.bufferLimit)
-        ) { continuation in
-            lock.lock()
-            nextGeneration &+= 1
-            let previous = subscription
-            subscription = Subscription(
-                generation: nextGeneration,
-                continuation: continuation
-            )
-            lock.unlock()
-
-            previous?.continuation.finish()
-        }
-    }
-
-    func currentGeneration() -> UInt64? {
-        lock.lock()
-        let generation = subscription?.generation
-        lock.unlock()
-        return generation
-    }
-
-    func yield(_ event: InteractionEvent) {
-        lock.lock()
-        let active = subscription
-        lock.unlock()
-
-        guard let active else { return }
-        guard case .dropped = active.continuation.yield(event) else { return }
-
-        // Device-to-Core delivery is deliberately bounded. If a consumer falls
-        // behind far enough to drop an event, surface that loss explicitly and
-        // retire only the overflowing subscription generation.
-        _ = active.continuation.yield(
-            .failed(
-                event.interactionID,
-                .overloaded("Meta DAT event stream buffer capacity exceeded")
-            )
-        )
-
-        lock.lock()
-        let shouldFinish = subscription?.generation == active.generation
-        if shouldFinish {
-            subscription = nil
-        }
-        lock.unlock()
-
-        if shouldFinish {
-            active.continuation.finish()
-        }
-    }
-
-    func finish(generation: UInt64?) {
-        guard let generation else { return }
-
-        lock.lock()
-        let continuation: AsyncStream<InteractionEvent>.Continuation?
-        if subscription?.generation == generation {
-            continuation = subscription?.continuation
-            subscription = nil
-        } else {
-            continuation = nil
-        }
-        lock.unlock()
-
-        continuation?.finish()
-    }
-}
-
 public actor MetaDATAdapter: SnapshotCapturingDevice {
     private let session: any MetaDATSession
     private let mappedCapabilities: CapabilitySet
-    private nonisolated let eventSource = MetaDATInteractionEventSource()
+    private nonisolated let eventSource = BoundedDeviceEventSource(bufferLimit: 64)
     private var eventTask: Task<Void, Never>?
     private var invocationTask: Task<Void, Never>?
     private var snapshotGeneration: UInt64 = 0
@@ -191,7 +108,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
         let forwardingTask = Task { [weak self] in
             for await event in stream {
                 guard !Task.isCancelled else { break }
-                await self?.forward(event)
+                await self?.forward(event, generation: publicEventGeneration)
             }
         }
         eventTask = forwardingTask
@@ -210,7 +127,8 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
                 for await invocation in invocations {
                     guard !Task.isCancelled else { break }
                     await self?.forward(
-                        .invocation(invocation.id, invocation.phrase)
+                        .invocation(invocation.id, invocation.phrase),
+                        generation: publicEventGeneration
                     )
                 }
             }
@@ -285,7 +203,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
         eventSource.stream()
     }
 
-    private func forward(_ event: MetaDATEvent) {
+    private func forward(_ event: MetaDATEvent, generation: UInt64?) {
         let normalized: InteractionEvent
         switch event {
         case let .sessionStarted(id):
@@ -301,7 +219,7 @@ public actor MetaDATAdapter: SnapshotCapturingDevice {
         case let .failed(id, message):
             normalized = .failed(id.map { InteractionID(rawValue: $0) }, .device(message))
         }
-        eventSource.yield(normalized)
+        eventSource.yield(normalized, generation: generation)
     }
 
     private nonisolated static func mapCapabilities(_ source: MetaDATCapabilities) -> CapabilitySet {
