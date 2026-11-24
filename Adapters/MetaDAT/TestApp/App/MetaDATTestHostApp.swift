@@ -13,6 +13,9 @@ struct MetaDATTestHostApp: App {
     @StateObject private var mockVoice = AWLMockVoiceInvocationHarness()
     @StateObject private var mockWake = AWLMockVoiceWakeHarness()
     @StateObject private var mockPhoto = AWLMockPhotoSnapshotHarness()
+    #if DEBUG
+    @StateObject private var mockLifecycle = AWLMockSessionLifecycleHarness()
+    #endif
     @State private var gatewayHostname = ""
     @State private var bootstrapToken = ""
     @State private var targetSessionKey = ""
@@ -64,6 +67,25 @@ struct MetaDATTestHostApp: App {
                     Text(mockPhoto.status)
                         .accessibilityIdentifier("awl-meta-photo-state")
                 }
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains(MetaDATMockHostBootstrap.launchArgument),
+                   ProcessInfo.processInfo.arguments.contains(MetaDATMockHostBootstrap.sessionLifecycleLaunchArgument)
+                    || ProcessInfo.processInfo.arguments.contains(MetaDATMockHostBootstrap.unregisteredLifecycleLaunchArgument) {
+                    Text(mockLifecycle.status)
+                        .accessibilityIdentifier("awl-meta-session-lifecycle-state")
+                    Button("Verify SDK session lifecycle") {
+                        Task {
+                            await mockLifecycle.run(
+                                unregistered: ProcessInfo.processInfo.arguments.contains(
+                                    MetaDATMockHostBootstrap.unregisteredLifecycleLaunchArgument
+                                )
+                            )
+                        }
+                    }
+                    .accessibilityIdentifier("awl-meta-verify-session-lifecycle")
+                    .disabled(state != "host-ready" || mockLifecycle.running)
+                }
+                #endif
                 Button("Configure mock still fixture") {
                     Task {
                         do {
