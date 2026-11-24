@@ -34,4 +34,11 @@ final class MetaDATSpeechFailurePolicyTests: XCTestCase {
         XCTAssertTrue(after.contains(.cameraSnapshot))
         XCTAssertTrue(after.contains(.voiceInvocation))
     }
+
+    func testFinalDeliveryOverflowOnlyDegradesSpeech() {
+        XCTAssertEqual(
+            MetaDATSpeechFailurePolicy.event(for: MetaDATSpeechDeliveryError.finalTranscriptOverflow),
+            .failed(nil, .capabilityUnavailable("Meta DAT Speech final transcript delivery capacity exceeded"))
+        )
+    }
 }

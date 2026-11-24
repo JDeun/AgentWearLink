@@ -55,6 +55,8 @@ struct MetaDATTestHostApp: App {
                         .accessibilityIdentifier("awl-meta-wake-state")
                     Text(mockWake.mediaStatus)
                         .accessibilityIdentifier("awl-meta-wake-media-state")
+                    Text("wake-completed-turns-\(mockWake.completedTurnCount)")
+                        .accessibilityIdentifier("awl-meta-wake-completed-turns")
                     Button("Inject deterministic mock Speech transcript") {
                         mockWake.sendFinalTranscript()
                     }

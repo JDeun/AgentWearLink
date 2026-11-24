@@ -296,6 +296,25 @@ final class AgentWearLinkMetaDATUITests: XCTestCase {
             "Final DAT Speech did not reach Core and terminal MockAgent output: \(wake.label)"
         )
 
+        let completedTurns = app.staticTexts["awl-meta-wake-completed-turns"]
+        XCTAssertTrue(completedTurns.waitForExistence(timeout: 5))
+        XCTAssertEqual(completedTurns.label, "wake-completed-turns-1")
+
+        // Deliberately repeat the exact same injected utterance, on the
+        // same Speech attachment and Core runtime, beyond the heuristic
+        // duplicate interval. The former session-wide Set rejected this.
+        try await Task.sleep(for: .milliseconds(1200))
+        inject.tap()
+        let secondTurn = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "wake-completed-turns-2"),
+            object: completedTurns
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [secondTurn], timeout: 20),
+            .completed,
+            "Repeated final must complete a distinct agent interaction"
+        )
+
         try await client.kit.unpairDevice(glasses)
         let remaining = try await client.kit.pairedDevices
         XCTAssertFalse(remaining.contains(glasses))
