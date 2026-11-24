@@ -300,7 +300,9 @@ public actor HTTPAgentTransport: AgentTransport {
         }
 
         let generation = UUID()
-        let (stream, continuation) = AsyncThrowingStream<AgentResponse, Error>.makeStream()
+        let (stream, continuation) = AsyncThrowingStream<AgentResponse, Error>.makeStream(
+            bufferingPolicy: .bufferingOldest(2)
+        )
 
         let loader = BoundedHTTPResponseLoader(
             configuration: sessionConfiguration,
@@ -322,9 +324,13 @@ public actor HTTPAgentTransport: AgentTransport {
             continuation: continuation
         )
 
-        continuation.onTermination = { _ in
+        continuation.onTermination = { termination in
+            // A normal finish is not a cancellation. In either case, a
+            // delayed callback from this submission must never cancel a new
+            // submission that reused the same logical interaction ID.
+            guard case .cancelled = termination else { return }
             Task {
-                await self.cancel(interactionID: id)
+                await self.cancel(interactionID: id, generation: generation)
             }
         }
 
@@ -373,8 +379,26 @@ public actor HTTPAgentTransport: AgentTransport {
                 return
             }
 
-            operation.continuation.yield(.textDelta(id, text))
-            operation.continuation.yield(.completed(id))
+            // This buffered transport emits exactly one body and one terminal
+            // event. Keep both even if the consumer has not started iterating.
+            for response in [AgentResponse.textDelta(id, text), .completed(id)] {
+                switch operation.continuation.yield(response) {
+                case .enqueued:
+                    continue
+                case .dropped:
+                    operation.continuation.finish(
+                        throwing: AWLError.overloaded("HTTP response event buffer capacity exceeded")
+                    )
+                    return
+                case .terminated:
+                    return
+                @unknown default:
+                    operation.continuation.finish(
+                        throwing: AWLError.transport("HTTP response event delivery failed")
+                    )
+                    return
+                }
+            }
             operation.continuation.finish()
         }
     }
@@ -400,12 +424,23 @@ public actor HTTPAgentTransport: AgentTransport {
     }
 
     public func cancel(interactionID: InteractionID) async {
-        guard let operation = operations.removeValue(forKey: interactionID) else {
+        cancel(interactionID: interactionID, generation: nil)
+    }
+
+    // Used by the stream termination callback. A nil generation is reserved
+    // for explicit caller cancellation of the current logical interaction.
+    func cancel(interactionID: InteractionID, generation: UUID?) {
+        guard let operation = operations[interactionID],
+              generation == nil || operation.generation == generation else {
             return
         }
-
+        operations[interactionID] = nil
         operation.loader.cancel()
         operation.continuation.finish(throwing: AWLError.cancelled)
+    }
+
+    func operationGeneration(interactionID: InteractionID) -> UUID? {
+        operations[interactionID]?.generation
     }
 
     func operationCount() -> Int {
