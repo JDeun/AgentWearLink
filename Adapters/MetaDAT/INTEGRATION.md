@@ -1,6 +1,6 @@
 # Meta DAT integration status
 
-AgentWearLink pins Meta Wearables DAT **1.0.0** in `Adapters/MetaDAT`. Vendor SDK types remain outside `AgentWearLinkCore`.
+AgentWearLink pins Meta Wearables DAT **1.1.0** in `Adapters/MetaDAT`. Vendor SDK types remain outside `AgentWearLinkCore`.
 
 ## Implementation status by evidence level
 
@@ -26,7 +26,7 @@ Issue #230 tracks remaining end-to-end evidence rather than a missing parallel
 
 ### Experimental Camera.photo (explicitly not the default)
 
-**Meta DAT 1.0.0 marks standalone `Camera.photo` experimental and currently
+**Meta DAT 1.1.0 marks standalone `Camera.photo` experimental and currently
 non-publishable.** Production and reference hosts continue using short-lived
 `camera.stream.capturePhoto(format: .jpeg)` unless a DEBUG operator explicitly
 selects `MetaDATSnapshotMode.experimentalStandalonePhoto`. The reference iOS
