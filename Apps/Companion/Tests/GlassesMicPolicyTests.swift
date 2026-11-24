@@ -25,3 +25,37 @@ final class GlassesMicPolicyTests: XCTestCase {
         XCTAssertFalse(GlassesMicRetry.isQuietEnd(domain: nil, code: nil, taskAge: 30))
     }
 }
+
+final class HFPListeningLeaseTests: XCTestCase {
+    func testOnlyExplicitBoundedDurationsAreAccepted() {
+        let now = ContinuousClock.now
+        for seconds in HFPListeningLease.allowedSeconds {
+            let lease = HFPListeningLease(seconds: seconds, now: now)
+            XCTAssertEqual(lease?.deadline, now.advanced(by: .seconds(seconds)))
+        }
+        for seconds in [-1, 0, 1, 301, 86_400] {
+            XCTAssertNil(HFPListeningLease(seconds: seconds, now: now))
+        }
+    }
+
+    func testSilenceExpiresButActivityCannotExtendHardDeadline() throws {
+        let now = ContinuousClock.now
+        var lease = try XCTUnwrap(HFPListeningLease(seconds: 60, now: now))
+        XCTAssertNil(lease.end(at: now.advanced(by: .seconds(29)), routeAvailable: true, competingAudio: false))
+        XCTAssertEqual(lease.end(at: now.advanced(by: .seconds(30)), routeAvailable: true, competingAudio: false), .inactive)
+        lease.noteActivity(at: now.advanced(by: .seconds(25)))
+        lease.noteActivity(at: now.advanced(by: .seconds(50)))
+        XCTAssertNil(lease.end(at: now.advanced(by: .seconds(59)), routeAvailable: true, competingAudio: false))
+        XCTAssertEqual(lease.end(at: now.advanced(by: .seconds(60)), routeAvailable: true, competingAudio: false), .expired)
+        lease.noteActivity(at: now.advanced(by: .seconds(61)))
+        XCTAssertEqual(lease.lastActivity, now.advanced(by: .seconds(50)))
+    }
+
+    func testRouteLossAndCompetingAudioEndImmediately() throws {
+        let now = ContinuousClock.now
+        let lease = try XCTUnwrap(HFPListeningLease(seconds: 120, now: now))
+        XCTAssertEqual(lease.end(at: now, routeAvailable: false, competingAudio: false), .routeLost)
+        XCTAssertEqual(lease.end(at: now, routeAvailable: true, competingAudio: true), .competingAudio)
+        XCTAssertNil(lease.end(at: now, routeAvailable: true, competingAudio: false))
+    }
+}

@@ -31,3 +31,51 @@ public enum GlassesMicRetry {
     /// Minimum spacing between engine restart attempts by the watchdog.
     public static let engineRestartSpacing: TimeInterval = 2
 }
+
+/// A single, non-renewing foreground experiment grant. Explicit UI action
+/// creates it; callbacks and automatic recovery cannot extend the hard cap.
+public struct HFPListeningLease: Sendable, Equatable {
+    public enum End: String, Sendable, Equatable {
+        case expired, inactive, stopped, background, interrupted, routeLost,
+             competingAudio, powerRestricted, recognitionFailed, engineFailed,
+             connectionFailed, deliveryFailed
+    }
+
+    public static let allowedSeconds = [60, 120, 300]
+    public static let defaultSeconds = 120
+    public static let idleSeconds = 30
+    public static let maximumRecognizerErrors = 3
+    public static let maximumEngineRestarts = 2
+
+    public let id: UUID
+    public let began: ContinuousClock.Instant
+    public let deadline: ContinuousClock.Instant
+    public private(set) var lastActivity: ContinuousClock.Instant
+
+    public init?(seconds: Int, now: ContinuousClock.Instant = .now, id: UUID = UUID()) {
+        guard Self.allowedSeconds.contains(seconds) else { return nil }
+        self.id = id
+        began = now
+        deadline = now.advanced(by: .seconds(seconds))
+        lastActivity = now
+    }
+
+    public func isWithinHardLimit(at now: ContinuousClock.Instant = .now) -> Bool {
+        now >= began && now < deadline
+    }
+
+    /// An actual nonempty recognition result can refresh inactivity only.
+    /// Repeated empty callbacks and automatic recognition restarts cannot.
+    public mutating func noteActivity(at now: ContinuousClock.Instant) {
+        guard isWithinHardLimit(at: now), now >= lastActivity else { return }
+        lastActivity = now
+    }
+
+    public func end(at now: ContinuousClock.Instant, routeAvailable: Bool, competingAudio: Bool) -> End? {
+        guard isWithinHardLimit(at: now) else { return .expired }
+        guard routeAvailable else { return .routeLost }
+        guard !competingAudio else { return .competingAudio }
+        if now - lastActivity >= .seconds(Self.idleSeconds) { return .inactive }
+        return nil
+    }
+}
