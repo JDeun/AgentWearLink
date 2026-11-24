@@ -28,10 +28,43 @@ from run_hermetic_development_gateway import (
     synthetic_agent_gateway_config,
     synthetic_model_received_request,
     may_retry_negative_gateway_startup,
+    grant_stage_evidence,
+    grant_stage_passed,
 )
 
 
 class HermeticRealGatewayRunnerTests(unittest.TestCase):
+    def test_grant_stage_evidence_distinguishes_issuance_and_reconnect(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / "probe-phase").write_text("connect-sent")
+            (path / "probe-result").write_text("hello-timeout")
+            common = dict(path=path, exit_code=1, elapsed_seconds=10.125, gateway_alive=True)
+            first = grant_stage_evidence(stage="grant-issuance", **common)
+            second = grant_stage_evidence(stage="stored-grant-reconnect", **common)
+            self.assertIn("stage=grant-issuance", first)
+            self.assertIn("stage=stored-grant-reconnect", second)
+            self.assertIn("phase=connect-sent failure=hello-timeout", first)
+            self.assertIn("elapsed-ms=10125 gateway-alive=yes", second)
+            self.assertFalse(grant_stage_passed(exit_code=1, path=path))
+
+    def test_grant_stage_evidence_redacts_unknown_labels_and_requires_health(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / "probe-phase").write_text("PRIVATE_TOKEN=secret")
+            (path / "probe-result").write_text("PRIVATE_DEVICE=secret")
+            line = grant_stage_evidence(stage="stored-grant-reconnect", path=path,
+                                        exit_code=0, elapsed_seconds=0, gateway_alive=False)
+            self.assertIn("phase=unobserved failure=unobserved", line)
+            self.assertNotIn("secret", line)
+            self.assertFalse(grant_stage_passed(exit_code=0, path=path))
+            (path / "probe-phase").write_text("health-accepted")
+            self.assertTrue(grant_stage_passed(exit_code=0, path=path))
+            self.assertFalse(grant_stage_passed(exit_code=1, path=path))
+            with self.assertRaises(ValueError):
+                grant_stage_evidence(stage="PRIVATE_TOKEN=secret", path=path,
+                                     exit_code=0, elapsed_seconds=0, gateway_alive=True)
+
     def test_retries_only_structured_startup_sidecars_before_budget_limit(self):
         good = {
             "phase": "gateway-startup-pending",
