@@ -34,6 +34,36 @@ public enum MetaDATSpeechStallPolicy {
 
     /// Pause between stop() and start() of a stall restart.
     public static let restartGap: Duration = .milliseconds(600)
+    /// An asynchronous SDK stop must actually be observed before start.
+    public static let stopConfirmationTimeout: Duration = .seconds(3)
+    public static let stopConfirmationPoll: Duration = .milliseconds(100)
+    /// No callbacks after repeated restarts is not evidence of readiness.
+    /// Limit retries until a fresh activation or an actual callback.
+    public static let noEventRecoveryLimit = 3
+
+    public static func canRecoverNoEvents(attempts: Int) -> Bool {
+        attempts >= 0 && attempts < noEventRecoveryLimit
+    }
+
+    public enum PostStopAction: Equatable, Sendable {
+        case start
+        case wait
+        case abandon
+    }
+
+    public static func postStopAction(
+        ownsSpeech: Bool,
+        cancelled: Bool,
+        hostPaused: Bool,
+        sessionStarted: Bool,
+        speechStopped: Bool,
+        beforeDeadline: Bool
+    ) -> PostStopAction {
+        guard ownsSpeech, !cancelled, !hostPaused, sessionStarted, beforeDeadline else {
+            return .abandon
+        }
+        return speechStopped ? .start : .wait
+    }
     /// How often the adapter checks.
     public static let checkInterval: Duration = .seconds(2)
     /// Speech event counts are logged this often (the activity log holds
