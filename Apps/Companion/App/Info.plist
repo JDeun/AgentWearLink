@@ -58,6 +58,11 @@
 
     <key>MWDAT</key>
     <dict>
+        <key>Analytics</key>
+        <dict>
+            <key>OptOut</key>
+            <true/>
+        </dict>
         <key>AppLinkURLScheme</key>
         <string>$(AWL_META_CALLBACK_SCHEME)://</string>
         <key>MetaAppID</key>

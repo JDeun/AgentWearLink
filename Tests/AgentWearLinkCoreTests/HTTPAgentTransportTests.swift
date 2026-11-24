@@ -301,4 +301,81 @@ final class HTTPAgentTransportTests: XCTestCase {
         await transport.cancel(interactionID: id)
         withExtendedLifetime(firstStream) {}
     }
+
+    func testDelayedTerminationCannotCancelReplacementSubmission() async throws {
+        let releaseResponse = DispatchSemaphore(value: 0)
+        URLProtocolStub.handler = { request in
+            guard releaseResponse.wait(timeout: .now() + 5) == .success else {
+                throw URLError(.timedOut)
+            }
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data("ok".utf8)
+            )
+        }
+        defer {
+            releaseResponse.signal()
+            releaseResponse.signal()
+        }
+
+        let transport = HTTPAgentTransport(
+            configuration: .init(endpoint: URL(string: "https://example.invalid")!),
+            session: makeSession()
+        )
+        let id = InteractionID()
+        let request = AgentRequest(interactionID: id, text: "hello")
+        let first = await transport.send(request)
+        let firstGeneration = await transport.operationGeneration(interactionID: id)
+        let old = try XCTUnwrap(firstGeneration)
+        await transport.cancel(interactionID: id)
+
+        let replacement = await transport.send(request)
+        let replacementGeneration = await transport.operationGeneration(interactionID: id)
+        let current = try XCTUnwrap(replacementGeneration)
+        XCTAssertNotEqual(old, current)
+
+        // Simulate the old continuation's delayed callback, independent of
+        // task scheduling. It must not cancel the new network operation.
+        await transport.cancel(interactionID: id, generation: old)
+        let afterLateCancellation = await transport.operationGeneration(interactionID: id)
+        XCTAssertEqual(afterLateCancellation, current)
+
+        releaseResponse.signal()
+        releaseResponse.signal()
+        var observed: [AgentResponse] = []
+        for try await response in replacement { observed.append(response) }
+        XCTAssertEqual(observed, [.textDelta(id, "ok"), .completed(id)])
+        let remaining = await transport.operationCount()
+        XCTAssertEqual(remaining, 0)
+        withExtendedLifetime(first) {}
+    }
+
+    func testCurrentStreamGenerationCanStillCancel() async throws {
+        let releaseResponse = DispatchSemaphore(value: 0)
+        URLProtocolStub.handler = { _ in
+            _ = releaseResponse.wait(timeout: .now() + 5)
+            throw URLError(.cancelled)
+        }
+        defer { releaseResponse.signal() }
+
+        let transport = HTTPAgentTransport(
+            configuration: .init(endpoint: URL(string: "https://example.invalid")!),
+            session: makeSession()
+        )
+        let id = InteractionID()
+        let stream = await transport.send(.init(interactionID: id, text: "hello"))
+        let activeGeneration = await transport.operationGeneration(interactionID: id)
+        let generation = try XCTUnwrap(activeGeneration)
+        await transport.cancel(interactionID: id, generation: generation)
+
+        do {
+            for try await _ in stream {}
+            XCTFail("Expected cancellation")
+        } catch let error as AWLError {
+            XCTAssertEqual(error, .cancelled)
+        }
+        let remaining = await transport.operationCount()
+        XCTAssertEqual(remaining, 0)
+    }
+
 }

@@ -549,6 +549,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         let session: DeviceSession
         do {
             session = try wearables.createSession(deviceSelector: selector)
+        } catch DeviceSessionError.notRegistered {
+            // Registration may be revoked between preflight and creation in DAT 1.1.
+            tearDownSession(expectedGeneration: generation)
+            throw AWLError.device("Meta DAT application is not registered")
         } catch {
             tearDownSession(expectedGeneration: generation)
             throw error

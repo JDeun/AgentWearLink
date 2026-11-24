@@ -7,7 +7,7 @@
 [English](README.md) · [빠른 시작](docs/getting-started.md) · [아키텍처](docs/architecture.md) · [전체 문서](docs/README.md) · [기여 가이드](CONTRIBUTING.md)
 
 > [!IMPORTANT]
-> **Pre-alpha / 통합 프리뷰** 단계입니다. Swift 패키지, 벤더 SDK 기반 시뮬레이터 테스트, 격리된 실제 OpenClaw Gateway 통합 계약은 구현 및 CI 검증을 마쳤습니다. **Ray-Ban Meta + iPhone + 실제 Mac/Tailnet 조합은 아직 실기기 검증되지 않았습니다.** 상용 배포 준비 완료 또는 실기기 호환성 확정으로 해석해서는 안 됩니다.
+> **Pre-alpha / 통합 프리뷰** 단계입니다. Swift 패키지, 벤더 SDK 기반 시뮬레이터 테스트, 격리된 실제 OpenClaw Gateway 통합 계약은 구현 및 CI 검증을 마쳤습니다. **2026년 10월 13일 일부 실기기 스모크 테스트에 성공했으나 전체 배포 및 실기기 인수 검증은 미완료입니다.** 상용 배포 준비 완료 또는 실기기 호환성 확정으로 해석해서는 안 됩니다.
 
 ## 프로젝트 소개
 
@@ -87,10 +87,10 @@ Meta DAT 실제 연동 패키지의 의존성을 해석하려면 별도로 **Swi
 | Swift Core 및 어댑터 테스트 | **CI 통과** | 결정적 계약과 오류 처리 |
 | Meta DAT 컴파일·MockDeviceKit | **CI 검증 범위** | 고정 SDK와 시뮬레이터 호스트 연동, 실기기 아님 |
 | 고정 버전의 실제 OpenClaw Gateway | **CI 통과** | 격리 Gateway의 인증·명시적 승인·Grant 재사용/폐기·스트리밍·취소·2턴 세션 |
-| iPhone ↔ Tailscale ↔ 실제 Mac | **미검증** | 사설 배포 환경 테스트 필요 |
-| Ray-Ban Meta 카메라·오디오·음성 | **미검증** | 실기기·권한 설정 필요 |
+| iPhone ↔ Tailscale ↔ 실제 Mac | **일부 실기기 확인** | 10월 13일 health·페어링 승인·Keychain 재연결 기록; 전체 배포 검증 미완료 |
+| Ray-Ban Meta 카메라·오디오·음성 | **일부 실기기 확인** | 등록·마이크 권한·한국어 음성 질의 및 안경 응답 기록; 카메라·잠금 화면·안정성 검증 미완료 |
 
-실제 Gateway CI도 격리된 localhost Gateway와 **합성 로컬 모델**을 사용합니다. 개인 세션, 실제 모델의 메모리·도구 실행, 사람의 수동 승인, iOS Keychain 권한 또는 웨어러블 하드웨어까지 검증했다는 뜻은 아닙니다. [테스트와 CI](docs/testing.md), [미해결 이슈](https://github.com/JDeun/AgentWearLink/issues), [안정성 검증표](docs/reliability-matrix.md)를 참고하세요.
+실제 Gateway CI도 격리된 localhost Gateway와 **합성 로컬 모델**을 사용합니다. 개인 세션, 실제 모델의 메모리·도구 실행, 사람의 수동 승인, iOS Keychain 권한 또는 웨어러블 하드웨어까지 검증했다는 뜻은 아닙니다. 과거 실기기 기록은 [10월 검증 로그](docs/research/validation-log-2026-10.md)에 별도로 남아 있으며, 현재 후보 SDK나 앱의 전체 검증을 뜻하지 않습니다. [테스트와 CI](docs/testing.md), [미해결 이슈](https://github.com/JDeun/AgentWearLink/issues), [안정성 검증표](docs/reliability-matrix.md)를 참고하세요.
 
 ## 설계 원칙
 
