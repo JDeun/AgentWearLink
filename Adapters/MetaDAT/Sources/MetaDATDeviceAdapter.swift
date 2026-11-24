@@ -453,7 +453,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                     on: session,
                     generation: generation
                 )
-                liveCapabilities.update(speechReady: true)
+                guard generationFence.owns(generation), !stopping,
+                      deviceSession === session else { throw CancellationError() }
+                // An immediate overflow or vendor error may have retired the
+                // attachment during the async setup. Never re-advertise it.
+                liveCapabilities.update(speechReady: speechDelivery != nil && speech != nil)
             } catch {
                 guard MetaDATSpeechSetupPolicy.mayContinueWithoutSpeech(error) else {
                     // Session-generation retirement and unexpected failures
@@ -476,6 +480,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             } catch {
                 cameraReady = false
             }
+            guard generationFence.owns(generation), !stopping,
+                  deviceSession === session else { throw CancellationError() }
             liveCapabilities.update(cameraReady: cameraReady)
 
             // Do not create a second stateStream() after consuming .started.

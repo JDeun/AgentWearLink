@@ -11,14 +11,19 @@ import SwiftUI
 final class AWLMockVoiceWakeHarness: ObservableObject {
     @Published private(set) var status = "wake-waiting"
     @Published private(set) var mediaStatus = "wake-media-pending"
+    @Published private(set) var completedTurnCount = 0
     private let diagnostics = AWLDiagnosticRecorder(capacity: 32)
     private var adapter: MetaDATDeviceAdapter?
     private var runtime: AgentWearLinkRuntime?
     private var readinessTask: Task<Void, Never>?
-    private var sawAgentText = false
+    // Track the response by interaction so a prior echo cannot satisfy a
+    // later turn's assertion. This is test-only state, not a production cache.
+    private var echoedInteractions: Set<InteractionID> = []
 
     func start() async {
         guard runtime == nil else { return }
+        completedTurnCount = 0
+        echoedInteractions.removeAll()
         let lifecycle = MetaDATApplicationLifecycle(initialPhase: .foreground)
         let vendor = MetaDATDeviceAdapter(
             applicationLifecycle: lifecycle,
@@ -33,15 +38,20 @@ final class AWLMockVoiceWakeHarness: ObservableObject {
                     switch event {
                     case .invocation:
                         self?.status = "wake-acknowledged"
-                    case let .text(_, text):
+                    case let .text(id, text):
                         if text.contains("echo:") {
-                            self?.sawAgentText = true
+                            self?.echoedInteractions.insert(id)
                         }
-                    case .turnCompleted:
-                        self?.status = self?.sawAgentText == true
-                            ? "wake-agent-completed"
-                            : "wake-agent-text-missing"
-                    case .failed:
+                    case let .turnCompleted(id):
+                        guard let self else { return }
+                        if self.echoedInteractions.remove(id) != nil {
+                            self.completedTurnCount += 1
+                            self.status = "wake-agent-completed"
+                        } else {
+                            self.status = "wake-agent-text-missing"
+                        }
+                    case let .failed(id, _):
+                        if let id { self?.echoedInteractions.remove(id) }
                         self?.status = "wake-runtime-event-failed"
                     default:
                         break
@@ -95,6 +105,7 @@ final class AWLMockVoiceWakeHarness: ObservableObject {
         await runtime?.stop()
         runtime = nil
         adapter = nil
+        echoedInteractions.removeAll()
         status = "wake-stopped"
     }
 }
