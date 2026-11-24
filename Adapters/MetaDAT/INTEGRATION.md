@@ -49,6 +49,19 @@ MockDeviceKit host bootstrap and deterministic mock fixtures live in the separat
 
 These are code-side evidence claims, not physical-device claims. Helper-level coverage also does not prove that a feature is reachable through the shipping production adapter until #230 is complete.
 
+## Speech readiness and callback evidence
+
+A session or a Speech start request alone is not readiness. The concrete adapter
+advertises Speech only for a started session with a started Speech attachment
+and active delivery. Its typed `speechHealth` snapshot separately reports the
+last callback and last non-empty callback at SDK ingress, without transcript
+contents. The caller may select a diagnostic freshness window. Missing or stale
+callbacks are ambiguous (including silence); the snapshot never initiates a
+restart or claims microphone routing/recognition quality. Paused sessions
+de-advertise session-owned capabilities and invalidate an in-flight photo;
+independent Voice Invocation remains separate. Physical behavior and the
+bounded recovery policy remain separate acceptance gates.
+
 ## Deliberately not claimed as physically validated
 
 The following remain hardware/deployment gates:
