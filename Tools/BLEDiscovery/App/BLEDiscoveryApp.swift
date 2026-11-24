@@ -22,15 +22,16 @@ struct ProbeView: View {
                     TextField("Documented service UUID", text: $service)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .disabled(probe.session.status.isActive)
+                        .disabled(probe.session.status.isActive || probe.session.status == .completed)
                     Toggle("I own the test device and am authorized to observe this service", isOn: $ownerConsent)
-                        .disabled(probe.session.status.isActive)
+                        .disabled(probe.session.status.isActive || probe.session.status == .completed)
                     Button("Start bounded discovery (15 s)") {
                         identified = false
                         probe.start(service: service, ownerConsent: ownerConsent)
                     }
                     .disabled(scenePhase != .active || !ownerConsent
-                              || ServiceFilter.normalized(service) == nil || probe.session.status.isActive)
+                              || ServiceFilter.normalized(service) == nil || probe.session.status.isActive
+                              || probe.session.status == .completed)
                     Button("Stop", role: .cancel) { probe.stop() }
                         .disabled(!probe.session.status.isActive)
                     Button("Clear all evidence", role: .destructive) { clear() }
@@ -39,6 +40,9 @@ struct ProbeView: View {
                     if probe.session.candidates.isEmpty { Text("No retained candidates") }
                     if probe.session.status == .completed {
                         Toggle("I independently identified my own device; name alone is not proof", isOn: $identified)
+                            .onChange(of: identified) { _, value in
+                                if !value { probe.revokeConfirmation() }
+                            }
                     }
                     ForEach(probe.session.candidates) { candidate in
                         VStack(alignment: .leading, spacing: 4) {

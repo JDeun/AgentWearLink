@@ -1,6 +1,7 @@
 import CoreBluetooth
 import Foundation
 import Combine
+import Dispatch
 
 /// The UI and all CoreBluetooth callbacks run on the main queue. A fresh
 /// manager belongs to one explicitly started run; identity + token fence
@@ -45,9 +46,14 @@ final class BLEProbe: NSObject, ObservableObject, CBCentralManagerDelegate {
         session.confirm(id: candidate, independentlyIdentified: independentlyIdentified)
     }
 
+    func revokeConfirmation() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        session.revokeConfirmation()
+    }
+
     private func expire(token: UUID) {
         guard session.token == token else { return }
-        let outcome: ProbeStatus = session.status == .scanning ? .completed : .initializationTimedOut
+        let outcome: ProbeStatus = session.didRequestScan ? .completed : .initializationTimedOut
         finish(token: token, outcome: outcome)
     }
 
@@ -96,6 +102,7 @@ final class BLEProbe: NSObject, ObservableObject, CBCentralManagerDelegate {
             guard currentToken(for: central) == token else { return }
             central.scanForPeripherals(withServices: [filter],
                                        options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+            _ = session.markScanRequested(token: token)
         case .unknown:
             if session.status == .scanning { finish(token: token, outcome: .unknownState) }
         case .resetting: finish(token: token, outcome: .resetting)

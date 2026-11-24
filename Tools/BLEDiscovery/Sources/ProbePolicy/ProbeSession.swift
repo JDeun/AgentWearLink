@@ -72,6 +72,7 @@ struct ProbeSession {
     private(set) var candidates: [ProbeCandidate] = []
     private var indexes: [UUID: Int] = [:]
     private(set) var confirmedID: Int?
+    private(set) var didRequestScan = false
 
     mutating func begin(token: UUID) -> Bool {
         guard !status.isActive else { return false }
@@ -87,9 +88,16 @@ struct ProbeSession {
         return true
     }
 
+    mutating func markScanRequested(token: UUID) -> Bool {
+        guard self.token == token, status == .scanning, !didRequestScan else { return false }
+        didRequestScan = true
+        return true
+    }
+
     mutating func record(token: UUID, peripheralID: UUID,
                          observation: ProbeObservation) -> RecordResult {
-        guard self.token == token, status == .scanning else { return .ignored }
+        guard self.token == token, status == .scanning,
+              !observation.advertisement || didRequestScan else { return .ignored }
         if let index = indexes[peripheralID] {
             candidates[index].merge(observation)
             return .accepted
@@ -107,7 +115,7 @@ struct ProbeSession {
     mutating func finish(token: UUID, status outcome: ProbeStatus) -> Bool {
         guard self.token == token, status.isActive, !outcome.isActive,
               outcome != .idle else { return false }
-        guard outcome != .completed || status == .scanning else { return false }
+        guard outcome != .completed || (status == .scanning && didRequestScan) else { return false }
         self.token = nil
         status = outcome
         indexes.removeAll()
@@ -127,6 +135,8 @@ struct ProbeSession {
         return true
     }
 
+    mutating func revokeConfirmation() { confirmedID = nil }
+
     var report: String {
         let candidate = candidates.first { $0.id == confirmedID }
         func flag(_ value: Bool?) -> String {
@@ -137,11 +147,12 @@ struct ProbeSession {
         // bytes, timestamps, manufacturer data and other peripheral metadata.
         return [
             "status=\(status.rawValue)",
+            "scan-requested=\(flag(didRequestScan))",
             "candidate-count=\(candidates.count)",
             "owner-confirmed=\(flag(candidate != nil))",
             "advertisement-callback=\(flag(candidate?.advertisement))",
-            "requested-service-advertised=\(flag(candidate?.serviceAdvertised))",
-            "requested-service-data-present=\(flag(candidate?.serviceDataPresent))",
+            "requested-service-advertised=\(flag(candidate?.advertisement == true ? candidate?.serviceAdvertised : nil))",
+            "requested-service-data-present=\(flag(candidate?.advertisement == true ? candidate?.serviceDataPresent : nil))",
             "system-connected-at-start=\(flag(candidate?.systemConnectedSnapshot))",
             "connectable-flag=\(flag(candidate?.connectable))",
             "local-connection=not-attempted",

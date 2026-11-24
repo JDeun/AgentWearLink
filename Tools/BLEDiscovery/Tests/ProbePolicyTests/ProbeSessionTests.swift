@@ -36,6 +36,8 @@ final class ProbeSessionTests: XCTestCase {
         let token = UUID(), device = UUID()
         XCTAssertTrue(session.begin(token: token))
         XCTAssertTrue(session.startScan(token: token))
+        XCTAssertFalse(session.finish(token: token, status: .completed))
+        XCTAssertTrue(session.markScanRequested(token: token))
         XCTAssertEqual(session.record(token: token, peripheralID: device,
                                       observation: ProbeObservation(localName: "PRIVATE DEVICE",
                                           systemConnectedSnapshot: true)), .accepted)
@@ -55,6 +57,8 @@ final class ProbeSessionTests: XCTestCase {
         XCTAssertFalse(session.report.contains("PRIVATE DEVICE"))
         XCTAssertFalse(session.report.contains(device.uuidString))
         XCTAssertFalse(session.report.contains(token.uuidString))
+        session.revokeConfirmation()
+        XCTAssertTrue(session.report.contains("owner-confirmed=no"))
     }
 
     func testCapacityAndAbortClearAllCandidates() {
@@ -88,11 +92,30 @@ final class ProbeSessionTests: XCTestCase {
         XCTAssertTrue(session.report.contains("gatt-characteristics=not-tested"))
     }
 
+    func testSystemOnlyMatchDoesNotAssertAdvertisementFields() {
+        var session = ProbeSession()
+        let token = UUID(), device = UUID()
+        XCTAssertTrue(session.begin(token: token))
+        XCTAssertTrue(session.startScan(token: token))
+        XCTAssertEqual(session.record(token: token, peripheralID: device,
+                                      observation: ProbeObservation(advertisement: true)), .ignored)
+        XCTAssertEqual(session.record(token: token, peripheralID: device,
+                                      observation: ProbeObservation(systemConnectedSnapshot: true)), .accepted)
+        XCTAssertFalse(session.finish(token: token, status: .completed))
+        XCTAssertTrue(session.markScanRequested(token: token))
+        XCTAssertTrue(session.finish(token: token, status: .completed))
+        XCTAssertTrue(session.confirm(id: 1, independentlyIdentified: true))
+        XCTAssertTrue(session.report.contains("advertisement-callback=no"))
+        XCTAssertTrue(session.report.contains("requested-service-advertised=not-observed"))
+        XCTAssertTrue(session.report.contains("requested-service-data-present=not-observed"))
+    }
+
     func testNoIdentityOrCapabilityInferredFromMultipleMatches() {
         var session = ProbeSession()
         let token = UUID()
         XCTAssertTrue(session.begin(token: token))
         XCTAssertTrue(session.startScan(token: token))
+        XCTAssertTrue(session.markScanRequested(token: token))
         for _ in 0..<2 {
             _ = session.record(token: token, peripheralID: UUID(),
                                observation: ProbeObservation(localName: "Same name",
