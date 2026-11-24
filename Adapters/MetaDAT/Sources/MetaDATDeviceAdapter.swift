@@ -100,7 +100,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var glassesInputHandler: (@Sendable (_ isSelect: Bool, _ description: String) async -> Void)?
     private var activityLogger: (@Sendable (String) -> Void)?
     private let speechTranscriptStream = MetaDATSpeechTranscriptStream()
-    private let transcriptDeduplicator = MetaDATFinalTranscriptDeduplicator()
+    private var speechDelivery: MetaDATSpeechTranscriptDelivery?
     private let finalTranscriptFilter = MetaDATFinalTranscriptFilter()
     private let cameraSnapshotController: MetaDATCameraSnapshotController
     private nonisolated let eventSource: MetaDATDeviceEventSource
@@ -600,47 +600,54 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             )
         }
 
-        await transcriptDeduplicator.reset()
-
-        // Do not create/start a Speech listener for an already retired
-        // DeviceSession, or let a stale setup task overwrite the new session.
-        guard generationFence.owns(generation),
-              !stopping,
-              deviceSession === session else {
-            throw CancellationError()
+        // Per-attachment dedup state: a retired consumer cannot mutate
+        // the replacement attachment's cache across an await.
+        let deduplicator = MetaDATFinalTranscriptDeduplicator()
+        let delivery = speechTranscriptStream.subscribe(from: speech) { [weak self] overflowed in
+            Task {
+                await self?.handleSpeechError(
+                    MetaDATSpeechDeliveryError.finalTranscriptOverflow,
+                    generation: generation,
+                    delivery: overflowed
+                )
+            }
         }
-
-        let delivery = speechTranscriptStream.subscribe(from: speech)
+        speechDelivery = delivery
         let transcripts = delivery.events()
         speechTask = Task { [weak self] in
             defer { delivery.cancel() }
             for await event in transcripts {
                 guard !Task.isCancelled else { break }
                 switch event {
-                case let .transcript(transcript):
+                case let .transcript(transcript, receivedAt):
                     await self?.handleSpeechTranscript(
                         transcript,
+                        receivedAt: receivedAt,
                         generation: generation,
-                        delivery: delivery
+                        delivery: delivery,
+                        deduplicator: deduplicator
                     )
                 case let .failed(error):
-                    await self?.handleSpeechError(error, generation: generation)
+                    await self?.handleSpeechError(error, generation: generation, delivery: delivery)
                     return
                 }
             }
         }
 
-        speechErrorToken = speech.errorPublisher.listen { [weak self] error in
+        speechErrorToken = speech.errorPublisher.listen { [weak self, weak delivery] error in
+            guard let delivery else { return }
             Task {
                 await self?.handleSpeechError(
                     error,
-                    generation: generation
+                    generation: generation,
+                    delivery: delivery
                 )
             }
         }
 
-        speechStateToken = speech.statePublisher.listen { [weak self] state in
-            Task { await self?.handleSpeechState(state, generation: generation) }
+        speechStateToken = speech.statePublisher.listen { [weak self, weak delivery] state in
+            guard let delivery else { return }
+            Task { await self?.handleSpeechState(state, generation: generation, delivery: delivery) }
         }
         speechRestartAttempts = 0
         self.speech = speech
@@ -653,22 +660,28 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     private func handleSpeechTranscript(
         _ transcript: MetaDATTranscript,
+        receivedAt: ContinuousClock.Instant,
         generation: UInt64,
-        delivery: MetaDATSpeechTranscriptDelivery
+        delivery: MetaDATSpeechTranscriptDelivery,
+        deduplicator: MetaDATFinalTranscriptDeduplicator
     ) async {
-        guard !Task.isCancelled, !stopping, generationFence.owns(generation), speech != nil else { return }
+        guard !Task.isCancelled, !stopping, generationFence.owns(generation),
+              speechDelivery === delivery, speech != nil else { return }
 
-        let accepted = await transcriptDeduplicator.accept(
-            .init(text: transcript.text, isFinal: transcript.isFinal)
+        let accepted = await deduplicator.accept(
+            .init(text: transcript.text, isFinal: transcript.isFinal),
+            now: receivedAt
         )
         guard accepted, !Task.isCancelled, !stopping,
-              generationFence.owns(generation), speech != nil else { return }
+              generationFence.owns(generation), speechDelivery === delivery,
+              speech != nil else { return }
 
         var transcript = transcript
         if transcript.isFinal, let transcriptGate {
             guard let request = await transcriptGate(transcript.text),
                   !Task.isCancelled, !stopping,
-                  generationFence.owns(generation), speech != nil else { return }
+                  generationFence.owns(generation), speechDelivery === delivery,
+                  speech != nil else { return }
             transcript = MetaDATTranscript(text: request, isFinal: true, confidence: transcript.confidence)
         } else if !transcript.isFinal, transcriptGate != nil {
             // Partials are not shown to the agent; only gated finals count.
@@ -690,8 +703,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         ))
     }
 
-    private func handleSpeechState(_ state: SpeechState, generation: UInt64) async {
-        guard !stopping, generationFence.owns(generation), let speech else { return }
+    private func handleSpeechState(
+        _ state: SpeechState,
+        generation: UInt64,
+        delivery: MetaDATSpeechTranscriptDelivery
+    ) async {
+        guard !stopping, generationFence.owns(generation),
+              speechDelivery === delivery, let speech else { return }
+        guard speech.state == state else { return }
         activityLogger?("speech \(state)")
         let observed: MetaDATSpeechRestartPolicy.ObservedState
         switch state {
@@ -704,8 +723,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             speechRestartAttempts = 0
         case let .restart(attempt):
             speechRestartAttempts = attempt
-            try? await Task.sleep(for: MetaDATSpeechRestartPolicy.delay)
-            guard !stopping, generationFence.owns(generation), self.speech === speech else { return }
+            do { try await Task.sleep(for: MetaDATSpeechRestartPolicy.delay) } catch { return }
+            guard !Task.isCancelled, !stopping, generationFence.owns(generation),
+                  speechDelivery === delivery, self.speech === speech,
+                  speech.state == .stopped, deviceSession?.state == .started else { return }
             activityLogger?("speech restart \(attempt)")
             speech.start()
         case .giveUp:
@@ -755,14 +776,18 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     private func handleSpeechError(
         _ error: any Error,
-        generation: UInt64
+        generation: UInt64,
+        delivery: MetaDATSpeechTranscriptDelivery
     ) {
-        guard !stopping, generationFence.owns(generation), speech != nil else { return }
+        guard !stopping, generationFence.owns(generation),
+              speechDelivery === delivery, speech != nil else { return }
 
         // Speech is optional. A vendor transcript channel failure should only
         // retire Speech; a nil-ID .device error would retire the entire Core
         // runtime generation and unnecessarily drop healthy camera/agent work.
         liveCapabilities.update(speechReady: false)
+        speechDelivery = nil
+        delivery.cancel()
         speechTask?.cancel()
         speechTask = nil
         speech?.stop()
@@ -771,6 +796,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             Task { await speechErrorToken.cancel() }
         }
         speechErrorToken = nil
+        if let speechStateToken {
+            Task { await speechStateToken.cancel() }
+        }
+        speechStateToken = nil
         yieldEvent(MetaDATSpeechFailurePolicy.event(for: error))
     }
 
@@ -984,6 +1013,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         registrationTask?.cancel()
         deviceMonitorTask?.cancel()
         selectedDeviceListenerTask?.cancel()
+        speechDelivery?.cancel()
+        speechDelivery = nil
         speechTask?.cancel()
         stateTask = nil
         errorTask = nil

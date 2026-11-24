@@ -25,24 +25,34 @@ public enum MetaDATSpeechDeliveryError: Error, Sendable, Equatable {
 /// Losing a final invalidates pending delivery and produces an explicit failure.
 public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
     public enum Event: Sendable, Equatable {
-        case transcript(MetaDATTranscript)
+        case transcript(MetaDATTranscript, receivedAt: ContinuousClock.Instant)
         case failed(MetaDATSpeechDeliveryError)
     }
 
     private let lock = NSLock()
     private let limit: Int
     private let maximumTranscriptBytes: Int
-    private var pending: [MetaDATTranscript] = []
+    private struct Received {
+        let transcript: MetaDATTranscript
+        let receivedAt: ContinuousClock.Instant
+    }
+    private var pending: [Received] = []
+    private let onOverflow: @Sendable (MetaDATSpeechTranscriptDelivery) -> Void
     private var waiter: CheckedContinuation<Event?, Never>?
     private var listener: (any AnyListenerToken)?
     private var closed = false
     private var failurePending = false
     private var overflowed = false
 
-    init(limit: Int = 8, maximumTranscriptBytes: Int = 16 * 1024) {
+    init(
+        limit: Int = 8,
+        maximumTranscriptBytes: Int = 16 * 1024,
+        onOverflow: @escaping @Sendable (MetaDATSpeechTranscriptDelivery) -> Void = { _ in }
+    ) {
         precondition(limit > 0 && maximumTranscriptBytes > 0)
         self.limit = limit
         self.maximumTranscriptBytes = maximumTranscriptBytes
+        self.onOverflow = onOverflow
     }
 
     deinit {
@@ -60,28 +70,31 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
         if cancelImmediately { Task { await token.cancel() } }
     }
 
-    func offer(_ transcript: MetaDATTranscript) {
+    func offer(_ transcript: MetaDATTranscript, receivedAt: ContinuousClock.Instant? = nil) {
         lock.lock()
         guard !closed else { lock.unlock(); return }
 
+        // Timestamp at serialized callback admission, not at slow consumer
+        // processing. Tests can inject monotonic times without sleeping.
+        let received = Received(transcript: transcript, receivedAt: receivedAt ?? .now)
         let oversized = transcript.text.utf8.count > maximumTranscriptBytes
         if !oversized, let waiter {
             self.waiter = nil
             lock.unlock()
-            waiter.resume(returning: .transcript(transcript))
+            waiter.resume(returning: .transcript(transcript, receivedAt: received.receivedAt))
             return
         }
 
         if !oversized, pending.count < limit {
-            pending.append(transcript)
+            pending.append(received)
             lock.unlock()
             return
         }
 
-        if !oversized, let partial = pending.firstIndex(where: { !$0.isFinal }) {
+        if !oversized, let partial = pending.firstIndex(where: { !$0.transcript.isFinal }) {
             // Remove only an old partial. A newer partial cannot evict a final.
             pending.remove(at: partial)
-            pending.append(transcript)
+            pending.append(received)
             lock.unlock()
             return
         }
@@ -99,6 +112,10 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
         let token = listener
         listener = nil
         lock.unlock()
+        // Notify the owning adapter even while its consumer is suspended
+        // in an asynchronous transcript gate. The queued terminal event
+        // remains available to other consumers/tests.
+        onOverflow(self)
         waiting?.resume(returning: .failed(.finalTranscriptOverflow))
         if let token { Task { await token.cancel() } }
     }
@@ -132,7 +149,7 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
                 } else if !pending.isEmpty {
                     let value = pending.removeFirst()
                     lock.unlock()
-                    continuation.resume(returning: .transcript(value))
+                    continuation.resume(returning: .transcript(value.transcript, receivedAt: value.receivedAt))
                 } else if closed {
                     lock.unlock()
                     continuation.resume(returning: nil)
@@ -166,8 +183,11 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
 public final class MetaDATSpeechTranscriptStream: @unchecked Sendable {
     public init() {}
 
-    public func subscribe(from speech: Speech) -> MetaDATSpeechTranscriptDelivery {
-        let delivery = MetaDATSpeechTranscriptDelivery()
+    public func subscribe(
+        from speech: Speech,
+        onOverflow: @escaping @Sendable (MetaDATSpeechTranscriptDelivery) -> Void = { _ in }
+    ) -> MetaDATSpeechTranscriptDelivery {
+        let delivery = MetaDATSpeechTranscriptDelivery(onOverflow: onOverflow)
         let token = speech.transcriptionPublisher.listen { [weak delivery] result in
             delivery?.offer(MetaDATTranscript(
                 text: result.text,
