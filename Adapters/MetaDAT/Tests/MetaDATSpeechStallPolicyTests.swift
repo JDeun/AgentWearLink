@@ -110,4 +110,21 @@ final class MetaDATSpeechStallPolicyTests: XCTestCase {
         XCTAssertFalse(MetaDATSpeechStallPolicy.canRecoverNoEvents(attempts: 100))
     }
 
+
+    func testIngressEvidenceAgeIgnoresPriorRunAndConsumerDelay() {
+        let start = ContinuousClock.now
+        let now = start.advanced(by: .seconds(10))
+        XCTAssertEqual(MetaDATSpeechStallPolicy.evidenceAge(nil, runStartedAt: start, now: now), 10)
+        XCTAssertEqual(MetaDATSpeechStallPolicy.evidenceAge(start.advanced(by: .seconds(-10)), runStartedAt: start, now: now), 10)
+        XCTAssertEqual(MetaDATSpeechStallPolicy.evidenceAge(start.advanced(by: .seconds(9)), runStartedAt: start, now: now), 1)
+        XCTAssertNil(MetaDATSpeechStallPolicy.evidenceAge(nil, runStartedAt: nil, now: now))
+        XCTAssertNil(MetaDATSpeechStallPolicy.evidenceAge(now.advanced(by: .seconds(1)), runStartedAt: start, now: now))
+    }
+
+    func testSpeculativeEmptyOnlyRecoveryHasFiniteBudget() {
+        XCTAssertTrue(MetaDATSpeechStallPolicy.canRecoverEmptyOnly(attempts: 0))
+        XCTAssertTrue(MetaDATSpeechStallPolicy.canRecoverEmptyOnly(attempts: 2))
+        XCTAssertFalse(MetaDATSpeechStallPolicy.canRecoverEmptyOnly(attempts: 3))
+        XCTAssertFalse(MetaDATSpeechStallPolicy.canRecoverEmptyOnly(attempts: -1))
+    }
 }

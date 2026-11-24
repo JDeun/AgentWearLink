@@ -75,6 +75,36 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         liveCapabilities.value
     }
 
+    /// Distinguishes SDK state, healthy callback delivery, and observation of
+    /// recognition activity. No text, audio, device ID or credentials exposed.
+    public var speechHealth: MetaDATSpeechHealth {
+        let sessionStarted = !stopping && deviceSession?.state == .started
+        let phase: MetaDATSpeechHealth.Phase
+        switch speech?.state {
+        case .starting?: phase = .starting
+        case .started?: phase = .started
+        case .stopping?: phase = .stopping
+        case .stopped?: phase = .stopped
+        case nil: phase = .detached
+        }
+        return speechDelivery?.health(sessionStarted: sessionStarted, phase: phase)
+            ?? MetaDATSpeechHealth(sessionStarted: sessionStarted, phase: phase, deliveryActive: false)
+    }
+
+    private func refreshMediaReadiness() {
+        let health = speechHealth
+        let ready = health.isSDKReady && !speechPaused && !speechStallRestarting
+            && !stallStopUnconfirmed && noEventRecoveryAttempts <= MetaDATSpeechStallPolicy.noEventRecoveryLimit
+        liveCapabilities.update(sessionReady: health.sessionStarted, speechReady: ready)
+        notifySpeechReadiness(ready)
+    }
+
+    private func notifySpeechReadiness(_ ready: Bool) {
+        guard lastReportedSpeechReady != ready else { return }
+        lastReportedSpeechReady = ready
+        speechReadinessObserver?()
+    }
+
     private let wearables: any WearablesInterface
     // Independent of DeviceSession: host may start Voice Invocation before
     // connecting a camera/Speech media session.
@@ -101,10 +131,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var speechPaused = false
     private var speechLocaleToken: (any AnyListenerToken)?
     /// Speech stall watchdog (MetaDATSpeechStallPolicy).
-    private var lastTranscriptEventAt: ContinuousClock.Instant?
-    private var lastNonEmptyTranscriptAt: ContinuousClock.Instant?
-    private var speechEventCount = 0
-    private var speechNonEmptyCount = 0
+    private var speechRunStartedAt: ContinuousClock.Instant?
+    private var lastObservedCallbackAt: ContinuousClock.Instant?
+    private var lastObservedNonEmptyCallbackAt: ContinuousClock.Instant?
     private var speechStatsChecks = 0
     private var speechStallTask: Task<Void, Never>?
     private var speechReviveTask: Task<Void, Never>?
@@ -121,7 +150,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var emptyOnlyRestartsInARow = 0
     /// Last fresh Speech start (connect, resume, session resume).
     private var speechFreshStartAt: ContinuousClock.Instant?
-    private var sessionIsStarted = true
+    private var sessionIsStarted = false
     private var inputs: Inputs?
     private var inputsTask: Task<Void, Never>?
     private var transcriptGate: (@Sendable (String) async -> String?)?
@@ -129,12 +158,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     private var activityLogger: (@Sendable (String) -> Void)?
     private var sessionErrorObserver: (@Sendable (MetaDATSessionErrorKind) -> Void)?
     private var sessionPauseObserver: (@Sendable (_ paused: Bool) -> Void)?
+    private var speechReadinessObserver: (@Sendable () -> Void)?
+    private var lastReportedSpeechReady = false
     /// A `.paused` was reported to the pause observer and not yet resolved.
     private var sessionPauseReported = false
     /// MODERATE heat: optional work is reduced (speech stats less often).
     private var reducedWork = false
     private let speechTranscriptStream = MetaDATSpeechTranscriptStream()
-    private let transcriptDeduplicator = MetaDATFinalTranscriptDeduplicator()
+    private var speechDelivery: MetaDATSpeechTranscriptDelivery?
     private let finalTranscriptFilter = MetaDATFinalTranscriptFilter()
     private let cameraSnapshotController: MetaDATCameraSnapshotController
     private nonisolated let eventSource: MetaDATDeviceEventSource
@@ -207,6 +238,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     /// is not reported here (it ends the session as a media failure).
     public func setSessionPauseObserver(_ observer: (@Sendable (_ paused: Bool) -> Void)?) {
         sessionPauseObserver = observer
+    }
+
+    /// Notify the host to resample current capabilities, not a stale bool.
+    public func setSpeechReadinessObserver(_ observer: (@Sendable () -> Void)?) {
+        speechReadinessObserver = observer
     }
 
     /// Meta thermal guidance for MODERATE: reduce optional work. Here that
@@ -502,15 +538,20 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 timeout: connectTimeout
             )
 
+            guard generationFence.owns(generation), !stopping,
+                  deviceSession === session else { throw CancellationError() }
             selectedDeviceLinkLossGate.markSessionStarted()
-            liveCapabilities.update(sessionReady: true)
+            sessionIsStarted = session.state == .started
+            refreshMediaReadiness()
 
             do {
                 try await startSpeech(
                     on: session,
                     generation: generation
                 )
-                liveCapabilities.update(speechReady: true)
+                guard generationFence.owns(generation), !stopping,
+                      deviceSession === session else { throw CancellationError() }
+                refreshMediaReadiness()
             } catch {
                 guard MetaDATSpeechSetupPolicy.mayContinueWithoutSpeech(error) else {
                     // Session-generation retirement and unexpected failures
@@ -533,7 +574,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             } catch {
                 cameraReady = false
             }
+            guard generationFence.owns(generation), !stopping,
+                  deviceSession === session else { throw CancellationError() }
             liveCapabilities.update(cameraReady: cameraReady)
+            refreshMediaReadiness()
 
             // Do not create a second stateStream() after consuming .started.
             // Continue the same stream in one observer so SDK stream semantics cannot
@@ -580,13 +624,19 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         interactionID: InteractionID,
         mode: MetaDATSnapshotMode
     ) async throws -> MetaDATSnapshotResult {
-        defer { reviveSpeechAfterPhoto(generation: generationFence.current) }
         guard !stopping,
               let session = deviceSession else {
             throw AWLError.device("Meta DAT device session is not connected")
         }
-
+        guard session.state == .started else {
+            throw AWLError.capabilityUnavailable("Meta DAT media session is not started")
+        }
         let generation = generationFence.current
+        defer {
+            if generationFence.owns(generation), deviceSession === session, session.state == .started {
+                reviveSpeechAfterPhoto(generation: generation)
+            }
+        }
         let cameraGranted: Bool
         do {
             cameraGranted = try await wearables.checkPermissionStatus(.camera) == .granted
@@ -605,6 +655,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
               !stopping,
               deviceSession === session else {
             throw CancellationError()
+        }
+        guard session.state == .started else {
+            throw AWLError.capabilityUnavailable("Meta DAT media session is not started")
         }
         guard cameraGranted else {
             liveCapabilities.update(cameraReady: false)
@@ -634,7 +687,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
         guard generationFence.owns(generation),
               !stopping,
-              deviceSession === session else {
+              deviceSession === session, session.state == .started else {
             throw CancellationError()
         }
 
@@ -663,7 +716,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     /// Returns true when another check is needed.
     private func reviveSpeechIfStopped(attempt: Int, generation: UInt64) -> Bool {
-        guard !stopping, !speechPaused, !speechStallRestarting, sessionIsStarted,
+        guard !stopping, !speechPaused, !speechStallRestarting, deviceSession?.state == .started,
               generationFence.owns(generation), let speech else { return false }
         switch Self.observed(speech.state) {
         case .started:
@@ -675,6 +728,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             activityLogger?("speech revived after photo (attempt \(attempt))")
             markSpeechRestarted()
             speech.start()
+            refreshMediaReadiness()
             return true
         }
     }
@@ -711,49 +765,66 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             )
         }
 
-        await transcriptDeduplicator.reset()
-
-        // Do not create/start a Speech listener for an already retired
-        // DeviceSession, or let a stale setup task overwrite the new session.
-        guard generationFence.owns(generation),
-              !stopping,
-              deviceSession === session else {
-            throw CancellationError()
-        }
-
-        let transcripts = speechTranscriptStream.stream(from: speech)
-        speechTask = Task { [weak self] in
-            for await transcript in transcripts {
-                guard !Task.isCancelled else { break }
-                await self?.handleSpeechTranscript(
-                    transcript,
-                    generation: generation
+        // Per-attachment dedup state: a retired consumer cannot mutate
+        // the replacement attachment's cache across an await.
+        let deduplicator = MetaDATFinalTranscriptDeduplicator()
+        let delivery = speechTranscriptStream.subscribe(from: speech) { [weak self] overflowed in
+            Task {
+                await self?.handleSpeechError(
+                    MetaDATSpeechDeliveryError.finalTranscriptOverflow,
+                    generation: generation,
+                    delivery: overflowed
                 )
             }
         }
+        speechDelivery = delivery
+        let transcripts = delivery.events()
+        speechTask = Task { [weak self] in
+            defer { delivery.cancel() }
+            for await event in transcripts {
+                guard !Task.isCancelled else { break }
+                switch event {
+                case let .transcript(transcript, receivedAt):
+                    await self?.handleSpeechTranscript(
+                        transcript,
+                        receivedAt: receivedAt,
+                        generation: generation,
+                        delivery: delivery,
+                        deduplicator: deduplicator
+                    )
+                case let .failed(error):
+                    await self?.handleSpeechError(error, generation: generation, delivery: delivery)
+                    return
+                }
+            }
+        }
 
-        speechErrorToken = speech.errorPublisher.listen { [weak self] error in
+        speechErrorToken = speech.errorPublisher.listen { [weak self, weak delivery] error in
+            guard let delivery else { return }
             Task {
                 await self?.handleSpeechError(
                     error,
-                    generation: generation
+                    generation: generation,
+                    delivery: delivery
                 )
             }
         }
 
-        speechStateToken = speech.statePublisher.listen { [weak self] state in
-            Task { await self?.handleSpeechState(state, generation: generation) }
+        speechStateToken = speech.statePublisher.listen { [weak self, weak delivery] state in
+            guard let delivery else { return }
+            Task { await self?.handleSpeechState(state, generation: generation, delivery: delivery) }
         }
-        // The recognizer's locale (never transcript text) for field logs.
-        speechLocaleToken = speech.localePublisher.listen { [weak self] locale in
-            Task { await self?.logSpeechLocale(locale, generation: generation) }
+        speechLocaleToken = speech.localePublisher.listen { [weak self, weak delivery] locale in
+            guard let delivery else { return }
+            Task { await self?.logSpeechLocale(locale, generation: generation, delivery: delivery) }
         }
         speechRestartAttempts = 0
         speechPaused = false
         self.speech = speech
-        speech.start()
         markSpeechRestarted()
         markSpeechFreshStart()
+        speech.start()
+        refreshMediaReadiness()
         startSpeechStallWatchdog(generation: generation)
 
         guard generationFence.owns(generation), !stopping else {
@@ -763,35 +834,34 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     private func handleSpeechTranscript(
         _ transcript: MetaDATTranscript,
-        generation: UInt64
+        receivedAt: ContinuousClock.Instant,
+        generation: UInt64,
+        delivery: MetaDATSpeechTranscriptDelivery,
+        deduplicator: MetaDATFinalTranscriptDeduplicator
     ) async {
-        guard !stopping, generationFence.owns(generation) else { return }
+        guard !Task.isCancelled, !stopping, generationFence.owns(generation),
+              speechDelivery === delivery, speech != nil, !speechPaused, !speechStallRestarting,
+                  deviceSession?.state == .started,
+                  speechRunStartedAt.map({ receivedAt >= $0 }) ?? false else { return }
 
-        // Every event counts for the stall watchdog, including empty ones and
-        // partials, and is recorded before deduplication or gating.
-        let now = ContinuousClock.now
-        lastTranscriptEventAt = now
-        noEventRecoveryAttempts = 0
-        stallStopUnconfirmed = false
-        speechEventCount += 1
-        if !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            lastNonEmptyTranscriptAt = now
-            speechNonEmptyCount += 1
-            emptyOnlyRestartsInARow = 0
-            // Speech is hearing the room: earlier self-stops were inactivity,
-            // not shedding, so the restart backoff starts over.
-            unrequestedSpeechStops = []
-        }
-
-        let accepted = await transcriptDeduplicator.accept(
-            .init(text: transcript.text, isFinal: transcript.isFinal)
+        let accepted = await deduplicator.accept(
+            .init(text: transcript.text, isFinal: transcript.isFinal),
+            now: receivedAt
         )
-        guard accepted else { return }
+        guard accepted, !Task.isCancelled, !stopping,
+              generationFence.owns(generation), speechDelivery === delivery,
+              speech != nil, !speechPaused, !speechStallRestarting,
+                  deviceSession?.state == .started,
+                  speechRunStartedAt.map({ receivedAt >= $0 }) ?? false else { return }
 
         var transcript = transcript
         if transcript.isFinal, let transcriptGate {
             guard let request = await transcriptGate(transcript.text),
-                  !stopping, generationFence.owns(generation) else { return }
+                  !Task.isCancelled, !stopping,
+                  generationFence.owns(generation), speechDelivery === delivery,
+                  speech != nil, !speechPaused, !speechStallRestarting,
+                  deviceSession?.state == .started,
+                  speechRunStartedAt.map({ receivedAt >= $0 }) ?? false else { return }
             transcript = MetaDATTranscript(text: request, isFinal: true, confidence: transcript.confidence)
         } else if !transcript.isFinal, transcriptGate != nil {
             // Partials are not shown to the agent; only gated finals count.
@@ -805,12 +875,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         ) else {
             return
         }
+        guard delivery.commitIfHealthy({ yieldEvent(event) }) else { return }
         diagnostics?.record(.init(
             kind: .metaTranscriptAccepted,
             interactionID: interactionID,
             generation: generation
         ))
-        yieldEvent(event)
     }
 
     private func markSpeechFreshStart() {
@@ -827,9 +897,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     }
 
     private func markSpeechRestarted() {
-        let now = ContinuousClock.now
-        lastTranscriptEventAt = now
-        lastNonEmptyTranscriptAt = now
+        speechRunStartedAt = ContinuousClock.now
+        lastObservedCallbackAt = nil
+        lastObservedNonEmptyCallbackAt = nil
+        speechDelivery?.resetCallbackEvidence()
     }
 
     private func startSpeechStallWatchdog(generation: UInt64) {
@@ -847,16 +918,30 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     /// Returns false once the generation is retired.
     private func checkSpeechStall(generation: UInt64) async -> Bool {
         guard !stopping, generationFence.owns(generation) else { return false }
-        guard let speech else { return true }
+        guard let speech, let delivery = speechDelivery else { return false }
         let now = ContinuousClock.now
-        // Counts only (never text): tells "silent room" from "deaf Speech".
+        let health = speechHealth
+        // Only actual SDK ingress can re-arm the budget, never dequeue time.
+        if let callback = health.lastCallbackAt, callback != lastObservedCallbackAt,
+           speechRunStartedAt.map({ callback >= $0 }) ?? false {
+            lastObservedCallbackAt = callback
+            noEventRecoveryAttempts = 0
+            stallStopUnconfirmed = false
+        }
+        if let nonEmpty = health.lastNonEmptyCallbackAt, nonEmpty != lastObservedNonEmptyCallbackAt,
+           speechRunStartedAt.map({ nonEmpty >= $0 }) ?? false {
+            lastObservedNonEmptyCallbackAt = nonEmpty
+            emptyOnlyRestartsInARow = 0
+            unrequestedSpeechStops = []
+        }
+        refreshMediaReadiness()
+        // Callback counts at ingress include coalesced partials.
         speechStatsChecks += 1
         if MetaDATSpeechStallPolicy.shouldLogStats(afterCheck: speechStatsChecks, reduced: reducedWork) {
             let window = MetaDATSpeechStallPolicy.statsSeconds(reduced: reducedWork)
-            activityLogger?("speech events \(speechEventCount) (non-empty \(speechNonEmptyCount)) in last \(window) s, state \(speech.state)")
+            let counts = delivery.takeCallbackCounts()
+            activityLogger?("speech events \(counts.total) (non-empty \(counts.nonEmpty)) in last \(window) s, state \(speech.state)")
             speechStatsChecks = 0
-            speechEventCount = 0
-            speechNonEmptyCount = 0
         }
         func seconds(_ instant: ContinuousClock.Instant?) -> TimeInterval? {
             guard let instant else { return nil }
@@ -864,10 +949,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             return Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
         }
         let action = MetaDATSpeechStallPolicy.action(
-            sinceAnyEvent: seconds(lastTranscriptEventAt),
-            sinceNonEmpty: seconds(lastNonEmptyTranscriptAt),
-            speechStarted: speech.state == .started,
-            sessionStarted: sessionIsStarted,
+            sinceAnyEvent: MetaDATSpeechStallPolicy.evidenceAge(health.lastCallbackAt, runStartedAt: speechRunStartedAt, now: now),
+            sinceNonEmpty: MetaDATSpeechStallPolicy.evidenceAge(health.lastNonEmptyCallbackAt, runStartedAt: speechRunStartedAt, now: now),
+            speechStarted: health.isSDKReady,
+            sessionStarted: health.sessionStarted,
             pausedByHost: speechPaused || speechStallRestarting,
             emptyOnlyLimit: MetaDATSpeechStallPolicy.emptyOnlyLimit(
                 consecutiveEmptyRestarts: emptyOnlyRestartsInARow,
@@ -880,20 +965,26 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 if noEventRecoveryAttempts == MetaDATSpeechStallPolicy.noEventRecoveryLimit {
                     activityLogger?("speech no-event recovery limit reached; manual restart required")
                     noEventRecoveryAttempts += 1
+                    refreshMediaReadiness()
                 }
                 return true
             }
             noEventRecoveryAttempts += 1
+        } else if !MetaDATSpeechStallPolicy.canRecoverEmptyOnly(attempts: emptyOnlyRestartsInARow) {
+            // True silence is ambiguous. Do not restart indefinitely.
+            return true
         }
         speechStallRestarts += 1
         if reason == .emptyOnly { emptyOnlyRestartsInARow += 1 }
         activityLogger?("speech stall restart \(speechStallRestarts) (\(reason.rawValue))")
         speechStallRestarting = true
+        refreshMediaReadiness()
         lastStallStopAt = Self.monotonicSeconds()
         defer {
             // A retired watchdog must not clear the next session's restart flag.
-            if generationFence.owns(generation), self.speech === speech {
+            if generationFence.owns(generation), self.speech === speech, speechDelivery === delivery {
                 speechStallRestarting = false
+                refreshMediaReadiness()
             }
         }
         let clock = ContinuousClock()
@@ -903,10 +994,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             try await Task.sleep(for: MetaDATSpeechStallPolicy.restartGap)
             while true {
                 let decision = MetaDATSpeechStallPolicy.postStopAction(
-                    ownsSpeech: generationFence.owns(generation) && self.speech === speech && !stopping,
+                    ownsSpeech: generationFence.owns(generation) && self.speech === speech
+                        && speechDelivery === delivery && !stopping,
                     cancelled: Task.isCancelled,
                     hostPaused: speechPaused,
-                    sessionStarted: sessionIsStarted,
+                    sessionStarted: deviceSession?.state == .started,
                     speechStopped: speech.state == .stopped,
                     beforeDeadline: clock.now < deadline
                 )
@@ -914,6 +1006,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 case .start:
                     markSpeechRestarted()
                     speech.start()
+                    refreshMediaReadiness()
                     return true
                 case .wait:
                     try await Task.sleep(for: MetaDATSpeechStallPolicy.stopConfirmationPoll)
@@ -952,10 +1045,11 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         markSpeechRestarted()
         markSpeechFreshStart()
         speech.start()
+        refreshMediaReadiness()
     }
 
-    private func logSpeechLocale(_ locale: String, generation: UInt64) {
-        guard !stopping, generationFence.owns(generation) else { return }
+    private func logSpeechLocale(_ locale: String, generation: UInt64, delivery: MetaDATSpeechTranscriptDelivery) {
+        guard !stopping, generationFence.owns(generation), speechDelivery === delivery else { return }
         activityLogger?("speech locale \(locale)")
     }
 
@@ -964,6 +1058,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     public func pauseSpeech() {
         guard !stopping, let speech, !speechPaused else { return }
         speechPaused = true
+        markSpeechRestarted()
+        refreshMediaReadiness()
         activityLogger?("speech paused")
         speech.stop()
     }
@@ -971,9 +1067,14 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
     /// Restarts the attached Speech after `pauseSpeech()`. Idempotent; a no-op
     /// when the session (and its Speech) is gone, which recovery handles.
     private func observeSessionState(_ state: DeviceSessionState, generation: UInt64) {
-        guard generationFence.owns(generation) else { return }
+        guard !stopping, generationFence.owns(generation), let session = deviceSession else { return }
         let wasStarted = sessionIsStarted
-        sessionIsStarted = state == .started
+        sessionIsStarted = session.state == .started
+        if state == .paused {
+            cameraSnapshotController.invalidate()
+            markSpeechRestarted()
+        }
+        refreshMediaReadiness()
         // AWL never pauses the session itself, so a pause is the device's:
         // a single temple tap (or capture-button press) pauses a running
         // session (dat-ios #312). States only; tonight's test confirms it.
@@ -984,7 +1085,9 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
                 sessionPauseObserver?(true)
             }
         }
-        if sessionIsStarted, !wasStarted {
+        if sessionIsStarted, !wasStarted || sessionPauseReported {
+            markSpeechRestarted()
+            markSpeechFreshStart()
             activityLogger?("session started")
             handleSessionResumed(generation: generation)
             if sessionPauseReported {
@@ -1004,8 +1107,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         // A paused DeviceSession, a still-stopping Speech, or the stall
         // watchdog owns the transition. The stopped/resumed callback can
         // start it once it is actually eligible.
-        guard sessionIsStarted, !speechStallRestarting, speech.state == .stopped else { return }
+        guard deviceSession?.state == .started, !speechStallRestarting, speech.state == .stopped else {
+            refreshMediaReadiness()
+            return
+        }
         speech.start()
+        refreshMediaReadiness()
     }
 
     public var isSpeechPaused: Bool { speechPaused }
@@ -1018,8 +1125,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         }
     }
 
-    private func handleSpeechState(_ state: SpeechState, generation: UInt64) async {
-        guard !stopping, generationFence.owns(generation), let speech else { return }
+    private func handleSpeechState(_ state: SpeechState, generation: UInt64, delivery: MetaDATSpeechTranscriptDelivery) async {
+        guard !stopping, generationFence.owns(generation), speechDelivery === delivery, let speech else { return }
+        guard speech.state == state else { return }
+        refreshMediaReadiness()
         activityLogger?("speech \(state)")
         let observed = Self.observed(state)
         // Vendor state callbacks hop through a Task; don't act on a stopped
@@ -1046,7 +1155,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             }
             do { try await Task.sleep(for: wait) } catch { return }
             guard !Task.isCancelled, !stopping, !speechPaused, !speechStallRestarting,
-                  sessionIsStarted, generationFence.owns(generation), self.speech === speech else { return }
+                  deviceSession?.state == .started, generationFence.owns(generation),
+                  speechDelivery === delivery, self.speech === speech else { return }
             // A resume or session resume during the wait may have started it.
             guard MetaDATSpeechRestartPolicy.shouldStartAfterWait(Self.observed(speech.state)) else {
                 activityLogger?("speech restart \(attempt) skipped: already \(speech.state)")
@@ -1055,6 +1165,7 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             activityLogger?("speech restart \(attempt)")
             markSpeechRestarted()
             speech.start()
+            refreshMediaReadiness()
         case .giveUp:
             activityLogger?("speech restart limit reached")
         case .none:
@@ -1102,14 +1213,25 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     private func handleSpeechError(
         _ error: any Error,
-        generation: UInt64
+        generation: UInt64,
+        delivery: MetaDATSpeechTranscriptDelivery
     ) {
-        guard !stopping, generationFence.owns(generation), speech != nil else { return }
+        guard !stopping, generationFence.owns(generation),
+              speechDelivery === delivery, speech != nil else { return }
 
         // Speech is optional. A vendor transcript channel failure should only
         // retire Speech; a nil-ID .device error would retire the entire Core
         // runtime generation and unnecessarily drop healthy camera/agent work.
         liveCapabilities.update(speechReady: false)
+        notifySpeechReadiness(false)
+        speechStallTask?.cancel()
+        speechStallTask = nil
+        speechReviveTask?.cancel()
+        speechReviveTask = nil
+        if let speechLocaleToken { Task { await speechLocaleToken.cancel() } }
+        speechLocaleToken = nil
+        speechDelivery = nil
+        delivery.cancel()
         speechTask?.cancel()
         speechTask = nil
         speech?.stop()
@@ -1118,6 +1240,10 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             Task { await speechErrorToken.cancel() }
         }
         speechErrorToken = nil
+        if let speechStateToken {
+            Task { await speechStateToken.cancel() }
+        }
+        speechStateToken = nil
         yieldEvent(MetaDATSpeechFailurePolicy.event(for: error))
     }
 
@@ -1338,6 +1464,8 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         registrationTask?.cancel()
         deviceMonitorTask?.cancel()
         selectedDeviceListenerTask?.cancel()
+        speechDelivery?.cancel()
+        speechDelivery = nil
         speechTask?.cancel()
         stateTask = nil
         errorTask = nil
@@ -1375,7 +1503,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         noEventRecoveryAttempts = 0
         stallStopUnconfirmed = false
         lastStallStopAt = nil
-        sessionIsStarted = true
+        speechRunStartedAt = nil
+        lastObservedCallbackAt = nil
+        lastObservedNonEmptyCallbackAt = nil
+        speechStatsChecks = 0
+        sessionIsStarted = false
+        notifySpeechReadiness(false)
         sessionPauseReported = false
         inputsTask?.cancel()
         inputsTask = nil

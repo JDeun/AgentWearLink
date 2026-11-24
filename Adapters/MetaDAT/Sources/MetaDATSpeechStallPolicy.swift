@@ -3,9 +3,9 @@ import Foundation
 /// Field evidence (iOS DAT 1.0.0 on real Ray-Ban Meta): Speech can stay
 /// "started" on a connected session while it stops delivering transcripts,
 /// or keeps delivering only empty ones without hearing anything. While it
-/// listens it emits a transcription event roughly every 0.3 s even in
-/// silence, so a long gap means a stall. A Speech stop/start (not a session
-/// teardown) fixes both.
+/// listens it emitted events roughly every 0.3 s even in silence in that
+/// field observation. This is not a documented SDK heartbeat. Same-instance
+/// stop/start is a bounded heuristic, not proof of deafness.
 public enum MetaDATSpeechStallPolicy {
     /// No transcription event of any kind for this long: stalled.
     public static let noEventLimit: TimeInterval = 4
@@ -40,6 +40,26 @@ public enum MetaDATSpeechStallPolicy {
     /// No callbacks after repeated restarts is not evidence of readiness.
     /// Limit retries until a fresh activation or an actual callback.
     public static let noEventRecoveryLimit = 3
+    /// Empty callbacks may represent true silence. Cap speculative recoveries
+    /// until actual nonempty evidence or a fresh activation.
+    public static let emptyOnlyRecoveryLimit = 3
+
+    public static func canRecoverEmptyOnly(attempts: Int) -> Bool {
+        attempts >= 0 && attempts < emptyOnlyRecoveryLimit
+    }
+
+    /// Use ingress, not dequeue time. Ignore prior-run or future evidence.
+    public static func evidenceAge(
+        _ evidence: ContinuousClock.Instant?,
+        runStartedAt: ContinuousClock.Instant?,
+        now: ContinuousClock.Instant
+    ) -> TimeInterval? {
+        guard let runStartedAt, runStartedAt <= now else { return nil }
+        let reference = max(runStartedAt, evidence ?? runStartedAt)
+        guard reference <= now else { return nil }
+        let duration = now - reference
+        return Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+    }
 
     public static func canRecoverNoEvents(attempts: Int) -> Bool {
         attempts >= 0 && attempts < noEventRecoveryLimit
