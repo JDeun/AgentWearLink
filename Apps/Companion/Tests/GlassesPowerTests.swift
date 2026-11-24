@@ -1,5 +1,4 @@
 import XCTest
-import AgentWearLinkMetaDATIntegration
 
 final class GlassesPowerTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 10_000)
@@ -9,7 +8,7 @@ final class GlassesPowerTests: XCTestCase {
     func testCoolingRequiresObservedRecoveryEvenAfterTenMinutes() {
         let hold = GlassesHold.coolingDown(since: t0)
         func release(_ thermal: SpeechPowerPolicy.Thermal, after seconds: TimeInterval) -> Bool {
-            GlassesHoldPolicy.shouldRelease(hold, thermal: thermal, battery: 50, charging: false, now: t0 + seconds)
+            GlassesHoldPolicy.shouldRelease(hold, thermal: thermal, battery: 50, charging: false, now: t0 + seconds, observedAt: t0 + seconds)
         }
         XCTAssertFalse(release(.critical, after: 180))
         XCTAssertFalse(release(.severe, after: 180))
@@ -27,7 +26,7 @@ final class GlassesPowerTests: XCTestCase {
     func testChargingReleasesOnChargeOrARise() {
         let hold = GlassesHold.charging(since: t0, battery: 6)
         func release(_ battery: Int?, charging: Bool = false, after seconds: TimeInterval = 180) -> Bool {
-            GlassesHoldPolicy.shouldRelease(hold, thermal: .normal, battery: battery, charging: charging, now: t0 + seconds)
+            GlassesHoldPolicy.shouldRelease(hold, thermal: .normal, battery: battery, charging: charging, now: t0 + seconds, observedAt: t0 + seconds)
         }
         XCTAssertFalse(release(6))
         XCTAssertFalse(release(8))
@@ -39,8 +38,8 @@ final class GlassesPowerTests: XCTestCase {
         XCTAssertFalse(release(5, charging: true, after: 86_400))
         XCTAssertFalse(release(6, after: 86_400))
         let unknownLevel = GlassesHold.charging(since: t0, battery: nil)
-        XCTAssertFalse(GlassesHoldPolicy.shouldRelease(unknownLevel, thermal: .normal, battery: 15, charging: false, now: t0 + 180))
-        XCTAssertTrue(GlassesHoldPolicy.shouldRelease(unknownLevel, thermal: .normal, battery: 16, charging: false, now: t0 + 180))
+        XCTAssertFalse(GlassesHoldPolicy.shouldRelease(unknownLevel, thermal: .normal, battery: 15, charging: false, now: t0 + 180, observedAt: t0 + 180))
+        XCTAssertTrue(GlassesHoldPolicy.shouldRelease(unknownLevel, thermal: .normal, battery: 16, charging: false, now: t0 + 180, observedAt: t0 + 180))
     }
 
     func testUpdatesDoNotRetryInALoop() {
@@ -183,5 +182,20 @@ final class GlassesPowerTests: XCTestCase {
         XCTAssertTrue(CameraPowerPolicy.blocksReconnect(stage: .normal, sessionHold: nil, battery: 5, charging: false))
         XCTAssertTrue(CameraPowerPolicy.blocksReconnect(stage: .normal, sessionHold: .coolingDown(since: t0), battery: 80, charging: false))
         XCTAssertFalse(CameraPowerPolicy.blocksReconnect(stage: .reduced, sessionHold: nil, battery: 40, charging: false))
+    }
+
+    func testPowerHoldRejectsMissingStaleOrPreFailureObservation() {
+        let hold = GlassesHold.coolingDown(since: t0)
+        let now = t0 + 300
+        func release(_ stamp: Date?) -> Bool {
+            GlassesHoldPolicy.shouldRelease(hold, thermal: .normal, battery: 80,
+                                           charging: false, now: now, observedAt: stamp)
+        }
+        XCTAssertFalse(release(nil))
+        XCTAssertFalse(release(t0))
+        XCTAssertFalse(release(t0 + 1))
+        XCTAssertFalse(release(now + 1))
+        XCTAssertTrue(release(now))
+        XCTAssertTrue(CameraPowerPolicy.blocksReconnect(stage: .normal, sessionHold: nil, battery: 5, charging: true))
     }
 }

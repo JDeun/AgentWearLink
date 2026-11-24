@@ -1011,14 +1011,21 @@ final class CompanionRuntime: ObservableObject {
         }
         if signals.glassesBatteryLow != lowBatteryNotice.active { signals.glassesBatteryLow = lowBatteryNotice.active }
         let thermal = GlassesStateMapper.thermal(devices)
-        applyThermalStage(thermal)
+        let observedAt = wearables.powerObservationTime()
+        let now = Date()
+        // A getter can return a cached state. Escalate on danger, but
+        // downgrade only with a recent matching SDK DeviceState callback.
+        let canDowngrade = GlassesHoldPolicy.hasFreshObservation(observedAt, now: now)
+        let stageLevel = ThermalStageTracker.target(for: thermal) < thermalStage.stage && !canDowngrade
+            ? SpeechPowerPolicy.Thermal.unknown : thermal
+        applyThermalStage(stageLevel)
         if let hold = cameraPowerHold, snapshot.glasses == .connected,
-           GlassesHoldPolicy.shouldRelease(hold, thermal: thermal, battery: snapshot.battery, charging: snapshot.charging, now: Date()) {
+           GlassesHoldPolicy.shouldRelease(hold, thermal: thermal, battery: snapshot.battery, charging: snapshot.charging, now: now, observedAt: observedAt) {
             cameraPowerHold = nil
             record("camera power hold released")
         }
-        if let hold = signals.hold, snapshot.glasses == .connected, GlassesHoldPolicy.shouldRelease(
-            hold, thermal: thermal, battery: snapshot.battery, charging: snapshot.charging, now: Date()
+        if let hold = signals.hold, GlassesHoldPolicy.shouldRelease(
+            hold, thermal: thermal, battery: snapshot.battery, charging: snapshot.charging, now: now, observedAt: observedAt
         ) {
             setHold(nil, reason: "thermal \(thermal), battery \(snapshot.battery.map(String.init) ?? "?")\(snapshot.charging ? " charging" : "")")
         }
@@ -1037,12 +1044,20 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private var cameraPowerAllowed: Bool {
-        CameraPowerPolicy.allowsCapture(stage: thermalStage.stage, localHold: cameraPowerHold, sessionHold: signals.hold)
+        !powerRecoveryBlocked && CameraPowerPolicy.allowsCapture(stage: thermalStage.stage, localHold: cameraPowerHold, sessionHold: signals.hold)
     }
 
     private func noteCameraPowerFailure(_ error: any Error, adapter: MetaDATDeviceAdapter) {
-        guard device === adapter, let failure = error as? MetaDATCameraFailure,
-              let hold = CameraPowerPolicy.hold(for: failure, battery: signals.glassesBattery, now: Date()) else { return }
+        guard device === adapter, let failure = error as? MetaDATCameraFailure else { return }
+        let refusal: CameraPowerPolicy.Refusal
+        switch failure {
+        case .thermalHot: refusal = .thermalHot
+        case .batteryLow: refusal = .batteryLow
+        case .peakPowerLimit: refusal = .peakPowerLimit
+        case .deviceHealthCritical: refusal = .deviceHealthCritical
+        case .streamFailed: refusal = .streamFailed
+        }
+        guard let hold = CameraPowerPolicy.hold(for: refusal, battery: signals.glassesBattery, now: Date()) else { return }
         cameraPowerHold = hold
         record("camera power hold: \(failure.rawValue)")
     }

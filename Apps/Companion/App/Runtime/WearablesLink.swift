@@ -18,6 +18,12 @@ final class WearablesLink {
     private(set) var configuration: Configuration?
     private var observers: [Task<Void, Never>] = []
     private var deviceTokens: [any AnyListenerToken] = []
+    private var deviceObservationGeneration: UInt64 = 0
+    private struct PowerObservation {
+        let state: DeviceState
+        let receivedAt: Date
+    }
+    private var powerObservations: [DeviceIdentifier: PowerObservation] = [:]
     private var invocationChannel: MetaDATVoiceInvocationChannel?
     private var invocationReady: Bool?
 
@@ -94,6 +100,23 @@ final class WearablesLink {
     /// Vendor-free observations of every known device, for the pure policies.
     func observedDevices() -> [GlassesDeviceObservation] {
         observations()
+    }
+
+    /// Receipt time, not a hardware measurement timestamp. Require one
+    /// unambiguous connected device and matching current SDK values. Polling
+    /// the getters does not renew the observation.
+    func powerObservationTime() -> Date? {
+        guard isConfigured, isRegistered else { return nil }
+        let wearables = Wearables.shared
+        let connected = wearables.devices.compactMap { wearables.deviceForIdentifier($0) }
+            .filter { $0.linkState == .connected }
+        guard connected.count == 1, let device = connected.first,
+              let observation = powerObservations[device.identifier],
+              observation.state.linkState == .connected,
+              observation.state.thermalLevel == device.thermalLevel,
+              observation.state.batteryLevel == device.batteryLevel,
+              observation.state.chargingState == device.chargingState else { return nil }
+        return observation.receivedAt
     }
 
     var hasConnectedDevice: Bool {
@@ -277,17 +300,31 @@ final class WearablesLink {
         _ identifiers: [DeviceIdentifier],
         onChange: @escaping @MainActor () -> Void
     ) async {
+        deviceObservationGeneration &+= 1
+        let generation = deviceObservationGeneration
+        powerObservations.removeAll()
         let old = deviceTokens
         deviceTokens = []
         for token in old { await token.cancel() }
+        guard generation == deviceObservationGeneration, !Task.isCancelled else { return }
         let wearables = Wearables.shared
         for identifier in identifiers {
             guard let device = wearables.deviceForIdentifier(identifier) else { continue }
-            deviceTokens.append(device.addDeviceStateListener { _ in
-                Task { @MainActor in onChange() }
+            deviceTokens.append(device.addDeviceStateListener { [weak self] state in
+                let receivedAt = Date()
+                Task { @MainActor in
+                    guard let self, self.deviceObservationGeneration == generation else { return }
+                    if let previous = self.powerObservations[identifier], previous.receivedAt > receivedAt { return }
+                    self.powerObservations[identifier] = PowerObservation(state: state, receivedAt: receivedAt)
+                    onChange()
+                }
             })
-            deviceTokens.append(device.addLinkStateListener { _ in
-                Task { @MainActor in onChange() }
+            deviceTokens.append(device.addLinkStateListener { [weak self] link in
+                Task { @MainActor in
+                    guard let self, self.deviceObservationGeneration == generation else { return }
+                    if link != .connected { self.powerObservations.removeValue(forKey: identifier) }
+                    onChange()
+                }
             })
         }
     }

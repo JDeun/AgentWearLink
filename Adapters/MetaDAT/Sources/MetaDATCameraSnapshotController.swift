@@ -385,7 +385,10 @@ public final class MetaDATCameraSnapshotController: @unchecked Sendable {
             }
         }
 
-        try failure.check()
+        do { try failure.check() } catch {
+            gate.cancel()
+            throw error
+        }
         guard MetaDATPhotoShutter.trigger(stream) else {
             gate.cancel()
             throw AWLError.device("Meta DAT camera rejected the photo shutter request")

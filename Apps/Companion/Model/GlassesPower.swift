@@ -1,5 +1,4 @@
 import Foundation
-import AgentWearLinkMetaDATIntegration
 
 /// What needs updating when the glasses refuse this app.
 public enum GlassesUpdateTarget: String, Equatable, Sendable {
@@ -43,8 +42,16 @@ public enum GlassesHoldPolicy {
     /// already looks fine (a peak-power shutdown can come at a normal level,
     /// and a stale reading must not turn the hold into a reconnect loop).
     public static let minimumHold: TimeInterval = 120
-    /// No elapsed-time escape hatch: known hot or missing telemetry is
-    /// not proof of recovery. Device measurements are SDK snapshots.
+    /// Maximum age of an SDK DeviceState callback accepted for a release.
+    /// These are application policy defaults, not Meta safety thresholds.
+    public static let maximumObservationAge: TimeInterval = 180
+    public static func hasFreshObservation(_ observedAt: Date?, after: Date? = nil, now: Date) -> Bool {
+        guard let observedAt, observedAt <= now,
+              now.timeIntervalSince(observedAt) <= maximumObservationAge else { return false }
+        if let after, observedAt <= after { return false }
+        return true
+    }
+
     /// The battery rose this many points since the hold: try again.
     public static let batteryRise = 3
     /// Glasses-side updates: try again after this (the user may have updated
@@ -56,16 +63,19 @@ public enum GlassesHoldPolicy {
         thermal: SpeechPowerPolicy.Thermal,
         battery: Int?,
         charging: Bool,
-        now: Date
+        now: Date,
+        observedAt: Date? = nil
     ) -> Bool {
         switch hold {
         case let .coolingDown(since):
-            guard now.timeIntervalSince(since) >= minimumHold else { return false }
+            guard now.timeIntervalSince(since) >= minimumHold,
+                  hasFreshObservation(observedAt, after: since, now: now) else { return false }
             // Meta: CRITICAL and above is unusable, SEVERE throttles
             // everything; MODERATE or cooler is safe to start again.
             return thermal != .unknown && thermal <= .moderate
         case let .charging(since, held):
-            guard now.timeIntervalSince(since) >= minimumHold else { return false }
+            guard now.timeIntervalSince(since) >= minimumHold,
+                  hasFreshObservation(observedAt, after: since, now: now) else { return false }
             guard thermal < .severe, let battery, (0...100).contains(battery),
                   battery > ConnectionSignals.criticalBattery else { return false }
             if charging { return true }
@@ -153,7 +163,12 @@ public struct ThermalStageTracker: Equatable, Sendable {
 /// Local camera hold is separate from a terminal session hold. A refused
 /// snapshot does not prove that a healthy independent voice channel is down.
 public enum CameraPowerPolicy {
-    public static func hold(for failure: MetaDATCameraFailure, battery: Int?, now: Date) -> GlassesHold? {
+    // Vendor-free policy so the model unit-test target never links Meta SDK.
+    public enum Refusal: Sendable {
+        case thermalHot, batteryLow, peakPowerLimit, deviceHealthCritical, streamFailed
+    }
+
+    public static func hold(for failure: Refusal, battery: Int?, now: Date) -> GlassesHold? {
         switch failure {
         case .thermalHot, .peakPowerLimit, .deviceHealthCritical:
             return .coolingDown(since: now)
@@ -170,7 +185,9 @@ public enum CameraPowerPolicy {
 
     public static func blocksReconnect(stage: ThermalStageTracker.Stage, sessionHold: GlassesHold?, battery: Int?, charging: Bool) -> Bool {
         if stage == .shed || sessionHold != nil { return true }
-        guard let battery, (0...100).contains(battery), !charging else { return false }
+        guard let battery, (0...100).contains(battery) else { return false }
+        // Even on a charger, a known critical level is not permission to
+        // start a new media session.
         return battery <= ConnectionSignals.criticalBattery
     }
 }
