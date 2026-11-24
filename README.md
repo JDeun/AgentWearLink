@@ -7,7 +7,7 @@
 [한국어](README.ko.md) · [Get started](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
 > [!IMPORTANT]
-> **Pre-alpha / integration preview.** The Swift packages, vendor-backed simulator tests, and isolated real OpenClaw Gateway contracts are implemented and CI-tested. **The reference Ray-Ban Meta + iPhone + Mac/Tailnet deployment has not been physically validated.** This is not a production-readiness or hardware-compatibility claim.
+> **Pre-alpha / integration preview.** The Swift packages, vendor-backed simulator tests, and isolated real OpenClaw Gateway contracts are implemented and CI-tested. **Partial physical smoke evidence was recorded on 2026-10-13; full reference deployment and hardware acceptance remain open.** This is not a production-readiness or hardware-compatibility claim.
 
 ## Overview
 
@@ -87,10 +87,10 @@ The concrete Meta DAT adapter has a separate **Swift 6.0+ toolchain** requiremen
 | Swift Core and adapter tests | **CI passing** | Deterministic contracts and error handling |
 | Meta DAT compile / MockDeviceKit | **CI covered** | Pinned SDK and simulator-hosted integration; **not** physical hardware |
 | Real pinned OpenClaw Gateway | **CI passing** | Isolated Gateway auth, exact-ID approval, grant reuse/revocation, streaming, abort, and two-turn session smoke |
-| iPhone ↔ Tailscale ↔ actual Mac | **Not yet accepted** | Requires private deployment testing |
-| Physical Ray-Ban Meta camera/audio/voice | **Not yet accepted** | Requires wearable, iPhone and permissioned DAT app |
+| iPhone ↔ Tailscale ↔ actual Mac | **Partial physical smoke** | Health, first pairing/approval and stored Keychain grant reconnect reported on Oct 13; full deployment matrix open |
+| Physical Ray-Ban Meta camera/audio/voice | **Partial physical smoke** | Registration, microphone permission and Korean spoken turn/audible reply reported; camera, lock screen and reliability acceptance open |
 
-The real Gateway checks use a disposable localhost Gateway and a **synthetic local model**. They do not validate personal sessions, real-model memory/tool behavior, a human approval ceremony, iOS Keychain entitlements, or wearable hardware. See [evidence and CI gates](docs/testing.md), [open acceptance work](https://github.com/JDeun/AgentWearLink/issues), and the [validation matrix](docs/reliability-matrix.md).
+The real Gateway checks use a disposable localhost Gateway and a **synthetic local model**. They do not validate personal sessions, real-model memory/tool behavior, a human approval ceremony, iOS Keychain entitlements, or wearable hardware. Historical physical evidence is recorded separately in the [October validation log](docs/research/validation-log-2026-10.md); it does not prove the current candidate SDK/app revision or full matrix. See [evidence and CI gates](docs/testing.md), [open acceptance work](https://github.com/JDeun/AgentWearLink/issues), and the [validation matrix](docs/reliability-matrix.md).
 
 ## Engineering principles
 
