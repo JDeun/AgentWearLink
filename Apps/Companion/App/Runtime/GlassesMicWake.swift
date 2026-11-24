@@ -56,6 +56,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
         let options: AVAudioSession.CategoryOptions
     }
     private var priorAudioSession: PriorAudioSession?
+    private var ownedCategoryOptions: AVAudioSession.CategoryOptions?
     private let installedOptions: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .mixWithOthers]
 
     private nonisolated let eventSource = BoundedDeviceEventSource(bufferLimit: 16)
@@ -88,7 +89,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
     nonisolated func events() -> AsyncStream<InteractionEvent> { eventSource.stream() }
 
     func connect() async throws {
-        guard !retired, !running, !revocation.isRevoked, lease.isWithinHardLimit(), !Task.isCancelled else {
+        guard !retired, !running, !revocation.isRevoked, lease.permitsInitialAdmission(), !Task.isCancelled else {
             throw CancellationError()
         }
         guard let recognizer, recognizer.supportsOnDeviceRecognition else {
@@ -110,9 +111,10 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
         eventGeneration = eventSource.currentGeneration()
         priorAudioSession = PriorAudioSession(category: session.category, mode: session.mode, options: session.categoryOptions)
         do {
-            guard !revocation.isRevoked, lease.isWithinHardLimit() else { throw CancellationError() }
+            guard !revocation.isRevoked, lease.permitsInitialAdmission() else { throw CancellationError() }
             try session.setCategory(.playAndRecord, mode: .default, options: installedOptions)
-            guard !revocation.isRevoked, lease.isWithinHardLimit() else { throw CancellationError() }
+            ownedCategoryOptions = session.categoryOptions
+            guard !revocation.isRevoked, lease.permitsInitialAdmission() else { throw CancellationError() }
             try session.setActive(true)
             // Never fall back to the phone mic or choose between ambiguous
             // HFP accessories. Only one HFP input may be admitted.
@@ -120,10 +122,10 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
             guard inputs.count == 1, let hfp = inputs.first else {
                 throw AWLError.capabilityUnavailable("unambiguous HFP input unavailable")
             }
-            guard !revocation.isRevoked, lease.isWithinHardLimit() else { throw CancellationError() }
+            guard !revocation.isRevoked, lease.permitsInitialAdmission() else { throw CancellationError() }
             inputUID = hfp.uid
             try session.setPreferredInput(hfp)
-            guard !revocation.isRevoked, routeIsOwned(), !session.isOtherAudioPlaying, lease.isWithinHardLimit() else {
+            guard !revocation.isRevoked, routeIsOwned(), !session.isOtherAudioPlaying, lease.permitsInitialAdmission() else {
                 throw AWLError.capabilityUnavailable("HFP input not ready")
             }
             try startEngine()
@@ -131,7 +133,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
             retire(.connectionFailed, notify: false)
             throw AWLError.device("glasses microphone activation failed")
         }
-        guard !revocation.isRevoked, lease.isWithinHardLimit() else {
+        guard !revocation.isRevoked, lease.permitsInitialAdmission() else {
             retire(.stopped, notify: false)
             throw CancellationError()
         }
@@ -155,6 +157,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
             forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: nil
         ) { [weak self] _ in Task { await self?.retire(.interrupted) } })
         startTask()
+        guard running, !retired else { throw CancellationError() }
         // Separate from the consumer/async transcript gate. Even if a gate
         // suspends, route/idle/deadline checking can still retire this actor.
         leaseWatch = Task { [weak self] in
@@ -181,8 +184,8 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
 
     private func routeIsOwned() -> Bool {
         let session = AVAudioSession.sharedInstance()
-        guard let inputUID, session.category == .playAndRecord,
-              session.mode == .default,
+        guard let inputUID, let ownedCategoryOptions, session.category == .playAndRecord,
+              session.mode == .default, session.categoryOptions == ownedCategoryOptions,
               session.currentRoute.inputs.count == 1,
               let input = session.currentRoute.inputs.first else { return false }
         return input.portType == .bluetoothHFP && input.uid == inputUID
@@ -242,8 +245,10 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
             } catch { log("HFP preferred input release failed") }
         }
         inputUID = nil
+        let installed = ownedCategoryOptions
+        ownedCategoryOptions = nil
         guard session.category == .playAndRecord, session.mode == .default,
-              session.categoryOptions.contains(.allowBluetoothHFP) else {
+              let installed, session.categoryOptions == installed else {
             log("HFP category changed externally; not restoring")
             return
         }

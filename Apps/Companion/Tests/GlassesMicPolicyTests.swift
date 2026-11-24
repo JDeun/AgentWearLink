@@ -51,6 +51,14 @@ final class HFPListeningLeaseTests: XCTestCase {
         XCTAssertEqual(lease.lastActivity, now.advanced(by: .seconds(50)))
     }
 
+    func testSlowConnectionCannotOpenAnAlreadyIdleGrant() throws {
+        let now = ContinuousClock.now
+        let lease = try XCTUnwrap(HFPListeningLease(seconds: 300, now: now))
+        XCTAssertTrue(lease.permitsInitialAdmission(at: now.advanced(by: .seconds(29))))
+        XCTAssertFalse(lease.permitsInitialAdmission(at: now.advanced(by: .seconds(30))))
+        XCTAssertFalse(lease.permitsInitialAdmission(at: now.advanced(by: .seconds(-1))))
+    }
+
     func testRouteLossAndCompetingAudioEndImmediately() throws {
         let now = ContinuousClock.now
         let lease = try XCTUnwrap(HFPListeningLease(seconds: 120, now: now))

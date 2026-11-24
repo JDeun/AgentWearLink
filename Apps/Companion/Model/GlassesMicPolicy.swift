@@ -64,6 +64,12 @@ public struct HFPListeningLease: Sendable, Equatable {
         now >= began && now < deadline
     }
 
+    /// A delayed Gateway connect may consume the idle window before the
+    /// microphone has been opened. Never acquire input for an idle grant.
+    public func permitsInitialAdmission(at now: ContinuousClock.Instant = .now) -> Bool {
+        isWithinHardLimit(at: now) && now - began < .seconds(Self.idleSeconds)
+    }
+
     /// An actual nonempty recognition result can refresh inactivity only.
     /// Repeated empty callbacks and automatic recognition restarts cannot.
     public mutating func noteActivity(at now: ContinuousClock.Instant) {

@@ -185,7 +185,8 @@ final class CompanionRuntime: ObservableObject {
 
     private var wantsListening: Bool {
         if settings.wakeSource == .glassesMicOnPhone {
-            guard appActive, hfpLease?.isWithinHardLimit() == true else { return false }
+            guard appActive, hfpLease?.isWithinHardLimit() == true,
+                  hfpRevocation?.isRevoked == false else { return false }
         }
         return ListeningPolicy.wantsListening(
             setupCompleted: settings.setupCompleted,
@@ -293,6 +294,7 @@ final class CompanionRuntime: ObservableObject {
             try? await Task.sleep(for: .milliseconds(100))
         }
         startListeningFromIntent()
+        guard settings.wakeSource != .glassesMicOnPhone else { return false }
         guard settings.setupCompleted else {
             record("start listening intent: setup not completed")
             return false
@@ -1340,7 +1342,16 @@ final class CompanionRuntime: ObservableObject {
                 }
                 settle = true
                 guard !Task.isCancelled, self.wantsListening, self.runtime == nil else { break }
+                let explicitLeaseID = self.hfpLease?.id
                 let outcome = await self.connectVoice()
+                if let explicitLeaseID, outcome != .connected {
+                    // One admission attempt per explicit HFP grant. A failed
+                    // Gateway/engine startup is not permission to reopen it.
+                    if self.hfpLease?.id == explicitLeaseID {
+                        self.stopHFPListening(.connectionFailed)
+                    }
+                    break
+                }
                 // Glasses are on but no session came up: say so on Home.
                 self.signals.listenFailed = outcome == .retry && self.wearables.hasConnectedDevice
                     && self.signals.hold == nil
@@ -1406,7 +1417,10 @@ final class CompanionRuntime: ObservableObject {
             voiceConnecting = false
             connectionFence.finish(attempt)
             if settings.wakeSource == .glassesMicOnPhone, hfpLease == nil {
-                applyKeepAlivePolicy(force: true)
+                // A stop while voiceConnecting was true could not deactivate
+                // the host session. Release after startup cleanup owns it.
+                keepAliveWanted = false
+                keepAlive.stop()
             }
         }
 
@@ -2297,8 +2311,18 @@ final class CompanionRuntime: ObservableObject {
         connectionFence.invalidate()
         watchTask?.cancel()
         watchTask = nil
+        let endingHFP = micDevice != nil
+        if let micDevice {
+            clearHFPGrant()
+            await micDevice.disconnect()
+            await speaker.stop()
+        }
         if let runtime { await runtime.stop() }
         clearVoiceReferences()
+        if endingHFP {
+            keepAliveWanted = false
+            keepAlive.stop()
+        }
     }
 
     /// Note: the keep-alive is deliberately NOT stopped here; it follows
