@@ -57,17 +57,24 @@ public struct PowerSample: Equatable, Sendable {
         iso.timeZone = TimeZone.current
         func b(_ value: Bool) -> String { value ? "1" : "0" }
         func field(_ text: String) -> String { text.replacingOccurrences(of: ",", with: ";") }
-        return [
-            iso.string(from: time), glassesBattery.map(String.init) ?? "", b(glassesCharging), b(listening),
-            field(speechPause), b(keepAliveRunning), field(outputs), b(appActive), b(phoneLocked),
+        // Keep the compiler's constraint-solving work small in Release builds.
+        let deviceFields: [String] = [
+            iso.string(from: time), glassesBattery.map { String($0) } ?? "",
+            b(glassesCharging), b(listening), field(speechPause),
+            b(keepAliveRunning), field(outputs), b(appActive), b(phoneLocked),
             String(speechStallRestarts), String(turns),
+        ]
+        let qualityFields: [String] = [
             String(quality.forwards), String(quality.armed), String(quality.ignoredFinals),
             String(quality.echoDrops), String(quality.stops), String(quality.noReplyForwards),
-            lastLatencyFirstAudioMilliseconds.map(String.init) ?? "",
+            lastLatencyFirstAudioMilliseconds.map { String($0) } ?? "",
+        ]
+        let usageFields: [String] = [
             String(quality.minutesWorn), String(quality.minutesListening), String(quality.deafRestarts),
             String(quality.photoTurns), String(quality.photoFailures),
-            lastPhotoCaptureMilliseconds.map(String.init) ?? "",
-        ].joined(separator: ",")
+            lastPhotoCaptureMilliseconds.map { String($0) } ?? "",
+        ]
+        return (deviceFields + qualityFields + usageFields).joined(separator: ",")
     }
 }
 
