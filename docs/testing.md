@@ -13,7 +13,7 @@ Use these terms literally in issues, PRs, and documentation:
 - **deployment validated** — the real network/runtime deployment executes successfully
 - **physical validated** — the target wearable + physical iPhone path executes successfully
 
-A feature may occupy several of these states at once. Meta camera, Speech, and Voice Invocation paths are production-wired and deterministically or simulator-tested. Their physical behavior remains unverified; code composition (#230) and hardware acceptance (#1/#3/#5/#6) are separate milestones.
+A feature may occupy several of these states at once. Meta camera, Speech, and Voice Invocation paths are production-wired and deterministically or simulator-tested. The October 13 field log records partial physical registration, speech/output and Tailnet smoke evidence; current candidate revision, camera, native voice invocation, lock-screen and reliability acceptance remain open. Code composition (#230) and full hardware acceptance (#1/#3/#5/#6) are separate milestones. See [field log](research/validation-log-2026-10.md).
 
 ## 1. Deterministic Core/runtime tests
 

@@ -30,6 +30,8 @@
 | Why always-on wake words are cheap elsewhere and costly with DAT 1.0, ranked options | [Wake word and power](wake-word-power.md) |
 | How the app comes back after iOS suspends or evicts it | [Waking the app](waking-the-app.md) |
 | Physical bring-up log (October 2026) | [Validation log](validation-log-2026-10.md) |
+| November SDK / Visor / acceptance refresh | [2026-11-24 follow-up](meta-dat-visor-companion-followup-2026-11-24.md) |
+| Companion physical acceptance handoff | [Companion acceptance runbook](companion-physical-acceptance.md) |
 
 ## Sources
 
