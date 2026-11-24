@@ -1603,8 +1603,8 @@ final class CompanionRuntime: ObservableObject {
             if pendingMusicWatch != nil { photoTurnReplyDone = true }
             if !speaker.isSpeaking { replySpeechIdle() }
         case let .failed(id, error):
-            if id == nil, case .device = error {
-                // Core retired the runtime after a terminal device failure.
+            if VoiceRuntimeFailurePolicy.retiresDeviceRuntime(interactionID: id, error: error) {
+                // Core retired the runtime after terminal device failure or global delivery overload.
                 stopWaitingCues()
                 Task { await retireAfterDeviceLoss(attempt: attempt) }
             } else if id != nil {

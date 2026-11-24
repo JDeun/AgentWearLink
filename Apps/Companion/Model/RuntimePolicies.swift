@@ -1,3 +1,4 @@
+import AgentWearLinkCore
 import AgentWearLinkOpenClaw
 import Foundation
 
@@ -7,6 +8,18 @@ public enum ListeningPolicy {
     /// only while "안경 호출 받기" is on.
     public static func wantsListening(setupCompleted: Bool, listenEnabled: Bool, practicing: Bool) -> Bool {
         listenEnabled && (setupCompleted || practicing)
+    }
+}
+
+/// Mirrors Core's terminal device-event contract: global overload invalidates
+/// the whole runtime; a local Speech capability failure does not.
+public enum VoiceRuntimeFailurePolicy {
+    public static func retiresDeviceRuntime(interactionID: InteractionID?, error: AWLError) -> Bool {
+        guard interactionID == nil else { return false }
+        switch error {
+        case .device, .overloaded: return true
+        default: return false
+        }
     }
 }
 

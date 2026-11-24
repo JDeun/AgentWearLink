@@ -1,3 +1,4 @@
+import AgentWearLinkCore
 import AgentWearLinkOpenClaw
 import XCTest
 
@@ -106,5 +107,18 @@ final class SpeechPowerPolicyTests: XCTestCase {
         XCTAssertEqual(GlassesStateMapper.speechDecision([folded]), .listen)
         let hot = GlassesDeviceObservation(link: .connected, thermal: .severe)
         XCTAssertEqual(GlassesStateMapper.speechDecision([hot]), .shedThermal)
+    }
+}
+
+final class VoiceRuntimeFailurePolicyTests: XCTestCase {
+    func testGlobalDeviceFailureAndOverloadRetireRuntime() {
+        XCTAssertTrue(VoiceRuntimeFailurePolicy.retiresDeviceRuntime(interactionID: nil, error: .device("lost")))
+        XCTAssertTrue(VoiceRuntimeFailurePolicy.retiresDeviceRuntime(interactionID: nil, error: .overloaded("queue")))
+    }
+
+    func testLocalSpeechFailureAndInteractionFailureDoNotRetireRuntime() {
+        XCTAssertFalse(VoiceRuntimeFailurePolicy.retiresDeviceRuntime(interactionID: nil, error: .capabilityUnavailable("Speech delivery")))
+        XCTAssertFalse(VoiceRuntimeFailurePolicy.retiresDeviceRuntime(interactionID: InteractionID(), error: .overloaded("turn")))
+        XCTAssertFalse(VoiceRuntimeFailurePolicy.retiresDeviceRuntime(interactionID: nil, error: .agent("diagnostic")))
     }
 }
