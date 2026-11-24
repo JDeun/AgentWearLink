@@ -5,7 +5,13 @@ import AgentWearLinkCore
 /// terminal device-session failure by AgentWearLinkRuntime.
 enum MetaDATSpeechFailurePolicy {
     static func event(for error: any Error) -> InteractionEvent {
-        .failed(nil, .capabilityUnavailable(
+        if let failure = error as? MetaDATSpeechDeliveryError,
+           failure == .finalTranscriptOverflow {
+            return .failed(nil, .capabilityUnavailable(
+                "Meta DAT Speech final transcript delivery capacity exceeded"
+            ))
+        }
+        return .failed(nil, .capabilityUnavailable(
             MetaDATVendorFailurePolicy.message(for: error, surface: .speech)
         ))
     }

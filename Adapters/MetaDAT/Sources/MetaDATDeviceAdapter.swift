@@ -610,14 +610,23 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
             throw CancellationError()
         }
 
-        let transcripts = speechTranscriptStream.stream(from: speech)
+        let delivery = speechTranscriptStream.subscribe(from: speech)
+        let transcripts = delivery.events()
         speechTask = Task { [weak self] in
-            for await transcript in transcripts {
+            defer { delivery.cancel() }
+            for await event in transcripts {
                 guard !Task.isCancelled else { break }
-                await self?.handleSpeechTranscript(
-                    transcript,
-                    generation: generation
-                )
+                switch event {
+                case let .transcript(transcript):
+                    await self?.handleSpeechTranscript(
+                        transcript,
+                        generation: generation,
+                        delivery: delivery
+                    )
+                case let .failed(error):
+                    await self?.handleSpeechError(error, generation: generation)
+                    return
+                }
             }
         }
 
@@ -644,19 +653,22 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
 
     private func handleSpeechTranscript(
         _ transcript: MetaDATTranscript,
-        generation: UInt64
+        generation: UInt64,
+        delivery: MetaDATSpeechTranscriptDelivery
     ) async {
-        guard !stopping, generationFence.owns(generation) else { return }
+        guard !Task.isCancelled, !stopping, generationFence.owns(generation), speech != nil else { return }
 
         let accepted = await transcriptDeduplicator.accept(
             .init(text: transcript.text, isFinal: transcript.isFinal)
         )
-        guard accepted else { return }
+        guard accepted, !Task.isCancelled, !stopping,
+              generationFence.owns(generation), speech != nil else { return }
 
         var transcript = transcript
         if transcript.isFinal, let transcriptGate {
             guard let request = await transcriptGate(transcript.text),
-                  !stopping, generationFence.owns(generation) else { return }
+                  !Task.isCancelled, !stopping,
+                  generationFence.owns(generation), speech != nil else { return }
             transcript = MetaDATTranscript(text: request, isFinal: true, confidence: transcript.confidence)
         } else if !transcript.isFinal, transcriptGate != nil {
             // Partials are not shown to the agent; only gated finals count.
@@ -670,12 +682,12 @@ public actor MetaDATDeviceAdapter: SnapshotCapturingDevice {
         ) else {
             return
         }
+        guard delivery.commitIfHealthy({ yieldEvent(event) }) else { return }
         diagnostics?.record(.init(
             kind: .metaTranscriptAccepted,
             interactionID: interactionID,
             generation: generation
         ))
-        yieldEvent(event)
     }
 
     private func handleSpeechState(_ state: SpeechState, generation: UInt64) async {
