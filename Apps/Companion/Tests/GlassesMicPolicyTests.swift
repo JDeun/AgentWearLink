@@ -59,3 +59,15 @@ final class HFPListeningLeaseTests: XCTestCase {
         XCTAssertNil(lease.end(at: now, routeAvailable: true, competingAudio: false))
     }
 }
+
+final class HFPLeaseRevocationTests: XCTestCase {
+    func testRevocationIsIdempotentAndNewGrantIsIndependent() {
+        let old = HFPLeaseRevocation()
+        let fresh = HFPLeaseRevocation()
+        XCTAssertFalse(old.isRevoked)
+        old.revoke()
+        old.revoke()
+        XCTAssertTrue(old.isRevoked)
+        XCTAssertFalse(fresh.isRevoked)
+    }
+}

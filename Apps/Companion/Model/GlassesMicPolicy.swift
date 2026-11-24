@@ -79,3 +79,13 @@ public struct HFPListeningLease: Sendable, Equatable {
         return nil
     }
 }
+
+/// Synchronous cancellation evidence shared by the UI grant and the adapter.
+/// It crosses the agent-first await without waiting for an actor stop message.
+public final class HFPLeaseRevocation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var revoked = false
+    public init() {}
+    public var isRevoked: Bool { lock.withLock { revoked } }
+    public func revoke() { lock.withLock { revoked = true } }
+}

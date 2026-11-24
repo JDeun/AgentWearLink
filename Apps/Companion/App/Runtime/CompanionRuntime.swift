@@ -100,6 +100,7 @@ final class CompanionRuntime: ObservableObject {
     // Ephemeral, explicit foreground grant; never stored or auto-renewed.
     @Published private(set) var hfpLease: HFPListeningLease?
     private var hfpDeadlineTask: Task<Void, Never>?
+    private var hfpRevocation: HFPLeaseRevocation?
     /// Set only after the runtime started, so health checks never use a
     /// session whose dispatcher is not ready yet.
     private var voiceSession: GatewaySession?
@@ -352,6 +353,7 @@ final class CompanionRuntime: ObservableObject {
             return
         }
         guard let lease = HFPListeningLease(seconds: seconds) else { return }
+        hfpRevocation = HFPLeaseRevocation()
         hfpLease = lease
         if !settings.listenEnabled { settings.listenEnabled = true }
         record("HFP lease requested (\(seconds) s hard limit)")
@@ -365,7 +367,7 @@ final class CompanionRuntime: ObservableObject {
     }
 
     func stopHFPListening(_ reason: HFPListeningLease.End = .stopped) {
-        guard let lease = hfpLease else { return }
+        guard hfpLease != nil else { return }
         clearHFPGrant()
         signals.speechReady = false
         record("HFP grant retired: \(reason.rawValue)")
@@ -379,6 +381,8 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private func clearHFPGrant() {
+        hfpRevocation?.revoke()
+        hfpRevocation = nil
         hfpDeadlineTask?.cancel()
         hfpDeadlineTask = nil
         hfpLease = nil
@@ -847,9 +851,7 @@ final class CompanionRuntime: ObservableObject {
             if let voiceSession {
                 try await voiceSession.health()
             } else {
-                let requestedSource = settings.wakeSource
-        let requestedLeaseID = hfpLease?.id
-        switch await gatewayLink.grantStatus(for: endpoint) {
+                switch await gatewayLink.grantStatus(for: endpoint) {
                 case .missing:
                     GatewayFailure.pairingRevoked.apply(to: &signals, at: now)
                     return
@@ -1374,6 +1376,8 @@ final class CompanionRuntime: ObservableObject {
         guard runtime == nil, !connectionFence.isStarting, !disconnectInProgress,
               wantsListening, !powerRecoveryBlocked, callGate.allowsReconnect,
               wearables.isRegistered, let endpoint = currentEndpoint else { return .retry }
+        let requestedSource = settings.wakeSource
+        let requestedLeaseID = hfpLease?.id
         switch await gatewayLink.grantStatus(for: endpoint) {
         case .missing:
             signals.gateway = .pairingRevoked
@@ -1534,6 +1538,7 @@ final class CompanionRuntime: ObservableObject {
         attempt: UInt64, lease: HFPListeningLease
     ) async -> ConnectOutcome {
         guard hfpLease?.id == lease.id, lease.isWithinHardLimit(), appActive,
+              let revocation = hfpRevocation, !revocation.isRevoked,
               !powerRecoveryBlocked, callGate.allowsReconnect else { return .retry }
         let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
         speaker.gate = gate
@@ -1547,6 +1552,7 @@ final class CompanionRuntime: ObservableObject {
             language: Self.speechLanguage,
             contextualPhrases: settings.effectiveWakePhrases,
             lease: lease,
+            revocation: revocation,
             log: log,
             onLeaseEnd: { [weak self] reason in
                 Task { @MainActor in
@@ -1571,7 +1577,7 @@ final class CompanionRuntime: ObservableObject {
         // Gateway first: while it is down, a retry fails before the glasses
         // mic touches the audio session (no category flip per retry).
         let composed = AgentWearLinkRuntime(device: mic, agent: agent, connectionOrder: .agentFirst, diagnostics: diagnostics, output: output)
-        guard ownsHFPGrant(lease.id, attempt: attempt), !Task.isCancelled else {
+        guard connectionFence.isCurrent(attempt), ownsHFPGrant(lease.id, attempt: attempt), !Task.isCancelled else {
             await mic.disconnect()
             speaker.allowHandsFree = false
             speaker.duckingMode = settings.replyDucking
@@ -1582,7 +1588,7 @@ final class CompanionRuntime: ObservableObject {
         wakeGate = gate
         do {
             try await composed.start()
-            guard ownsHFPGrant(lease.id, attempt: attempt), !Task.isCancelled else {
+            guard connectionFence.isCurrent(attempt), ownsHFPGrant(lease.id, attempt: attempt), !Task.isCancelled else {
                 await composed.stop()
                 clearVoiceReferences()
                 return .retry
@@ -1609,7 +1615,8 @@ final class CompanionRuntime: ObservableObject {
     private func ownsHFPGrant(_ id: UUID, attempt: UInt64) -> Bool {
         appActive && settings.wakeSource == .glassesMicOnPhone
             && hfpLease?.id == id && hfpLease?.isWithinHardLimit() == true
-            && connectionFence.isCurrent(attempt) && !powerRecoveryBlocked && callGate.allowsReconnect
+            && hfpRevocation?.isRevoked == false
+            && connectionFence.ownsRuntime(attempt) && !powerRecoveryBlocked && callGate.allowsReconnect
     }
 
     /// Asks for speech-recognition permission (needed by the glasses-mic

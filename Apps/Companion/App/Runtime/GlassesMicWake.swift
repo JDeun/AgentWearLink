@@ -24,6 +24,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
     private let log: @Sendable (String) -> Void
     private let onLeaseEnd: @Sendable (HFPListeningLease.End) -> Void
     private var lease: HFPListeningLease
+    private let revocation: HFPLeaseRevocation
     private var transcriptGate: (@Sendable (String) async -> String?)?
 
     private let engine = AVAudioEngine()
@@ -67,6 +68,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
 
     init(
         language: String, contextualPhrases: [String], lease: HFPListeningLease,
+        revocation: HFPLeaseRevocation,
         log: @escaping @Sendable (String) -> Void,
         onLeaseEnd: @escaping @Sendable (HFPListeningLease.End) -> Void
     ) {
@@ -75,6 +77,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
         self.contextualPhrases = contextualPhrases
         self.log = log
         self.lease = lease
+        self.revocation = revocation
         self.onLeaseEnd = onLeaseEnd
     }
 
@@ -85,7 +88,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
     nonisolated func events() -> AsyncStream<InteractionEvent> { eventSource.stream() }
 
     func connect() async throws {
-        guard !retired, !running, lease.isWithinHardLimit(), !Task.isCancelled else {
+        guard !retired, !running, !revocation.isRevoked, lease.isWithinHardLimit(), !Task.isCancelled else {
             throw CancellationError()
         }
         guard let recognizer, recognizer.supportsOnDeviceRecognition else {
@@ -107,7 +110,9 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
         eventGeneration = eventSource.currentGeneration()
         priorAudioSession = PriorAudioSession(category: session.category, mode: session.mode, options: session.categoryOptions)
         do {
+            guard !revocation.isRevoked, lease.isWithinHardLimit() else { throw CancellationError() }
             try session.setCategory(.playAndRecord, mode: .default, options: installedOptions)
+            guard !revocation.isRevoked, lease.isWithinHardLimit() else { throw CancellationError() }
             try session.setActive(true)
             // Never fall back to the phone mic or choose between ambiguous
             // HFP accessories. Only one HFP input may be admitted.
@@ -115,9 +120,10 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
             guard inputs.count == 1, let hfp = inputs.first else {
                 throw AWLError.capabilityUnavailable("unambiguous HFP input unavailable")
             }
+            guard !revocation.isRevoked, lease.isWithinHardLimit() else { throw CancellationError() }
             inputUID = hfp.uid
             try session.setPreferredInput(hfp)
-            guard routeIsOwned(), !session.isOtherAudioPlaying, lease.isWithinHardLimit() else {
+            guard !revocation.isRevoked, routeIsOwned(), !session.isOtherAudioPlaying, lease.isWithinHardLimit() else {
                 throw AWLError.capabilityUnavailable("HFP input not ready")
             }
             try startEngine()
@@ -125,8 +131,12 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
             retire(.connectionFailed, notify: false)
             throw AWLError.device("glasses microphone activation failed")
         }
+        guard !revocation.isRevoked, lease.isWithinHardLimit() else {
+            retire(.stopped, notify: false)
+            throw CancellationError()
+        }
         running = true
-        log("HFP lease started: bluetoothHFP input")
+        log("HFP lease started: bluetoothHFP input (accessory identity unverified)")
         let center = NotificationCenter.default
         observers.append(center.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
@@ -181,6 +191,10 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
     @discardableResult
     private func checkLease() -> Bool {
         guard running, !retired else { return false }
+        if revocation.isRevoked {
+            retire(.stopped)
+            return false
+        }
         if let reason = lease.end(at: .now, routeAvailable: routeIsOwned(),
                                   competingAudio: AVAudioSession.sharedInstance().isOtherAudioPlaying) {
             retire(reason)
@@ -192,6 +206,7 @@ actor GlassesMicSpeechAdapter: DeviceAdapter {
     private func retire(_ reason: HFPListeningLease.End, notify: Bool = true) {
         guard !retired else { return }
         retired = true
+        revocation.revoke()
         running = false
         generation &+= 1
         leaseWatch?.cancel()
