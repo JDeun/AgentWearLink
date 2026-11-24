@@ -23,8 +23,13 @@ The reference test host must:
 6. never enable the mock server in a release build.
 
 The XCUITest process must launch the host first, then construct
-`MockDeviceTestClient(portFilePath:)` and wait for the server. It must unpair
-the device and remove the temporary port file during teardown.
+`MockDeviceTestClient(portFilePath:)` and wait for the server. DAT 1.1.0 uses
+`client.kit.pairGlasses(model: .rayBanMeta)`, then explicit `powerOn()`,
+`unfold()`, and `don()`. The typed `async throws` kit calls surface failures
+instead of collapsing them into a Boolean or nil. Use `kit.pairedDevices`
+to check membership and `kit.unpairDevice(glasses)` for teardown. Voice tests
+use `glasses.services.voiceInvocation.simulateLaunchAppAction()`. The UI host
+must terminate and remove its temporary port file even on failure.
 
 ## Minimum fixture sequence
 

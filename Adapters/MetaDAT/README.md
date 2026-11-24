@@ -1,6 +1,6 @@
 # Meta DAT adapter
 
-This directory contains AgentWearLink's concrete reference integration for Meta Wearables DAT **1.0.0**.
+This directory contains AgentWearLink's concrete reference integration for Meta Wearables DAT **1.1.0**.
 
 ## Boundary rule
 

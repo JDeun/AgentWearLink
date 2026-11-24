@@ -12,9 +12,9 @@ It does **not** prove real Bluetooth behavior, microphone/speaker routing, firmw
 
 Add `MWDATMockDevice` from Meta's iOS Swift package to the iOS host/test target.
 
-AgentWearLink pins Meta DAT 1.0.0. Behavioral pairing is driven from the app-hosted test server with `MWDATMockDeviceTestClient`, not from a bare Swift-package xctest process. The host enables the DEBUG-only bootstrap only when launched with `--awl-meta-ui-testing` and a temporary `MWDAT_TEST_SERVER_PORT_FILE`.
+AgentWearLink pins Meta DAT 1.1.0. Behavioral pairing is driven from the app-hosted test server with `MWDATMockDeviceTestClient`, not from a bare Swift-package xctest process. The host enables the DEBUG-only bootstrap only when launched with `--awl-meta-ui-testing` and a temporary `MWDAT_TEST_SERVER_PORT_FILE`.
 
-The client waits for that server, pairs a simulated Ray-Ban Meta, drives Power On → Unfold → Don, verifies device state, and unpairs during teardown. This avoids the linked-app Keychain-context failure seen when `Wearables.configure()` is attempted from package-hosted xctest.
+The client waits for that server, pairs a simulated Ray-Ban Meta with `client.kit.pairGlasses(model: .rayBanMeta)`, explicitly drives Power On → Unfold → Don, verifies kit membership via `kit.pairedDevices`, and unpairs via `kit.unpairDevice(glasses)`. DAT 1.1.0's typed throwing APIs replace the deprecated flat client methods; kit membership alone is not proof of a live session. This avoids the linked-app Keychain-context failure seen when `Wearables.configure()` is attempted from package-hosted xctest.
 
 A mock device becomes discoverable through the normal Wearables device flow after the required simulated state transitions. Treat concrete pairing/state-control calls as version-specific; verify them against the pinned SDK and matching sample before copying code. Tear tests down with `MockDeviceKit.shared.disable()`.
 

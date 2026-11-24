@@ -7,7 +7,7 @@ import MWDATMockDeviceTestClient
 /// iOS host starts MetaDATMockHostBootstrap with --awl-meta-ui-testing.
 final class MetaDATMockDeviceUITests: XCTestCase {
     private var client: MockDeviceTestClient!
-    private var pairedDeviceID: String?
+    private var pairedGlasses: MockDeviceTestGlasses?
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -26,27 +26,26 @@ final class MetaDATMockDeviceUITests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        if let pairedDeviceID {
-            let unpaired = await client.unpairDevice(deviceId: pairedDeviceID)
-            XCTAssertTrue(unpaired)
+        defer {
+            pairedGlasses = nil
+            client = nil
         }
-        pairedDeviceID = nil
-        client = nil
+        if let pairedGlasses {
+            try await client.kit.unpairDevice(pairedGlasses)
+            let remaining = try await client.kit.pairedDevices
+            XCTAssertFalse(remaining.contains(pairedGlasses))
+        }
     }
 
     func testPairRayBanMetaAndDriveWearableReadyState() async throws {
-        let paired = await client.pairDevice()
-        let deviceID = try XCTUnwrap(paired)
-        pairedDeviceID = deviceID
+        let glasses = try await client.kit.pairGlasses(model: .rayBanMeta)
+        pairedGlasses = glasses
 
-        let poweredOn = await client.powerOn(deviceId: deviceID)
-        let unfolded = await client.unfold(deviceId: deviceID)
-        let donned = await client.don(deviceId: deviceID)
-        XCTAssertTrue(poweredOn)
-        XCTAssertTrue(unfolded)
-        XCTAssertTrue(donned)
+        try await glasses.powerOn()
+        try await glasses.unfold()
+        try await glasses.don()
 
-        let state = await client.getDeviceState()
-        XCTAssertNotNil(state, "Mock server must expose app-visible device state")
+        let paired = try await client.kit.pairedDevices
+        XCTAssertTrue(paired.contains(glasses), "Mock kit must expose paired glasses")
     }
 }
