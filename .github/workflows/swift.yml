@@ -328,7 +328,23 @@ jobs:
         if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true' || needs.changes.outputs.ios_reference == 'true'
         working-directory: Adapters/MetaDAT/TestApp
         run: |
-          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation build
+          xcodebuild -project AgentWearLinkMetaDATTestHost.xcodeproj -scheme AgentWearLinkMetaDATIOSHost -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/awl-meta-host" -skipPackagePluginValidation build
+      - name: Verify built Meta DAT host privacy configuration
+        if: needs.changes.outputs.meta_host == 'true' || needs.changes.outputs.meta_ui == 'true' || needs.changes.outputs.ios_reference == 'true'
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, plistlib
+          base = pathlib.Path(os.environ["RUNNER_TEMP"]) / "awl-meta-host" / "Build" / "Products"
+          plists = list(base.glob("*/AgentWearLinkMetaDATIOSHost.app/Info.plist"))
+          if not plists:
+              raise SystemExit("Built Meta DAT host Info.plist not found")
+          for path in plists:
+              with path.open("rb") as f:
+                  dat = plistlib.load(f).get("MWDAT", {})
+              if dat.get("Analytics", {}).get("OptOut") is not True or "CrashReporting" in dat:
+                  raise SystemExit("Built host Meta DAT privacy configuration mismatch")
+          print("Verified built Meta DAT host analytics/crash-reporting opt-out.")
+          PY
       - name: Build MockDeviceKit UI test bundle
         if: needs.changes.outputs.meta_ui == 'true'
         timeout-minutes: 8
