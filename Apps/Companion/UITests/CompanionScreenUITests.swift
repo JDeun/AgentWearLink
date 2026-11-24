@@ -107,10 +107,12 @@ final class CompanionScreenUITests: XCTestCase {
     func testSettingsAdvancedWakeSourcePicker() {
         let app = launch("settings-expanded")
         XCTAssertTrue(app.navigationBars["설정"].waitForExistence(timeout: 15))
-        let picker = scrollTo(element(in: app, labelContains: "호출 듣는 방식"), in: app)
+        let picker = scrollTo(app.descendants(matching: .any)
+            .matching(identifier: "awl-settings-wake-source").firstMatch, in: app)
         XCTAssertTrue(picker.exists, "missing wake source picker")
-        XCTAssertTrue(picker.label.contains("안경 음성 인식"),
-                      "the default wake source must be glasses speech; got \(picker.label)")
+        let selection = [picker.label, picker.value as? String ?? ""].joined(separator: " ")
+        XCTAssertTrue(selection.contains("안경 음성 인식"),
+                      "the default wake source must be glasses speech; got \(selection)")
         expect(app, shows: "전체 기기 지문")
     }
 

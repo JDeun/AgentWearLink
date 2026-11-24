@@ -961,8 +961,8 @@ final class CompanionRuntime: ObservableObject {
     /// One line a minute, also in the background while the keep-alive runs.
     private func appendPowerSample() {
         let now = Date()
-        // Safety net: a restart whose "speech started" never logged.
-        if let since = speechRestartingSince, now.timeIntervalSince(since) > 90 { speechRestartingSince = nil }
+        // Readiness is observed, never inferred from a timeout or log line.
+        if let device { updateDATSpeechReadiness(for: device) }
         quality.minute(worn: shouldListenNow, listening: listeningUp, at: now)
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+")
         powerLog.append(PowerSample(
@@ -1112,6 +1112,7 @@ final class CompanionRuntime: ObservableObject {
             speechRestartingSince = Date()
         }
         signals.speechPause = decision
+        if decision != .listen, device != nil { signals.speechReady = false }
         if previous != .listen, decision == .listen { devicePauseFreshEvent("glasses usable again") }
         guard force || decision != previous else { return }
         if decision != previous { record("speech power: \(decision)") }
@@ -1120,11 +1121,13 @@ final class CompanionRuntime: ObservableObject {
         }
         guard let device else { return }
         Task {
+            guard self.device === device, self.signals.speechPause == decision else { return }
             if decision == .listen {
                 await device.resumeSpeech()
             } else {
                 await device.pauseSpeech()
             }
+            updateDATSpeechReadiness(for: device)
         }
     }
 
@@ -1493,6 +1496,12 @@ final class CompanionRuntime: ObservableObject {
             Task { @MainActor in self?.record(line) }
         }
         await device.setActivityLogger(log)
+        await device.setSpeechReadinessObserver { [weak self, weak device] in
+            Task { @MainActor in
+                guard let self, let device else { return }
+                self.updateDATSpeechReadiness(for: device)
+            }
+        }
         await device.setSessionErrorObserver { [weak self] kind in
             Task { @MainActor in self?.handleSessionError(kind) }
         }
@@ -1516,14 +1525,26 @@ final class CompanionRuntime: ObservableObject {
         }
     }
 
-    private func observeTranscript(_ text: String, result: WakeGateBox.Result, heardAt: Date) {
-        let decision = result.decision
-        // A transcript proves Speech is running.
-        signals.speechReady = true
-        if result.verdict != .empty, speechRestartingSince != nil {
+    private func updateDATSpeechReadiness(for adapter: MetaDATDeviceAdapter) {
+        guard !signalsFrozen, device === adapter, signals.listening else { return }
+        let ready = adapter.capabilities.contains(.speechInput) && signals.speechPause == .listen
+        let wasReady = signals.speechReady
+        signals.speechReady = ready
+        if ready {
             speechRestartingSince = nil
             updateRecovery()
+        } else if wasReady {
+            speechRestartingSince = Date()
+            listeningLost("speech not SDK-ready")
         }
+    }
+
+    private func observeTranscript(_ text: String, result: WakeGateBox.Result, heardAt: Date) {
+        let decision = result.decision
+        // A delayed transcript must not re-advertise a paused/failed DAT
+        // attachment. HFP is a separate recognition source.
+        if let device { updateDATSpeechReadiness(for: device) }
+        else if micDevice != nil { signals.speechReady = true }
         quality.record(result.verdict)
         switch decision {
         case let .forward(request):
@@ -1887,8 +1908,8 @@ final class CompanionRuntime: ObservableObject {
     }
 
     /// The glasses paused (a single tap) or resumed (a second tap) the live
-    /// session. There is no resume API: cue the wearer, then recreate the
-    /// session after a grace period unless a second tap comes first. Speech
+    /// session. DAT 1.1 exposes resume(), but no automatic resume is enabled
+    /// pending validation of user intent and device/media behavior. Speech
     /// stall/restart policies already stand down while the session is paused.
     private func deviceSessionPauseChanged(_ paused: Bool) {
         guard device != nil else { return }
@@ -2023,7 +2044,7 @@ final class CompanionRuntime: ObservableObject {
 
     /// A voice session is up and Speech is actually running.
     private var listeningUp: Bool {
-        signals.listening && signals.speechPause == .listen && speechRestartingSince == nil
+        signals.listening && signals.speechReady && signals.speechPause == .listen && speechRestartingSince == nil
             && devicePausedAt == nil
     }
 
@@ -2042,12 +2063,6 @@ final class CompanionRuntime: ObservableObject {
     private func noteMetricLine(_ message: String) {
         if message.hasPrefix("speech stall restart") {
             quality.deafRestart()
-            speechRestartingSince = Date()
-            listeningLost("speech deaf restart")
-        } else if speechRestartingSince != nil, message.hasPrefix("speech "),
-                  message.lowercased().contains("started"), !message.contains("restart") {
-            speechRestartingSince = nil
-            updateRecovery()
         }
     }
 
@@ -2102,6 +2117,7 @@ final class CompanionRuntime: ObservableObject {
         photoTurnReplyDone = false
         signals.listening = false
         signals.speechReady = false
+        speechRestartingSince = nil
         clearDevicePause()
     }
 

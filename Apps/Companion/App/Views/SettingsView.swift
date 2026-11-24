@@ -308,6 +308,10 @@ struct SettingsView: View {
             } label: {
                 Text("호출 듣는 방식")
             }
+            .pickerStyle(.navigationLink)
+            .accessibilityIdentifier("awl-settings-wake-source")
+            .accessibilityValue(runtime.settings.wakeSource == .glassesSpeech
+                ? Text("안경 음성 인식 (기본)") : Text("안경 마이크 + iPhone 인식 (실험)"))
             .onChange(of: runtime.settings.wakeSource) { _, source in
                 if source == .glassesMicOnPhone { runtime.requestSpeechRecognition() }
             }
