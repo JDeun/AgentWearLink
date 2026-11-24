@@ -27,6 +27,9 @@ struct HomeView: View {
                         onRestart: { runtime.restartListening() },
                         onResume: { runtime.settings.listenEnabled = true }
                     )
+                    if runtime.settings.wakeSource == .glassesMicOnPhone {
+                        hfpLeaseControls
+                    }
                     if let battery = state.lowBattery {
                         Label {
                             Text("안경 배터리가 \(battery)% 남았어요 · 충전하면 더 오래 들어요")
@@ -127,6 +130,29 @@ struct HomeView: View {
             if CompanionPreviewFixture.opensSettings { showSettings = true }
             if CompanionPreviewFixture.opensRepair { repairProblem = runtime.signals.chain.firstProblem }
             #endif
+        }
+    }
+
+    private var hfpLeaseControls: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("안경 마이크 실험").font(.headline)
+                Text("직접 시작할 때만 듣고, 30초 동안 인식 결과가 없거나 제한 시간에 도달하면 마이크를 반환해요. 음악 음질과 배터리에 영향을 줄 수 있어요.")
+                    .font(.footnote).foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if runtime.hfpLease != nil {
+                    Button("마이크 사용 종료") { runtime.stopHFPListening() }
+                        .accessibilityIdentifier("awl-hfp-stop")
+                } else {
+                    Menu("제한 시간 선택 후 시작") {
+                        ForEach(HFPListeningLease.allowedSeconds, id: \.self) { seconds in
+                            Button("\(seconds / 60)분") { runtime.startHFPListening(seconds: seconds) }
+                        }
+                    }
+                    .accessibilityIdentifier("awl-hfp-start")
+                }
+            }
+            .padding(14)
         }
     }
 

@@ -97,6 +97,9 @@ final class CompanionRuntime: ObservableObject {
     private var device: MetaDATDeviceAdapter?
     /// EXPERIMENT glasses-mic wake adapter (no DAT session).
     private var micDevice: GlassesMicSpeechAdapter?
+    // Ephemeral, explicit foreground grant; never stored or auto-renewed.
+    @Published private(set) var hfpLease: HFPListeningLease?
+    private var hfpDeadlineTask: Task<Void, Never>?
     /// Set only after the runtime started, so health checks never use a
     /// session whose dispatcher is not ready yet.
     private var voiceSession: GatewaySession?
@@ -180,7 +183,10 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private var wantsListening: Bool {
-        ListeningPolicy.wantsListening(
+        if settings.wakeSource == .glassesMicOnPhone {
+            guard appActive, hfpLease?.isWithinHardLimit() == true else { return false }
+        }
+        return ListeningPolicy.wantsListening(
             setupCompleted: settings.setupCompleted,
             listenEnabled: settings.listenEnabled,
             practicing: !settings.setupCompleted && setup.current == .practice
@@ -240,6 +246,7 @@ final class CompanionRuntime: ObservableObject {
     func scenePhaseChanged(_ phase: ScenePhase) {
         guard phase != .inactive else { return }
         appActive = phase == .active
+        if !appActive { stopHFPListening(.background) }
         Task {
             guard started, !signalsFrozen else { return }
             if appActive {
@@ -313,10 +320,68 @@ final class CompanionRuntime: ObservableObject {
     func startListeningFromIntent() {
         _ = startRequest.consume()
         guard started, settings.setupCompleted else { return }
+        // Shortcuts, cold-launch callbacks and Bluetooth restoration are
+        // not permission to open an HFP microphone lease.
+        guard settings.wakeSource != .glassesMicOnPhone else {
+            record("HFP requires explicit foreground start")
+            return
+        }
         clearHoldOnUserRequest()
         if !settings.listenEnabled { settings.listenEnabled = true }
         devicePauseFreshEvent("start listening")
         if runtime == nil { startRecovery("start listening intent", immediate: true, restart: true) }
+    }
+
+    // MARK: Explicit foreground HFP experiment
+
+    func startHFPListening(seconds: Int = HFPListeningLease.defaultSeconds) {
+        guard started, !signalsFrozen, appActive, settings.setupCompleted,
+              settings.wakeSource == .glassesMicOnPhone, hfpLease == nil,
+              runtime == nil, !voiceConnecting, !disconnectInProgress else { return }
+        refreshGlasses()
+        guard callGate.allowsReconnect, !powerRecoveryBlocked,
+              wearables.hasConnectedDevice, wearables.speechDecision == .listen,
+              !AVAudioSession.sharedInstance().isOtherAudioPlaying else {
+            record("HFP start blocked by device, power, call or other audio")
+            return
+        }
+        guard SFSpeechRecognizer.authorizationStatus() == .authorized,
+              AVAudioApplication.shared.recordPermission == .granted else {
+            requestSpeechRecognition()
+            record("HFP permission requested; start again after granting")
+            return
+        }
+        guard let lease = HFPListeningLease(seconds: seconds) else { return }
+        hfpLease = lease
+        if !settings.listenEnabled { settings.listenEnabled = true }
+        record("HFP lease requested (\(seconds) s hard limit)")
+        hfpDeadlineTask?.cancel()
+        hfpDeadlineTask = Task { [weak self] in
+            do { try await ContinuousClock().sleep(until: lease.deadline) } catch { return }
+            guard let self, self.hfpLease?.id == lease.id else { return }
+            self.stopHFPListening(.expired)
+        }
+        requestReconcile("explicit HFP lease")
+    }
+
+    func stopHFPListening(_ reason: HFPListeningLease.End = .stopped) {
+        guard let lease = hfpLease else { return }
+        clearHFPGrant()
+        signals.speechReady = false
+        record("HFP grant retired: \(reason.rawValue)")
+        cancelRecovery()
+        if let mic = micDevice {
+            Task { await mic.endLease(reason) }
+        }
+        // Reconciliation also covers the agent-first startup case. An
+        // expired grant must never reopen a mic after Gateway connects.
+        requestReconcile("HFP lease ended", restartSession: true)
+    }
+
+    private func clearHFPGrant() {
+        hfpDeadlineTask?.cancel()
+        hfpDeadlineTask = nil
+        hfpLease = nil
     }
 
     // MARK: Listening reconciliation
@@ -334,6 +399,11 @@ final class CompanionRuntime: ObservableObject {
     private func reconcile(_ reason: String, immediate: Bool, restartSession: Bool) async {
         guard !signalsFrozen else { return }
         updateWakeAnchor()
+        // A generic restart is not a new HFP authorization. Do not
+        // silently reopen the microphone after Gateway/route recovery.
+        if restartSession, micDevice != nil {
+            clearHFPGrant()
+        }
         if wantsListening {
             // May fail in the background; the keep-alive watchdog retries.
             applyKeepAlivePolicy(force: true)
@@ -645,6 +715,10 @@ final class CompanionRuntime: ObservableObject {
             speaker.enforcePrivateOutputRoute()
             mapped = .routeChanged
         }
+        if hfpLease != nil, mapped == .interruptionEnded || mapped == .mediaServicesReset {
+            stopHFPListening(.interrupted)
+            return
+        }
         let actions = AudioEventPolicy.actions(for: mapped, listeningWanted: wantsListening)
         if actions.restartKeepAlive { applyKeepAlivePolicy(force: true) }
         if actions.recreateSynthesizer { speaker.recreate() }
@@ -659,6 +733,10 @@ final class CompanionRuntime: ObservableObject {
 
     /// "다시 시작": rebuild the voice session now.
     func restartListening() {
+        if settings.wakeSource == .glassesMicOnPhone {
+            startHFPListening()
+            return
+        }
         signals.listenFailed = false
         clearHoldOnUserRequest()
         if !settings.listenEnabled {
@@ -681,6 +759,8 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private func stopEverything() async {
+        clearHFPGrant()
+        if let micDevice { await micDevice.endLease(.stopped) }
         cancelRecovery()
         restartDebounce?.cancel()
         await reconcileChain?.value
@@ -704,13 +784,17 @@ final class CompanionRuntime: ObservableObject {
         guard !signalsFrozen else { return }
         store.save(settings)
         guard started else { return }
+        if !settings.listenEnabled || !settings.setupCompleted || old.wakeSource != settings.wakeSource {
+            stopHFPListening(.stopped)
+        }
         if old.listenEnabled != settings.listenEnabled || old.setupCompleted != settings.setupCompleted {
             requestReconcile(settings.listenEnabled ? "listening on" : "listening off")
         }
-        if old.replyDucking != settings.replyDucking { speaker.duckingMode = settings.replyDucking }
+        if old.replyDucking != settings.replyDucking, micDevice == nil { speaker.duckingMode = settings.replyDucking }
         if old.voiceIdentifier != settings.voiceIdentifier { speaker.voiceIdentifier = settings.voiceIdentifier }
         if old.gatewayVoice != settings.gatewayVoice { speaker.useGatewayVoice = settings.gatewayVoice }
-        if old.wakeSource != settings.wakeSource, runtime != nil {
+        if old.wakeSource != settings.wakeSource {
+            cancelRecovery()
             record("wake source: \(settings.wakeSource.rawValue)")
             requestReconcile("wake source changed", restartSession: true)
         }
@@ -763,7 +847,9 @@ final class CompanionRuntime: ObservableObject {
             if let voiceSession {
                 try await voiceSession.health()
             } else {
-                switch await gatewayLink.grantStatus(for: endpoint) {
+                let requestedSource = settings.wakeSource
+        let requestedLeaseID = hfpLease?.id
+        switch await gatewayLink.grantStatus(for: endpoint) {
                 case .missing:
                     GatewayFailure.pairingRevoked.apply(to: &signals, at: now)
                     return
@@ -862,7 +948,8 @@ final class CompanionRuntime: ObservableObject {
     private var wakeAnchorStarted = false
 
     private var anchorWanted: Bool {
-        WakeAnchorBackoff.shouldAnchor(setupCompleted: settings.setupCompleted, listenEnabled: settings.listenEnabled)
+        settings.wakeSource == .glassesSpeech
+            && WakeAnchorBackoff.shouldAnchor(setupCompleted: settings.setupCompleted, listenEnabled: settings.listenEnabled)
     }
 
     /// Holds the glasses link only while listening is wanted after setup.
@@ -1029,7 +1116,13 @@ final class CompanionRuntime: ObservableObject {
         ) {
             setHold(nil, reason: "thermal \(thermal), battery \(snapshot.battery.map(String.init) ?? "?")\(snapshot.charging ? " charging" : "")")
         }
-        applySpeechPower(GlassesStateMapper.speechDecision(devices, thermalStage: thermalStage.stage))
+        let speechDecision = GlassesStateMapper.speechDecision(devices, thermalStage: thermalStage.stage)
+        if hfpLease != nil, powerRecoveryBlocked || speechDecision != .listen {
+            stopHFPListening(.powerRestricted)
+        } else if hfpLease != nil, snapshot.glasses != .connected {
+            stopHFPListening(.routeLost)
+        }
+        applySpeechPower(speechDecision)
     }
 
     // MARK: Thermal, battery and reconnect holds
@@ -1125,6 +1218,10 @@ final class CompanionRuntime: ObservableObject {
         record("voice invocation: launch app")
         guard started, settings.setupCompleted else { return }
         devicePauseFreshEvent("voice invocation")
+        if settings.wakeSource == .glassesMicOnPhone, hfpLease == nil {
+            record("HFP requires explicit foreground start")
+            return
+        }
         if runtime == nil {
             beginWakeBackgroundTask()
             startListeningFromIntent()
@@ -1172,6 +1269,7 @@ final class CompanionRuntime: ObservableObject {
         defer { updateRecovery() }
         switch callGate.update(callActive: active) {
         case .callStarted:
+            stopHFPListening(.interrupted)
             record("call started: reconnects paused")
         case .lastCallEnded:
             record("last call ended: recovering")
@@ -1207,7 +1305,7 @@ final class CompanionRuntime: ObservableObject {
     /// - Parameter restart: replace a running recovery loop (e.g. returning
     ///   to the foreground should not wait out a 60 s backoff).
     private func startRecovery(_ reason: String, immediate: Bool, restart: Bool) {
-        guard wearables.isConfigured, runtime == nil else { return }
+        guard wearables.isConfigured, runtime == nil, wantsListening else { return }
         if recoveryTask != nil {
             guard restart else { return }
             recoveryTask?.cancel()
@@ -1274,7 +1372,7 @@ final class CompanionRuntime: ObservableObject {
 
     private func connectVoice() async -> ConnectOutcome {
         guard runtime == nil, !connectionFence.isStarting, !disconnectInProgress,
-              !powerRecoveryBlocked, callGate.allowsReconnect,
+              wantsListening, !powerRecoveryBlocked, callGate.allowsReconnect,
               wearables.isRegistered, let endpoint = currentEndpoint else { return .retry }
         switch await gatewayLink.grantStatus(for: endpoint) {
         case .missing:
@@ -1292,8 +1390,10 @@ final class CompanionRuntime: ObservableObject {
         // activation or any new session. Experimental HFP must not take
         // over ongoing music during automatic recovery.
         guard !powerRecoveryBlocked, callGate.allowsReconnect, wantsListening,
-              runtime == nil, !Task.isCancelled,
-              settings.wakeSource != .glassesMicOnPhone || !AVAudioSession.sharedInstance().isOtherAudioPlaying,
+              runtime == nil, !Task.isCancelled, settings.wakeSource == requestedSource,
+              requestedSource != .glassesMicOnPhone
+                || (hfpLease?.id == requestedLeaseID && appActive
+                    && !AVAudioSession.sharedInstance().isOtherAudioPlaying),
               let attempt = connectionFence.begin() else { return .retry }
         // The only safe moment to (re)activate the audio session (#292).
         keepAlive.prepareForDATSession()
@@ -1301,6 +1401,9 @@ final class CompanionRuntime: ObservableObject {
         defer {
             voiceConnecting = false
             connectionFence.finish(attempt)
+            if settings.wakeSource == .glassesMicOnPhone, hfpLease == nil {
+                applyKeepAlivePolicy(force: true)
+            }
         }
 
         let session: GatewaySession
@@ -1324,7 +1427,9 @@ final class CompanionRuntime: ObservableObject {
             turnOptions: CompanionTurnOptions.make(from: settings)
         )
         if settings.wakeSource == .glassesMicOnPhone {
-            return await connectGlassesMic(session: session, agent: agent, attempt: attempt)
+            guard let lease = hfpLease, lease.id == requestedLeaseID,
+                  lease.isWithinHardLimit(), appActive else { return .retry }
+            return await connectGlassesMic(session: session, agent: agent, attempt: attempt, lease: lease)
         }
         speaker.allowHandsFree = false
         let concreteDevice = MetaDATDeviceAdapter(applicationLifecycle: lifecycle, diagnostics: diagnostics)
@@ -1424,21 +1529,37 @@ final class CompanionRuntime: ObservableObject {
 
     /// EXPERIMENT: glasses mic over HFP + on-device recognition, no DAT
     /// session. Same agent, gate, echo guard, speech output and follow-up.
-    private func connectGlassesMic(session: GatewaySession, agent: OpenClawNativeAgentAdapter, attempt: UInt64) async -> ConnectOutcome {
+    private func connectGlassesMic(
+        session: GatewaySession, agent: OpenClawNativeAgentAdapter,
+        attempt: UInt64, lease: HFPListeningLease
+    ) async -> ConnectOutcome {
+        guard hfpLease?.id == lease.id, lease.isWithinHardLimit(), appActive,
+              !powerRecoveryBlocked, callGate.allowsReconnect else { return .retry }
         let gate = WakeGateBox(phrases: settings.effectiveWakePhrases)
         speaker.gate = gate
         speaker.allowHandsFree = true
+        // Never change the play-and-record category through reply ducking.
+        speaker.duckingMode = .off
         let sink = StreamingSpeechOutput(synthesizer: speaker)
         speechSink = sink
         let log: @Sendable (String) -> Void = { [weak self] line in Task { @MainActor in self?.record(line) } }
         let mic = GlassesMicSpeechAdapter(
             language: Self.speechLanguage,
             contextualPhrases: settings.effectiveWakePhrases,
-            log: log
+            lease: lease,
+            log: log,
+            onLeaseEnd: { [weak self] reason in
+                Task { @MainActor in
+                    guard let self, self.hfpLease?.id == lease.id else { return }
+                    self.stopHFPListening(reason)
+                }
+            }
         )
         await mic.setTranscriptGate { [weak self] text in
+            guard await self?.ownsHFPGrant(lease.id, attempt: attempt) == true else { return nil }
             let heardAt = Date()
             let result = await gate.evaluate(text)
+            guard await self?.ownsHFPGrant(lease.id, attempt: attempt) == true else { return nil }
             await self?.observeTranscript(text, result: result, heardAt: heardAt)
             if case let .forward(request) = result.decision { return request }
             return nil
@@ -1450,12 +1571,18 @@ final class CompanionRuntime: ObservableObject {
         // Gateway first: while it is down, a retry fails before the glasses
         // mic touches the audio session (no category flip per retry).
         let composed = AgentWearLinkRuntime(device: mic, agent: agent, connectionOrder: .agentFirst, diagnostics: diagnostics, output: output)
+        guard ownsHFPGrant(lease.id, attempt: attempt), !Task.isCancelled else {
+            await mic.disconnect()
+            speaker.allowHandsFree = false
+            speaker.duckingMode = settings.replyDucking
+            return .retry
+        }
         runtime = composed
         micDevice = mic
         wakeGate = gate
         do {
             try await composed.start()
-            guard connectionFence.isCurrent(attempt) else {
+            guard ownsHFPGrant(lease.id, attempt: attempt), !Task.isCancelled else {
                 await composed.stop()
                 clearVoiceReferences()
                 return .retry
@@ -1463,7 +1590,7 @@ final class CompanionRuntime: ObservableObject {
         } catch {
             await composed.stop()
             clearVoiceReferences()
-            record("glasses-mic connect failed: \(error)")
+            record("HFP lease connection failed; explicit restart required")
             return .retry
         }
         voiceSession = session
@@ -1477,6 +1604,12 @@ final class CompanionRuntime: ObservableObject {
         refreshGlasses()
         startWatch(session: session, attempt: attempt)
         return .connected
+    }
+
+    private func ownsHFPGrant(_ id: UUID, attempt: UInt64) -> Bool {
+        appActive && settings.wakeSource == .glassesMicOnPhone
+            && hfpLease?.id == id && hfpLease?.isWithinHardLimit() == true
+            && connectionFence.isCurrent(attempt) && !powerRecoveryBlocked && callGate.allowsReconnect
     }
 
     /// Asks for speech-recognition permission (needed by the glasses-mic
@@ -1591,7 +1724,7 @@ final class CompanionRuntime: ObservableObject {
         // A delayed transcript must not re-advertise a paused/failed DAT
         // attachment. HFP is a separate recognition source.
         if let device { updateDATSpeechReadiness(for: device) }
-        else if micDevice != nil { signals.speechReady = true }
+        else if micDevice != nil, hfpLease?.isWithinHardLimit() == true { signals.speechReady = true }
         quality.record(result.verdict)
         switch decision {
         case let .forward(request):
@@ -1614,6 +1747,7 @@ final class CompanionRuntime: ObservableObject {
     }
 
     private func observeOutput(_ event: InteractionEvent, attempt: UInt64) {
+        guard connectionFence.ownsRuntime(attempt) else { return }
         let now = Date()
         switch event {
         case let .text(id, text):
@@ -2163,6 +2297,11 @@ final class CompanionRuntime: ObservableObject {
     /// Note: the keep-alive is deliberately NOT stopped here; it follows
     /// whether listening is wanted, not whether a session is up.
     private func clearVoiceReferences() {
+        if micDevice != nil {
+            clearHFPGrant()
+            speaker.allowHandsFree = false
+            speaker.duckingMode = settings.replyDucking
+        }
         micDevice = nil
         bindGatewayVoice(nil)
         stopWaitingCues()

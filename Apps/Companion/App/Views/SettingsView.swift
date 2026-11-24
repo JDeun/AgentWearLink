@@ -315,6 +315,11 @@ struct SettingsView: View {
             .onChange(of: runtime.settings.wakeSource) { _, source in
                 if source == .glassesMicOnPhone { runtime.requestSpeechRecognition() }
             }
+            if runtime.settings.wakeSource == .glassesMicOnPhone {
+                Text("실험 모드는 홈에서 1·2·5분씩 직접 시작하세요. 화면 잠금, 통화, 마이크 경로 변경 또는 무음 시 종료되며 자동으로 다시 시작하지 않아요.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+            }
             Picker(selection: binding(\.replyDucking)) {
                 Text("끔 (기본)").tag(ReplyDuckingMode.off)
                 Text("실험 1: 별도 음성 세션").tag(ReplyDuckingMode.separateSynthesizerSession)
