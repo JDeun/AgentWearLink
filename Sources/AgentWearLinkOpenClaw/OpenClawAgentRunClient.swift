@@ -47,6 +47,18 @@ public actor OpenClawAgentRunClient {
         return try decodePayload(response, as: OpenClawAgentIdentity.self)
     }
 
+    /// Renders one sentence with the Gateway's configured TTS provider
+    /// (`tts.speak`, operator.write). Returns the whole clip; callers request
+    /// the next sentence while the current one plays.
+    public func speak(text: String, timeout: Duration = .seconds(8)) async throws -> OpenClawSpeechClip {
+        let response = try await dispatcher.request(
+            method: "tts.speak",
+            params: OpenClawTTSSpeakParams(text: text),
+            timeout: timeout
+        )
+        return try decodePayload(response, as: OpenClawSpeechClip.self)
+    }
+
     /// Extra time the client allows beyond the server-side `agent.wait` hold, so
     /// a reply sent exactly at the hold still arrives over a real network
     /// (Tailnet/Serve added enough latency to lose a 30s-vs-30s race).

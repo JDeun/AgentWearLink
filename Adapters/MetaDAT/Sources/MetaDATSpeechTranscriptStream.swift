@@ -47,6 +47,8 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
     // here and a slow consumer cannot masquerade as SDK callback silence.
     private var lastCallbackAt: ContinuousClock.Instant?
     private var lastNonEmptyCallbackAt: ContinuousClock.Instant?
+    private var callbackCount = 0
+    private var nonEmptyCallbackCount = 0
 
     init(
         limit: Int = 8,
@@ -83,8 +85,10 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
         let received = Received(transcript: transcript, receivedAt: receivedAt ?? .now)
         let oversized = transcript.text.utf8.count > maximumTranscriptBytes
         lastCallbackAt = received.receivedAt
+        if callbackCount < Int.max { callbackCount += 1 }
         if !oversized, !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lastNonEmptyCallbackAt = received.receivedAt
+            if nonEmptyCallbackCount < Int.max { nonEmptyCallbackCount += 1 }
         }
         if !oversized, let waiter {
             self.waiter = nil
@@ -137,6 +141,15 @@ public final class MetaDATSpeechTranscriptDelivery: @unchecked Sendable {
                 lastCallbackAt: lastCallbackAt,
                 lastNonEmptyCallbackAt: lastNonEmptyCallbackAt
             )
+        }
+    }
+
+    func takeCallbackCounts() -> (total: Int, nonEmpty: Int) {
+        lock.withLock {
+            let counts = (total: callbackCount, nonEmpty: nonEmptyCallbackCount)
+            callbackCount = 0
+            nonEmptyCallbackCount = 0
+            return counts
         }
     }
 

@@ -155,4 +155,16 @@ final class MetaDATSpeechTranscriptDeliveryTests: XCTestCase {
         XCTAssertFalse(health.isSDKReady)
         XCTAssertEqual(health.callbackEvidence(freshness: .seconds(1)), .unavailable)
     }
+
+    func testIngressCountsIncludeEvictedPartialsAndResetIndependently() {
+        let delivery = MetaDATSpeechTranscriptDelivery(limit: 1)
+        delivery.offer(transcript("final"))
+        delivery.offer(transcript("partial", final: false))
+        delivery.offer(transcript("", final: false))
+        let counts = delivery.takeCallbackCounts()
+        XCTAssertEqual(counts.total, 3)
+        XCTAssertEqual(counts.nonEmpty, 2)
+        XCTAssertEqual(delivery.takeCallbackCounts().total, 0)
+        XCTAssertNotNil(delivery.health(sessionStarted: true, phase: .started).lastCallbackAt)
+    }
 }
