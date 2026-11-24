@@ -15,6 +15,8 @@ public enum MetaDATMockHostBootstrap {
     public static let voiceLaunchArgument = "--awl-meta-voice-ui-testing"
     public static let wakeLaunchArgument = "--awl-meta-wake-ui-testing"
     public static let photoLaunchArgument = "--awl-meta-photo-ui-testing"
+    public static let sessionLifecycleLaunchArgument = "--awl-meta-session-lifecycle-ui-testing"
+    public static let unregisteredLifecycleLaunchArgument = "--awl-meta-unregistered-lifecycle-ui-testing"
     public static let portFileEnvironment = "MWDAT_TEST_SERVER_PORT_FILE"
 
     public static func configureIfRequested(
@@ -29,7 +31,8 @@ public enum MetaDATMockHostBootstrap {
             config: MockDeviceKitConfig(
                 initiallyRegistered: arguments.contains(voiceLaunchArgument)
                     || arguments.contains(wakeLaunchArgument)
-                    || arguments.contains(photoLaunchArgument),
+                    || arguments.contains(photoLaunchArgument)
+                    || arguments.contains(sessionLifecycleLaunchArgument),
                 initialPermissionsGranted: true
             )
         )
