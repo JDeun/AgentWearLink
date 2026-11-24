@@ -17,7 +17,10 @@ public enum AudioRoutePolicy {
     /// headphones. Never out of the iPhone speaker (a locked phone in a
     /// pocket or on a desk would read private replies aloud).
     public static func canSpeakAloud(outputs: [AudioOutputKind], allowHandsFree: Bool = false) -> Bool {
-        outputs.contains { [.bluetoothA2DP, .bluetoothLE, .headphones].contains($0) || (allowHandsFree && $0 == .bluetoothHFP) }
+        !outputs.isEmpty && outputs.allSatisfy {
+            [.bluetoothA2DP, .bluetoothLE, .headphones].contains($0)
+                || (allowHandsFree && $0 == .bluetoothHFP)
+        }
     }
 }
 

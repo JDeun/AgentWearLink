@@ -83,4 +83,31 @@ final class MetaDATSpeechStallPolicyTests: XCTestCase {
         XCTAssertEqual(MetaDATSpeechStallPolicy.statsSeconds(reduced: false), 60)
         XCTAssertEqual(MetaDATSpeechStallPolicy.statsSeconds(reduced: true), 300)
     }
+
+    func testPostStopRequiresConfirmedStopAndActiveOwnership() {
+        func decision(owns: Bool = true, cancelled: Bool = false, paused: Bool = false,
+                      session: Bool = true, stopped: Bool = true, beforeDeadline: Bool = true)
+            -> MetaDATSpeechStallPolicy.PostStopAction {
+            MetaDATSpeechStallPolicy.postStopAction(
+                ownsSpeech: owns, cancelled: cancelled, hostPaused: paused, sessionStarted: session,
+                speechStopped: stopped, beforeDeadline: beforeDeadline
+            )
+        }
+        XCTAssertEqual(decision(), .start)
+        XCTAssertEqual(decision(stopped: false), .wait)
+        XCTAssertEqual(decision(owns: false), .abandon)
+        XCTAssertEqual(decision(cancelled: true), .abandon)
+        XCTAssertEqual(decision(paused: true), .abandon)
+        XCTAssertEqual(decision(session: false), .abandon)
+        XCTAssertEqual(decision(stopped: false, beforeDeadline: false), .abandon)
+        XCTAssertEqual(decision(stopped: true, beforeDeadline: false), .abandon)
+    }
+
+    func testNoEventRecoveryHasFiniteBudget() {
+        XCTAssertTrue(MetaDATSpeechStallPolicy.canRecoverNoEvents(attempts: 0))
+        XCTAssertTrue(MetaDATSpeechStallPolicy.canRecoverNoEvents(attempts: 2))
+        XCTAssertFalse(MetaDATSpeechStallPolicy.canRecoverNoEvents(attempts: 3))
+        XCTAssertFalse(MetaDATSpeechStallPolicy.canRecoverNoEvents(attempts: 100))
+    }
+
 }

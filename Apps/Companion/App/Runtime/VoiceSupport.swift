@@ -163,14 +163,16 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
     /// user starts with the phone in hand; replies never use the speaker.
     func speak(_ text: String, allowPhoneSpeaker: Bool) async {
         guard !text.isEmpty else { return }
-        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType).map(Self.kind)
-        guard allowPhoneSpeaker || AudioRoutePolicy.canSpeakAloud(outputs: outputs, allowHandsFree: allowHandsFree) else {
-            onEvent?("reply not spoken: route \(outputs)")
-            onSilenced?()
+        guard allowPhoneSpeaker || validatePrivateOutputRoute() else { return }
+        await gate?.beganSpeaking(text)
+        // The actor hop above can outlive a route change. Recheck before
+        // enqueueing. Phone-speaker preview is a local, explicit exception
+        // and must never enter the asynchronous private Gateway reply queue.
+        guard allowPhoneSpeaker || validatePrivateOutputRoute() else {
+            await gate?.finishedSpeaking()
             return
         }
-        await gate?.beganSpeaking(text)
-        if useGatewayVoice, let gatewayVoice {
+        if !allowPhoneSpeaker, useGatewayVoice, let gatewayVoice {
             let queued = gatewayVoice.enqueue(
                 text,
                 fallback: { [weak self] sentence in self?.speakWithSystem(sentence) },
@@ -185,12 +187,39 @@ final class ReplySpeaker: NSObject, SpeechSynthesizing, AVSpeechSynthesizerDeleg
                 return
             }
         }
-        speakWithSystem(text)
+        speakWithSystem(text, allowPhoneSpeaker: allowPhoneSpeaker)
+    }
+
+    /// Check again at actual playback time, including network TTS fallback.
+    /// The user-visible Settings preview is the only speaker exception.
+    func validatePrivateOutputRoute() -> Bool {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType).map(Self.kind)
+        guard AudioRoutePolicy.canSpeakAloud(outputs: outputs, allowHandsFree: allowHandsFree) else {
+            onEvent?("reply not spoken: route \(outputs)")
+            onSilenced?()
+            return false
+        }
+        return true
+    }
+
+    /// Stop active/queued playback promptly if the private route disappears.
+    /// This is a best-effort route-change guard, not proof of physical audio routing.
+    func enforcePrivateOutputRoute() {
+        guard isSpeaking, !validatePrivateOutputRoute() else { return }
+        gatewayVoice?.stop()
+        synthesizer.stopSpeaking(at: .immediate)
+        let activeGate = gate
+        Task { await activeGate?.stoppedSpeaking() }
     }
 
     /// The system voice, for replies and as the gateway voice's fallback.
     /// The echo window was already opened by `speak`.
-    private func speakWithSystem(_ text: String) {
+    private func speakWithSystem(_ text: String, allowPhoneSpeaker: Bool = false) {
+        guard allowPhoneSpeaker || validatePrivateOutputRoute() else {
+            let activeGate = gate
+            Task { await activeGate?.finishedSpeaking() }
+            return
+        }
         // Default: no ducking. Changing the audio session while a DAT session
         // is held makes the glasses end it (dat-ios #292); replies mix over
         // music. The variants below exist only to be measured.

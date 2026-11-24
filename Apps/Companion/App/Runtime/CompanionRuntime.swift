@@ -142,7 +142,10 @@ final class CompanionRuntime: ObservableObject {
         speaker.voiceIdentifier = loaded.voiceIdentifier
         speaker.useGatewayVoice = loaded.gatewayVoice
         speaker.gatewayVoice = gatewayVoice
-        gatewayVoice.play = { [weak keepAlive] buffer, done in keepAlive?.playSpeech(buffer, done: done) ?? false }
+        gatewayVoice.play = { [weak self] buffer, done in
+            guard let self, self.speaker.validatePrivateOutputRoute() else { return false }
+            return self.keepAlive.playSpeech(buffer, done: done)
+        }
         gatewayVoice.outputFormat = { [weak keepAlive] in keepAlive?.speechFormat }
         gatewayVoice.stopPlayback = { [weak keepAlive] in keepAlive?.stopSpeech() }
         callGate = CallGate(callActive: calls.isCallActive)
@@ -636,7 +639,11 @@ final class CompanionRuntime: ObservableObject {
         switch event {
         case .interruptionEnded: mapped = .interruptionEnded
         case .mediaServicesReset: mapped = .mediaServicesReset
-        case .routeChanged: mapped = .routeChanged
+        case .routeChanged:
+            // A headset disconnect must not leave queued private replies
+            // playing through the phone's speaker.
+            speaker.enforcePrivateOutputRoute()
+            mapped = .routeChanged
         }
         let actions = AudioEventPolicy.actions(for: mapped, listeningWanted: wantsListening)
         if actions.restartKeepAlive { applyKeepAlivePolicy(force: true) }

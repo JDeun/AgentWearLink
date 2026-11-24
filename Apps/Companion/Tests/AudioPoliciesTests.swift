@@ -11,6 +11,15 @@ final class AudioPoliciesTests: XCTestCase {
         XCTAssertFalse(AudioRoutePolicy.canSpeakAloud(outputs: []))
     }
 
+    func testMixedAndUnknownOutputRoutesFailClosed() {
+        XCTAssertFalse(AudioRoutePolicy.canSpeakAloud(outputs: [.bluetoothA2DP, .builtInSpeaker]))
+        XCTAssertFalse(AudioRoutePolicy.canSpeakAloud(outputs: [.headphones, .other]))
+        XCTAssertFalse(AudioRoutePolicy.canSpeakAloud(outputs: [.bluetoothHFP, .builtInReceiver], allowHandsFree: true))
+        XCTAssertFalse(AudioRoutePolicy.canSpeakAloud(outputs: [.bluetoothA2DP, .bluetoothHFP]))
+        XCTAssertTrue(AudioRoutePolicy.canSpeakAloud(outputs: [.bluetoothA2DP, .headphones]))
+        XCTAssertTrue(AudioRoutePolicy.canSpeakAloud(outputs: [.bluetoothHFP], allowHandsFree: true))
+    }
+
     func testInterruptionEndRecoversNow() {
         let ended = AudioEventPolicy.actions(for: .interruptionEnded, listeningWanted: true)
         XCTAssertTrue(ended.restartKeepAlive)
