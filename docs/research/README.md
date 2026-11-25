@@ -24,6 +24,7 @@ Start with the [current research register](research-register.md) for decisions, 
 - [Muse ESP32 Main interface and handover audit](muse-esp32-main-audit-2026-11-25.md)
 - [Muse ESP32 Main file-level pass and residual risks](muse-esp32-main-residual-audit-2026-11-25.md)
 - [Muse mobile sample and video receiver audit](muse-mobile-video-audit-2026-11-25.md)
+- [Muse Noise core and offline conformance](muse-noise-core-audit-2026-11-25.md)
 
 ## Notes
 

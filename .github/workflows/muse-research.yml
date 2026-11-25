@@ -1,0 +1,51 @@
+name: Muse offline conformance research
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Tools/MuseResearch/**'
+      - '.github/workflows/muse-research.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Tools/MuseResearch/**'
+      - '.github/workflows/muse-research.yml'
+permissions:
+  contents: read
+jobs:
+  offline-fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: facebookincubator/muse-gadget-sdk
+          ref: 1b894f551e64416e2844452ec6056ec56d6a10f1
+          path: .muse-research-upstream
+          persist-credentials: false
+      - name: Host-only dependencies and provenance
+        run: |
+          test "$(git -C .muse-research-upstream rev-parse HEAD)" = "1b894f551e64416e2844452ec6056ec56d6a10f1"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libmbedtls-dev python3-cryptography
+          g++ --version | head -n 1
+          dpkg-query -W libmbedtls-dev python3-cryptography
+      - name: Compile selected pinned core and run upstream host harnesses
+        working-directory: .muse-research-upstream/esp32
+        run: |
+          timeout 120s /usr/bin/python3 -m unittest discover -s tests -p 'test_noise_core*.py' -v
+      - name: Run independent synthetic Python-C++ fixture
+        run: |
+          core=".muse-research-upstream/esp32/components/noise_core"
+          g++ -std=c++17 -O1 -g -DNOISE_BUILDING_TESTS -fno-exceptions -fno-rtti -I"$core/include" \
+            Tools/MuseResearch/noise_fixture.cpp \
+            "$core/src/InitiatorHandshake.cpp" "$core/src/Transport.cpp" \
+            "$core/src/TransportFrameCodec.cpp" "$core/src/Status.cpp" "$core/src/PsaCryptoBackend.cpp" \
+            -pthread -lmbedcrypto -o "$RUNNER_TEMP/awl-muse-fixture"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$GITHUB_WORKSPACE/.muse-research-upstream/linux/src" \
+            timeout 90s /usr/bin/python3 Tools/MuseResearch/check_noise.py "$RUNNER_TEMP/awl-muse-fixture"
+      - name: Evidence boundary
+        run: echo 'Host-only synthetic fixtures; no actual ESP32, network peer, radio, vendor account, production integration or hardware claim.'
