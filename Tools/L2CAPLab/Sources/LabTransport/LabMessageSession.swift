@@ -6,7 +6,7 @@ public enum LabMessagePhase: String, Equatable {
 }
 
 public enum LabMessageOutcome: String, Equatable {
-    case cancelled, disconnected, endOfStream, negotiationTimeout, requestTimeout, idleTimeout, sessionTimeout
+    case closed, cancelled, disconnected, endOfStream, negotiationTimeout, requestTimeout, idleTimeout, sessionTimeout
     case clockRegression, invalidNegotiation, unsupportedVersion, unsupportedCapability
     case unexpectedMessage, invalidCorrelation, invalidPayload, sequenceExhausted, transportFailure
 }
@@ -199,6 +199,16 @@ public struct LabMessageSession {
     public mutating func cancel(generation token: UUID, nowMS: UInt64) {
         guard admit(token, nowMS) else { return }
         finish(.cancelled, at: nowMS)
+    }
+
+    /// Explicit local close is allowed only when no exchange is in flight.
+    /// It is not a wire-level close acknowledgement or a remote success claim.
+    @discardableResult
+    public mutating func close(generation token: UUID, nowMS: UInt64) -> Bool {
+        guard token == generation, phase == .ready, pending == nil else { return false }
+        guard admit(token, nowMS) else { return false }
+        finish(.closed, at: nowMS)
+        return true
     }
 
     public mutating func disconnect(generation token: UUID, nowMS: UInt64) {
