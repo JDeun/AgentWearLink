@@ -14,6 +14,13 @@
 >
 > Personal deployment details (tailnet names, chat IDs, session keys) are intentionally left out.
 
+## Current research register
+
+Start with the [current research register](research-register.md) for decisions, evidence and remaining owners. Dated notes below are historical snapshots; newer decisions supersede older statements without rewriting provenance.
+
+- [Third-party wake-source audit (2026-11-25)](third-party-wake-source-audit-2026-11-25.md)
+- [Muse pinned inventory and file-by-file ledger](muse-runtime-audit-progress-2026-11-25.md)
+
 ## Notes
 
 | Topic | Note |
@@ -41,4 +48,4 @@ Most upstream evidence comes from Meta's public repositories. The SwiftPM checko
 - [facebook/meta-wearables-dat-android](https://github.com/facebook/meta-wearables-dat-android): many cross-platform answers from Meta staff are posted there only.
 - [Wearables developer docs](https://wearables.developer.meta.com/docs/develop/dat/).
 
-SDK version at the time of writing: iOS 1.0.0 (1.0.1 on 2026-10-09 has no developer-facing changes).
+Historical October notes used iOS DAT 1.0.0/1.0.1; current AWL baseline is pinned to DAT 1.1.0, see [November follow-up](meta-dat-visor-companion-followup-2026-11-24.md).
