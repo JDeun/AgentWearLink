@@ -8,7 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import analyze_reports as ar
 
-def report(role, size=64, **overrides):
+def report(role, size=64, /, **overrides):
     initiator = role == "initiator"
     fields = {
         "report-version": "1", "scope": "synthetic-lab-only",
@@ -100,6 +100,15 @@ class ReportTests(unittest.TestCase):
         for values in cases:
             with self.subTest(values=values):
                 self.assertEqual(assess([trial(initiator=report("initiator", **values))])["counts"]["invalid"], 1)
+
+    def test_pre_channel_failure_is_valid_but_never_passes(self):
+        raw = report("initiator", **{"outcome":"linkTimeout", "driver-terminal":"linkTimeout",
+            "sent-bytes":"0", "verified-received-bytes":"0", "link-elapsed-ms":"not-observed",
+            "channel-elapsed-ms":"not-observed", "transfer-elapsed-ms":"not-observed",
+            "total-elapsed-ms":"10100"})
+        result = assess([trial(initiator=raw, responder=None)])
+        self.assertEqual(result["trials"][0]["state"], "failed")
+        self.assertEqual(result["trials"][0]["initiator"]["reason"], "linkTimeout")
 
     def test_responder_missing_or_invented_time(self):
         for values in ({"link-elapsed-ms":"0"}, {"channel-elapsed-ms":"0"},
