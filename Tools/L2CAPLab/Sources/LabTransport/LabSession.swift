@@ -110,6 +110,14 @@ public struct LabSession {
         phase = .transferring
     }
 
+    /// Peripheral-side didOpen is channel evidence, not an independent link
+    /// observation. Never synthesize link or link-to-channel timing.
+    public mutating func responderChannelOpened(generation token: UUID, nowMS: UInt64) {
+        guard admit(token, nowMS), role == .responder, phase == .awaitingLink else { return }
+        phaseStartedAt = nowMS
+        phase = .transferring
+    }
+
     public mutating func cancel(generation token: UUID, nowMS: UInt64) {
         guard admit(token, nowMS) else { return }
         finish(.cancelled, at: nowMS)
