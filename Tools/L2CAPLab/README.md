@@ -67,3 +67,24 @@ Exit 0 means all nine manually correlated report pairs satisfy the report contra
 The live CoreBluetooth driver uses the same pure lifecycle policy as the deterministic tests: allowed central/peripheral stage transitions, generation admission, setup/confirmation/listener/drain deadlines, cancellation retirement, and one-shot late publication/add/advertising cleanup eligibility. Duplicate or out-of-order stage callbacks cannot advance the policy or extend its deadlines; the driver also checks actual manager, peripheral, characteristic and stream object identity. A stale connect-failure/disconnect callback outside a valid stage is ignored. Only the matching retired manager and pending owned resource may trigger a late cleanup request; a duplicate cannot consume that request twice. The bounded retirement grace and cleanup requests are not proof of OS teardown.
 
 The tests run without CoreBluetooth and inject logical events/time. They cover the shared policy, not the OS delegate delivery order, actual radio commands, UI foreground behavior, or physical resource cleanup. The standalone iOS/macOS compilation and privacy CI remain separate.
+
+## Independent framed transport (AWLF v1)
+
+This is a new lab-only wire contract, not a Visor/Meta protocol or production integration. The existing physical apps still run the raw synthetic report-v1 fixture; no invitation/report or radio behavior changed. The framed library binds to the same LabPort interface and is exercised by deterministic two-endpoint in-memory tests. A later explicitly versioned physical framed mode must have independent evidence and report compatibility.
+
+| Offset | Bytes | Meaning |
+| --- | ---: | --- |
+| 0 | 4 | ASCII AWLF magic |
+| 4 | 1 | version = 1 |
+| 5 | 1 | kind: request = 1, response = 2 |
+| 6 | 2 | unsigned payload length, 1 through 4096 |
+| 8 | 4 | directional sequence, starts at 1, maximum 1024 |
+| 12 | 4 | nonzero request/response correlation |
+| 16 | 1–4096 | synthetic payload |
+| 16 + length | 4 | CRC-32/ISO-HDLC of header + payload |
+
+All multi-byte integers are big-endian; no padding. Maximum wire frame 4116 bytes. CRC detects accidental corruption, not authentication, authorization or adversarial tampering. Sequence is strict within each direction/generation, no wrap, no automatic retry; a new generation requires a fresh object. Correlation matches a response to the caller's outstanding request, not a device/session identity or cross-run replay proof. No proprietary constants, credentials or upstream code used.
+
+Parser validates the 16-byte header before accepting payload, accepts arbitrary fragmentation, stops after a complete frame and returns exact consumed length so the caller retains any coalesced suffix. Ready-frame backpressure is explicit; no unbounded receive list, no scanning for magic after a malformed frame. EOF mid-header/body/trailer is terminal; clean boundary EOF is only an input-side event, never proof of exchange success. The LabPort adapter requests at most the remaining header/body and 256 bytes per call, never reads ahead while a frame is ready, and retains one TX wire frame plus one RX partial wire frame or ready payload (logical retained maximum 8232 bytes; transient bounded copy/allocator overhead not measured). Zero writes and would-block do not spin; partial writes advance exact offsets. An invalid count, stream failure or malformed inbound frame poisons both directions and clears retained data. Caller owns scheduling, independent deadlines, cancellation, and OS cleanup; retirement invalidates the old generation, no retry/replay. The pure codec is not a transport-level authentication or session protocol.
+
+Tests include the standard CRC vector, fixed header byte order, all single split points, one-byte fragmentation, maximum payload, coalesced suffix/backpressure, malformed header/CRC, missing/repeated sequence, exhaustion, truncated EOF, stale generation/retirement, request/response matching, invalid I/O counts and repeated 64/1024/4096-byte synthetic round trips through bounded pipes with partial I/O and backpressure. These are deterministic LabPort tests; no radio, iOS background, Meta access, session/wake or power evidence.
