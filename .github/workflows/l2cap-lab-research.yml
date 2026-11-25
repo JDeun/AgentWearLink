@@ -5,11 +5,13 @@ on:
     paths:
       - 'Tools/L2CAPLab/**'
       - '.github/workflows/l2cap-lab-research.yml'
+      - 'scripts/install-xcodegen.sh'
   push:
     branches: [main]
     paths:
       - 'Tools/L2CAPLab/**'
       - '.github/workflows/l2cap-lab-research.yml'
+      - 'scripts/install-xcodegen.sh'
 permissions:
   contents: read
 concurrency:
@@ -33,3 +35,29 @@ jobs:
         run: swift test --package-path Tools/L2CAPLab
       - name: Evidence boundary
         run: echo "Deterministic in-memory and Foundation stream tests only; no BLE radio or Meta transport evidence."
+  apple-apps:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check isolated lab API and privacy scope
+        run: python3 Tools/L2CAPLab/check_lab_scope.py
+      - name: Install pinned XcodeGen
+        run: bash scripts/install-xcodegen.sh
+      - name: Generate lab projects
+        working-directory: Tools/L2CAPLab
+        run: |
+          "$GITHUB_WORKSPACE/.build/tools/xcodegen" generate
+      - name: Build iOS lab central
+        working-directory: Tools/L2CAPLab
+        run: xcodebuild -project L2CAPLab.xcodeproj -scheme L2CAPLabPhone -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/awl-l2cap-phone" CODE_SIGNING_ALLOWED=NO build
+      - name: Build macOS lab peripheral
+        working-directory: Tools/L2CAPLab
+        run: xcodebuild -project L2CAPLab.xcodeproj -scheme L2CAPLabMac -configuration Release -destination 'platform=macOS' -derivedDataPath "$RUNNER_TEMP/awl-l2cap-mac" CODE_SIGNING_ALLOWED=NO build
+      - name: Verify built privacy boundary
+        run: |
+          python3 Tools/L2CAPLab/check_lab_scope.py "$RUNNER_TEMP/awl-l2cap-phone/Build/Products/Release-iphonesimulator/L2CAPLabPhone.app/Info.plist" "$RUNNER_TEMP/awl-l2cap-mac/Build/Products/Release/L2CAPLabMac.app/Contents/Info.plist"
+      - name: Evidence boundary
+        run: echo "Compiled standalone apps only; no actual CoreBluetooth callbacks, link encryption, channel delivery or physical teardown verified."

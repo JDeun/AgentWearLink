@@ -213,6 +213,26 @@ final class LabSessionTests: XCTestCase {
         }
     }
 
+    func testResponderOpenDoesNotInventIndependentLinkTiming() {
+        let token = UUID()
+        var responder = LabSession(generation: token, role: .responder, size: .small, nowMS: 100)
+        responder.responderChannelOpened(generation: UUID(), nowMS: 999)
+        XCTAssertEqual(responder.phase, .awaitingLink)
+        responder.responderChannelOpened(generation: token, nowMS: 120)
+        XCTAssertEqual(responder.phase, .transferring)
+        XCTAssertNil(responder.linkElapsedMS)
+        XCTAssertNil(responder.channelElapsedMS)
+        responder.responderChannelOpened(generation: token, nowMS: 9000)
+        responder.tick(generation: token, nowMS: 10120)
+        XCTAssertEqual(responder.outcome, .transferTimeout)
+        XCTAssertEqual(responder.transferElapsedMS, 10000)
+        XCTAssertTrue(responder.report.contains("link-elapsed-ms=not-observed"))
+        XCTAssertTrue(responder.report.contains("channel-elapsed-ms=not-observed"))
+        var initiator = LabSession(generation: token, role: .initiator, size: .small, nowMS: 0)
+        initiator.responderChannelOpened(generation: token, nowMS: 1)
+        XCTAssertEqual(initiator.phase, .awaitingLink)
+    }
+
     func testClockRegressionAndSanitizedStageEvidence() {
         let token = UUID(), port = ScriptedPort()
         var run = LabSession(generation: token, role: .initiator, size: .small, nowMS: 100)
