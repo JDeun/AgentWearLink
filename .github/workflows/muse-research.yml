@@ -4,11 +4,13 @@ on:
     branches: [main]
     paths:
       - 'Tools/MuseResearch/**'
+      - 'docs/research/muse-runtime-audit-ledger-2026-10-31.tsv'
       - '.github/workflows/muse-research.yml'
   push:
     branches: [main]
     paths:
       - 'Tools/MuseResearch/**'
+      - 'docs/research/muse-runtime-audit-ledger-2026-10-31.tsv'
       - '.github/workflows/muse-research.yml'
 permissions:
   contents: read
@@ -26,6 +28,8 @@ jobs:
           ref: 1b894f551e64416e2844452ec6056ec56d6a10f1
           path: .muse-research-upstream
           persist-credentials: false
+      - name: Verify pinned candidate ledger and asset metadata
+        run: python3 Tools/MuseResearch/check_audit_ledger.py .muse-research-upstream
       - name: Host-only dependencies and provenance
         run: |
           test "$(git -C .muse-research-upstream rev-parse HEAD)" = "1b894f551e64416e2844452ec6056ec56d6a10f1"

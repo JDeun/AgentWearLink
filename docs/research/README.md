@@ -27,6 +27,7 @@ Start with the [current research register](research-register.md) for decisions, 
 - [Muse Noise core and offline conformance](muse-noise-core-audit-2026-11-25.md)
 - [Muse camera ownership audit](muse-camera-audit-2026-11-25.md)
 - [Muse handover and service-independence decision](muse-handover-independence-decision-2026-11-25.md)
+- [Muse component audit and cross-file matrix](muse-components-audit-2026-11-25.md)
 
 ## Notes
 
