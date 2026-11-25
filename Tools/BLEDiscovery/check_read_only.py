@@ -22,6 +22,20 @@ assert "scanForPeripherals(withServices: [filter]," in source
 assert "CBCentralManagerScanOptionAllowDuplicatesKey: false" in source
 assert source.count("scanForPeripherals(") == 1
 assert "retrieveConnectedPeripherals(withServices: [filter])" in source
+
+# Policy tests inject timestamps directly; check that the app supplies one too.
+probe_source = (root / "App/BLEProbe.swift").read_text()
+discovery_delegate = re.search(
+    r"(?ms)^    func centralManager\([^)]*\bdidDiscover\b[^)]*\)\s*\{\n(.*?)^    \}",
+    probe_source,
+)
+assert discovery_delegate, "Missing advertisement delegate"
+assert re.search(
+    r"\bsession\.record\([^)]*\bobservation:\s*observation,\s*elapsedMS:\s*elapsedMS\(\)\s*\)",
+    discovery_delegate[1],
+), "Advertisement delegate must forward the monotonic callback time"
+
+
 def check_plist(path):
     with path.open("rb") as f:
         plist = plistlib.load(f)

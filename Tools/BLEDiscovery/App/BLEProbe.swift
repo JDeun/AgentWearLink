@@ -142,7 +142,7 @@ final class BLEProbe: NSObject, ObservableObject, CBCentralManagerDelegate {
             connectable: (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
         )
         if session.record(token: token, peripheralID: peripheral.identifier,
-                          observation: observation) == .capacityExceeded {
+                          observation: observation, elapsedMS: elapsedMS()) == .capacityExceeded {
             finish(token: token, outcome: .candidateLimit)
         }
     }

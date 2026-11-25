@@ -102,12 +102,16 @@ final class ProbeSessionTests: XCTestCase {
         XCTAssertEqual(session.record(token: token, peripheralID: device,
                                       observation: ProbeObservation(systemConnectedSnapshot: true)), .accepted)
         XCTAssertFalse(session.finish(token: token, status: .completed))
-        XCTAssertTrue(session.markScanRequested(token: token))
-        XCTAssertTrue(session.finish(token: token, status: .completed))
+        XCTAssertTrue(session.markScanRequested(token: token, elapsedMS: 100))
+        XCTAssertEqual(session.record(token: token, peripheralID: device,
+                                      observation: ProbeObservation(systemConnectedSnapshot: true),
+                                      elapsedMS: 120), .accepted)
+        XCTAssertTrue(session.finish(token: token, status: .completed, elapsedMS: 150))
         XCTAssertTrue(session.confirm(id: 1, independentlyIdentified: true))
         XCTAssertTrue(session.report.contains("advertisement-callback=no"))
         XCTAssertTrue(session.report.contains("requested-service-advertised=not-observed"))
         XCTAssertTrue(session.report.contains("requested-service-data-present=not-observed"))
+        XCTAssertTrue(session.report.contains("confirmed-first-callback-from-request-ms=not-observed"))
     }
 
     func testElapsedEvidenceAndGateClassification() {
