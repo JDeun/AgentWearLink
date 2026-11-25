@@ -32,9 +32,9 @@ def inspect_generated(data, name, expected_bpp):
     for pattern in (r"\bglyph_bitmap\s*\[", r"\bglyph_dsc\s*\[", r"\bcmaps\s*\["):
         check(re.search(pattern, source), f"{name}: table missing: {pattern}")
     bpp = re.findall(r"\.bpp\s*=\s*(\d+)", source)
-    check(str(expected_bpp) in bpp, f"{name}: expected bpp {expected_bpp}, got {bpp}")
+    check(bpp == [str(expected_bpp)], f"{name}: expected bpp {expected_bpp}, got {bpp}")
     cmap = re.findall(r"\.cmap_num\s*=\s*(\d+)", source)
-    check(cmap, f"{name}: cmap descriptor missing")
+    check(cmap == [str(130 if expected_bpp == 1 else 42)], f"{name}: cmap descriptor changed: {cmap}")
     print(f"GENERATED {name} bytes={len(data)} sha={blob_sha(data)} bpp={expected_bpp} cmap_num={','.join(cmap)}")
     # Emit only bounded provenance header lines, not glyph bytes or font files.
     for line in source[:2048].splitlines()[:22]:
@@ -79,9 +79,10 @@ def main():
         check(len(data) == int(row["size_bytes"]) and blob_sha(data) == row["blob_sha"],
               f"byte identity mismatch: {rel}")
         status = row["content_status"]
-        check(status == "content-reviewed-this-pass" or
-              (status == "targeted-content-not-reconciled" and row["path"] in {PREFIX + p for p in FONTS}),
-              f"unreconciled candidate: {rel}")
+        check(status == "content-reviewed-this-pass", f"unreconciled candidate: {rel}")
+        check(row["provisional_kind"] in {"executable-source", "header", "build-config",
+                                         "binary-asset", "documentation", "static-glyph-data",
+                                         "generated-font-source"}, f"unreconciled kind: {rel}")
         statuses[status] += 1
         local = row["path"].removeprefix(PREFIX)
         if local in FONTS:
