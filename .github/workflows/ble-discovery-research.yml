@@ -1,0 +1,45 @@
+name: BLE discovery research
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Tools/BLEDiscovery/**'
+      - '.github/workflows/ble-discovery-research.yml'
+      - 'scripts/install-xcodegen.sh'
+  push:
+    branches: [main]
+    paths:
+      - 'Tools/BLEDiscovery/**'
+      - '.github/workflows/ble-discovery-research.yml'
+      - 'scripts/install-xcodegen.sh'
+permissions:
+  contents: read
+concurrency:
+  group: ble-discovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  probe:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check read-only boundary
+        run: python3 Tools/BLEDiscovery/check_read_only.py
+      - name: Test pure policy
+        run: swift test --package-path Tools/BLEDiscovery
+      - name: Install pinned XcodeGen
+        run: bash scripts/install-xcodegen.sh
+      - name: Generate project
+        working-directory: Tools/BLEDiscovery
+        run: |
+          "$GITHUB_WORKSPACE/.build/tools/xcodegen" generate
+      - name: Build isolated iOS simulator app
+        working-directory: Tools/BLEDiscovery
+        run: xcodebuild -project BLEDiscovery.xcodeproj -scheme BLEDiscovery -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/awl-ble-research" CODE_SIGNING_ALLOWED=NO build
+      - name: Verify built bundle privacy boundary
+        run: |
+          python3 Tools/BLEDiscovery/check_read_only.py "$RUNNER_TEMP/awl-ble-research/Build/Products/Release-iphonesimulator/BLEDiscovery.app/Info.plist"
+      - name: Evidence boundary
+        run: echo "Build and deterministic policy only; no physical Bluetooth, authorization, connection or wake evidence."
