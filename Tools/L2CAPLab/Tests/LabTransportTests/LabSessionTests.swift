@@ -196,6 +196,23 @@ final class LabSessionTests: XCTestCase {
         }
     }
 
+    func testRejectReorderedOrRepeatedWholeChunk() {
+        let first = (0..<LabSession.chunkLimit).map(LabSession.fixtureByte(at:))
+        let second = (LabSession.chunkLimit..<(2 * LabSession.chunkLimit)).map(LabSession.fixtureByte(at:))
+        XCTAssertNotEqual(first, second)
+        for chunks in [[second], [first, first]] {
+            var run = opened(.responder, size: .medium)
+            let token = run.generation, port = ScriptedPort()
+            port.reads = chunks.map { .bytes($0) }
+            for i in chunks.indices {
+                run.pump(generation: token, nowMS: UInt64(3 + i), port: port)
+            }
+            XCTAssertEqual(run.outcome, .unexpectedPayload)
+            XCTAssertEqual(run.sent, 0)
+            XCTAssertTrue(run.takeCleanupRequest(generation: token))
+        }
+    }
+
     func testClockRegressionAndSanitizedStageEvidence() {
         let token = UUID(), port = ScriptedPort()
         var run = LabSession(generation: token, role: .initiator, size: .small, nowMS: 100)

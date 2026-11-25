@@ -56,7 +56,8 @@ public struct LabSession {
 
     /// Deterministic synthetic fixture; not a security challenge or peer identity.
     public static func fixtureByte(at offset: Int) -> UInt8 {
-        UInt8(truncatingIfNeeded: (offset &* 31) &+ 17)
+        // Mix the block index too: identical 256-byte chunks would hide reorder/replay.
+        UInt8(truncatingIfNeeded: ((offset &* 31) &+ 17) ^ ((offset >> 8) &* 73))
     }
 
     private mutating func finish(_ result: LabOutcome, at now: UInt64) {
