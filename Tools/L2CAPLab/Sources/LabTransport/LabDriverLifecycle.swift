@@ -46,6 +46,9 @@ struct LabDriverLifecycle {
     mutating func move(generation token: UUID, to target: LabDriverStage, nowMS: UInt64) -> Bool {
         guard generation == token, nowMS >= lastNow else { return false }
         guard deadline.map({ nowMS < $0 }) ?? true else { return false }
+        // A server operation must deliver its own callback before the next
+        // command is admitted. Cancellation still retires pending operations.
+        guard pendingServerOperation == nil else { return false }
         switch (stage, target) {
         case (.centralInit, .scanning):
             deadline = min(deadline ?? nowMS, Self.limit(nowMS, 5_000))

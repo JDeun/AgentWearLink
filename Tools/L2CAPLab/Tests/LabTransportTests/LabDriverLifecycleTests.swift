@@ -54,6 +54,11 @@ final class LabDriverLifecycleTests: XCTestCase {
         for (i, stage) in [LabDriverStage.publishing, .adding, .advertising, .listening].enumerated() {
             XCTAssertTrue(life.move(generation: token, to: stage, nowMS: UInt64(1+i)))
             XCTAssertFalse(life.move(generation: token, to: stage, nowMS: UInt64(1+i)))
+            if stage != .listening {
+                XCTAssertFalse(life.acknowledgeServerOperation(generation: UUID(), stage: stage))
+                XCTAssertTrue(life.acknowledgeServerOperation(generation: token, stage: stage))
+                XCTAssertFalse(life.acknowledgeServerOperation(generation: token, stage: stage))
+            }
         }
         XCTAssertEqual(life.deadline, 90_004)
         XCTAssertFalse(life.move(generation: token, to: .transfer, nowMS: 5))
@@ -94,6 +99,7 @@ final class LabDriverLifecycleTests: XCTestCase {
             for (i, stage) in [LabDriverStage.publishing, .adding, .advertising, .listening].enumerated() {
                 XCTAssertTrue(life.move(generation: token, to: stage, nowMS: UInt64(i+1)))
                 if stage == target { break }
+                XCTAssertTrue(life.acknowledgeServerOperation(generation: token, stage: stage))
             }
             var retired = life.retire(generation: token)!
             for stage in [LabDriverStage.publishing, .adding, .advertising] where stage != target {
@@ -123,6 +129,24 @@ final class LabDriverLifecycleTests: XCTestCase {
         XCTAssertTrue(life.begin(generation: near, stage: .centralInit, nowMS: UInt64.max - 1))
         XCTAssertEqual(life.deadline, UInt64.max)
         XCTAssertEqual(life.tick(generation: near, nowMS: UInt64.max, hasCandidate: false), .terminate("setup-timeout"))
+    }
+
+    func testServerCannotAdvanceWithoutMatchingCallback() {
+        var life = LabDriverLifecycle()
+        let token = UUID()
+        XCTAssertTrue(life.begin(generation: token, stage: .serverInit, nowMS: 0))
+        XCTAssertTrue(life.move(generation: token, to: .publishing, nowMS: 1))
+        XCTAssertFalse(life.move(generation: token, to: .adding, nowMS: 2))
+        XCTAssertFalse(life.acknowledgeServerOperation(generation: token, stage: .adding))
+        XCTAssertFalse(life.move(generation: token, to: .adding, nowMS: 2))
+        XCTAssertTrue(life.acknowledgeServerOperation(generation: token, stage: .publishing))
+        XCTAssertTrue(life.move(generation: token, to: .adding, nowMS: 2))
+        XCTAssertFalse(life.move(generation: token, to: .advertising, nowMS: 3))
+        XCTAssertTrue(life.acknowledgeServerOperation(generation: token, stage: .adding))
+        XCTAssertTrue(life.move(generation: token, to: .advertising, nowMS: 3))
+        XCTAssertFalse(life.move(generation: token, to: .listening, nowMS: 4))
+        XCTAssertTrue(life.acknowledgeServerOperation(generation: token, stage: .advertising))
+        XCTAssertTrue(life.move(generation: token, to: .listening, nowMS: 4))
     }
 
     func testDeliveredCallbackCannotBeRetiredAsPendingAtDeadline() {
