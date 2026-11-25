@@ -186,6 +186,53 @@ final class LabFramedTransportTests: XCTestCase {
         XCTAssertTrue(clean.inputEnded)
     }
 
+    func testSenderSequenceExhaustionAndNoSequenceConsumptionOnBackpressure() throws {
+        let token = UUID(), port = FrameScriptPort()
+        var link = LabFramedTransport(generation: token)
+        for n in 1...LabFrameCodec.maxSequence {
+            XCTAssertEqual(try link.enqueue(kind: .request, correlation: n, payload: [7], generation: token), n)
+            XCTAssertNil(try link.enqueue(kind: .request, correlation: n, payload: [8], generation: token))
+            XCTAssertEqual(try link.pumpWrite(generation: token, port: port), .progress(21))
+            XCTAssertFalse(link.hasPendingWrite)
+        }
+        assertError(.sequenceExhausted) {
+            _ = try link.enqueue(kind: .request, correlation: 1, payload: [9], generation: token)
+        }
+        XCTAssertEqual(port.calls, Int(LabFrameCodec.maxSequence))
+        XCTAssertEqual(link.bufferedBytes, 0)
+    }
+
+    func testBadCRCDiscardsBothDirectionsAndWriteFailureDiscardsReadyFrame() throws {
+        let token = UUID(), port = FrameScriptPort()
+        let frame = LabFrame(kind: .response, sequence: 1, correlation: 1, payload: [7])
+        let good = try LabFrameCodec.encode(frame)
+        var bad = good
+        bad[bad.count - 1] ^= 1
+        var link = LabFramedTransport(generation: token)
+        _ = try link.enqueue(kind: .request, correlation: 1, payload: [7], generation: token)
+        port.nextRead = .bytes(Array(bad.prefix(16)))
+        _ = try link.pumpRead(generation: token, port: port)
+        port.nextRead = .bytes(Array(bad.dropFirst(16)))
+        assertError(.badChecksum) { _ = try link.pumpRead(generation: token, port: port) }
+        XCTAssertEqual(link.bufferedBytes, 0)
+        let calls = port.calls
+        assertError(.badChecksum) { _ = try link.pumpWrite(generation: token, port: port) }
+        XCTAssertEqual(port.calls, calls)
+
+        var fresh = LabFramedTransport(generation: UUID())
+        let newToken = fresh.generation
+        port.nextRead = .bytes(Array(good.prefix(16)))
+        _ = try fresh.pumpRead(generation: newToken, port: port)
+        port.nextRead = .bytes(Array(good.dropFirst(16)))
+        _ = try fresh.pumpRead(generation: newToken, port: port)
+        XCTAssertTrue(fresh.hasFrame)
+        _ = try fresh.enqueue(kind: .request, correlation: 1, payload: [7], generation: newToken)
+        port.nextWrite = -1
+        assertError(.invalidIOCount) { _ = try fresh.pumpWrite(generation: newToken, port: port) }
+        XCTAssertEqual(fresh.bufferedBytes, 0)
+        XCTAssertFalse(fresh.hasFrame)
+    }
+
     func testZeroWriteStaleCallbacksAndRetireWithoutReplay() throws {
         let token = UUID(), stale = UUID(), port = FrameScriptPort()
         var link = LabFramedTransport(generation: token)

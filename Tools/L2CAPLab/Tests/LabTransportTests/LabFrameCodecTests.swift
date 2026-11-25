@@ -22,7 +22,11 @@ final class LabFrameCodecTests: XCTestCase {
         let bytes = try LabFrameCodec.encode(value)
         XCTAssertEqual(Array(bytes.prefix(16)),
                        [0x41, 0x57, 0x4C, 0x46, 1, 2, 0, 1, 0, 0, 0, 1, 1, 2, 3, 4])
-        XCTAssertEqual(bytes.count, 21)
+        // Fixed full-wire golden vector, independently calculated with a table CRC.
+        XCTAssertEqual(bytes, [
+            0x41, 0x57, 0x4C, 0x46, 1, 2, 0, 1, 0, 0, 0, 1, 1, 2, 3, 4,
+            0xAB, 0xB5, 0xAE, 0x1E, 0x42
+        ])
         let token = UUID()
         var parser = LabFrameDecoder(generation: token)
         XCTAssertEqual(try parser.ingest(bytes[...], generation: token), bytes.count)
