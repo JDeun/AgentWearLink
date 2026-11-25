@@ -25,6 +25,7 @@ assert "lifecycle.retire(generation: old)" in source
 assert "retiredCallbacks.consume(.publishing)" in source
 assert "retiredCallbacks.consume(.adding)" in source
 assert "retiredCallbacks.consume(.advertising)" in source
+assert source.count("lifecycle.acknowledgeServerOperation(generation: token") == 3
 for path, identifier in zip(sys.argv[1:], (
     "dev.agentwearlink.research.l2cap.phone", "dev.agentwearlink.research.l2cap.mac"
 )):

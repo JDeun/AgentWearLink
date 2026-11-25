@@ -415,6 +415,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
             }
             return
         }
+        guard let token, lifecycle.acknowledgeServerOperation(generation: token, stage: .publishing) else { return }
         guard error == nil, let local = LabInvitation(serviceID: serviceID, psm: psm, size: fixtureSize) else {
             if error == nil, psm != 0, manager.state == .poweredOn { manager.unpublishL2CAPChannel(psm) }
             fail("publish-failed"); return
@@ -440,6 +441,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
             }
             return
         }
+        guard let token, lifecycle.acknowledgeServerOperation(generation: token, stage: .adding) else { return }
         guard error == nil else { fail("service-add-failed"); return }
         serviceAdded = true
         guard move(.advertising) else { return }
@@ -452,6 +454,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
                retiredCallbacks.consume(.advertising) { manager.stopAdvertising() }
             return
         }
+        guard let token, lifecycle.acknowledgeServerOperation(generation: token, stage: .advertising) else { return }
         guard error == nil else { fail("advertising-failed"); return }
         guard move(.listening) else { return }
         listenerStarted = now

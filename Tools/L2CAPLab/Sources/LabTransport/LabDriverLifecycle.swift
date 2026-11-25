@@ -24,6 +24,7 @@ struct LabDriverLifecycle {
     private(set) var generation: UUID?
     private(set) var deadline: UInt64?
     private var lastNow: UInt64 = 0
+    private var pendingServerOperation: LabDriverStage?
 
     private static func limit(_ now: UInt64, _ delta: UInt64) -> UInt64 {
         let (sum, overflow) = now.addingReportingOverflow(delta)
@@ -35,6 +36,7 @@ struct LabDriverLifecycle {
         generation = token
         stage = initial
         lastNow = nowMS
+        pendingServerOperation = nil
         deadline = Self.limit(nowMS, 15_000)
         return true
     }
@@ -62,6 +64,10 @@ struct LabDriverLifecycle {
             return false
         }
         stage = target
+        switch target {
+        case .publishing, .adding, .advertising: pendingServerOperation = target
+        default: pendingServerOperation = nil
+        }
         lastNow = nowMS
         return true
     }
@@ -84,9 +90,19 @@ struct LabDriverLifecycle {
         }
     }
 
+    /// Mark delivery before processing an accepted server callback. If its
+    /// deadline crosses while handling the result, cleanup must not treat
+    /// this operation as pending again, even if stage has not advanced.
+    mutating func acknowledgeServerOperation(generation token: UUID, stage expected: LabDriverStage) -> Bool {
+        guard generation == token, stage == expected, pendingServerOperation == expected else { return false }
+        pendingServerOperation = nil
+        return true
+    }
+
     mutating func retire(generation token: UUID) -> LabRetiredCallbacks? {
         guard generation == token else { return nil }
-        let callbacks = LabRetiredCallbacks(stage: stage)
+        let callbacks = LabRetiredCallbacks(stage: pendingServerOperation)
+        pendingServerOperation = nil
         generation = nil
         stage = .finished
         deadline = nil

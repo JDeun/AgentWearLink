@@ -125,6 +125,25 @@ final class LabDriverLifecycleTests: XCTestCase {
         XCTAssertEqual(life.tick(generation: near, nowMS: UInt64.max, hasCandidate: false), .terminate("setup-timeout"))
     }
 
+    func testDeliveredCallbackCannotBeRetiredAsPendingAtDeadline() {
+        for target in [LabDriverStage.publishing, .adding, .advertising] {
+            var life = LabDriverLifecycle()
+            let token = UUID()
+            XCTAssertTrue(life.begin(generation: token, stage: .serverInit, nowMS: 0))
+            for (i, stage) in [LabDriverStage.publishing, .adding, .advertising].enumerated() {
+                XCTAssertTrue(life.move(generation: token, to: stage, nowMS: UInt64(i+1)))
+                if stage == target { break }
+                XCTAssertTrue(life.acknowledgeServerOperation(generation: token, stage: stage))
+            }
+            XCTAssertFalse(life.acknowledgeServerOperation(generation: UUID(), stage: target))
+            XCTAssertTrue(life.acknowledgeServerOperation(generation: token, stage: target))
+            XCTAssertFalse(life.acknowledgeServerOperation(generation: token, stage: target))
+            XCTAssertEqual(life.tick(generation: token, nowMS: 15_000, hasCandidate: false), .terminate("setup-timeout"))
+            var retired = life.retire(generation: token)!
+            XCTAssertFalse(retired.consume(target))
+        }
+    }
+
     func testDisconnectAdmittedOnlyForActiveCentralStages() {
         for stage in [LabDriverStage.idle, .centralInit, .scanning, .confirmFixture, .finished, .publishing, .listening] {
             XCTAssertFalse(stage.acceptsCentralDisconnect)
