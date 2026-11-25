@@ -46,3 +46,18 @@ Open the generated project in Xcode. Run L2CAPLabMac locally and select your own
 The invitation/PSM is transient UI setup, not part of the shareable report. Do not capture device names, UUIDs, invitations, RSSI, raw payloads, peer identifiers or OS pairing dialogs. Report fixture size, condition, trial number, model/OS and app SHA plus categorical report only. Run three independent exchanges per size, including failures, and negative cases for denied authorization, wrong invitation, unavailable peer, ambiguity, disconnect, cancel and inactivity. Test two devices, check teardown and no reconnect. A responder drain deadline is not proof of delivery; both endpoint evidence is required. Three trials are screening, not p95. B0 success does not pass B1/B2 or Gates C–E.
 
 Known limits: the local lab namespace is a scope guard, not authentication; an attacker can spoof an advertisement/descriptor. Use only an isolated, personally controlled fixture. Link encryption is requested via the Apple API, not independently measured. No Meta transport, session, enrollment, wake, power or production compatibility claim.
+
+## Offline report assessment
+
+Use the standard-library-only analyzer; no Bluetooth, network, device identity, credentials or report contents are exported. Run locally, with a JSON manifest containing schema 1 and up to nine trial entries. Each entry has exactly size (64, 1024 or 4096), trial (1–3), initiator (complete sanitized phone report text or null), responder (complete sanitized Mac report text or null). Use JSON string escaping for report newlines. No extra metadata fields, invitations, UUIDs or raw data. The manifest is not an authenticated pairing of reports: manually associate both endpoints with the same run, preserve failures, and record hardware/OS/app revision separately in a sanitized lab record. The following is a deliberately incomplete example, not measured evidence.
+
+```json
+{"schema":1,"trials":[{"size":64,"trial":1,"initiator":null,"responder":null}]}
+```
+
+```sh
+python3 Tools/L2CAPLab/analyze_reports.py < lab-trials.json
+python3 -m unittest discover -s Tools/L2CAPLab/report_tests
+```
+
+Exit 0 means all nine manually correlated report pairs satisfy the report contract; 1 means at least one missing, failed or invalid pair; 2 means malformed/oversized manifest or duplicate trial slot. Only exact schema keys and enumerated values are accepted, including the actual no-session terminal report format. Unknown fields and invalid values are rejected without echoing them. Counts, stage timings, role and driver terminal must agree. A local successful responder write followed by cancellation is not a pass. Missing trials remain visible; no p95 or power extrapolation. Median/range are descriptive only and calculated from passing pairs with explicit sample size. A passing matrix is textual evidence consistency only, never physical radio, peer identity, encryption, teardown, Meta authorization, or wake evidence. Identical reports can occur independently; this format cannot detect replay or prove both endpoints participated in the same exchange. Do not commit personal manifests or use the tool to authenticate peer evidence.
