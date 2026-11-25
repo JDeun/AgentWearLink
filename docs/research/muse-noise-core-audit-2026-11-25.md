@@ -23,3 +23,6 @@ The isolated [MuseResearch harness](../../Tools/MuseResearch/README.md) is autho
 ## Decision
 
 Keep AWL's independent framed session/typed acknowledgement. No Noise implementation, upstream source, firmware, secrets, or libraries are added to the production dependency graph. The host fixture runner is research-only, uses a pinned upstream checkout in temporary CI workspace, and is not shipped. No vendor protocol or license approval. Continue #643 with camera + remaining components, #641 with evidence reconciliation and #639 with exact dependency/service/asset terms. Transfer only independently implemented invariants to #635/#637.
+
+## Subsequent executed evidence (same pin)
+#703 and #704 host runs passed. See [exact results and final no-adoption decision](muse-handover-independence-decision-2026-11-25.md#final-executed-evidence-and-issue-dispositions). Research closure is limited to source and defined host conformance, not board/service or security approval.
