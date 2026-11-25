@@ -51,6 +51,19 @@ int main(int argc,char**argv) {
       require(x.ok(),"encode");
       emit({scratch.data(),x.size()});
     }
+  } else if(mode=="scan") {
+    Bytes scratch(limit);
+    std::string line;
+    while(std::getline(std::cin,line)) {
+      auto bytes=read(line);
+      require(bytes.size()<=128,"scan input bound");
+      n::OrderedTransportFramer framer;
+      auto x=framer.DecodeAndAppendInboundFrame(in(bytes),out(scratch));
+      if(x.frame_status==n::InboundFrameStatus::Violation) std::cout << "rejected" << std::endl;
+      else if(!x.status.ok()) std::cout << "resource" << std::endl;
+      else if(x.frame_status==n::InboundFrameStatus::Complete) std::cout << "complete" << std::endl;
+      else std::cout << "partial" << std::endl;
+    }
   } else if(mode=="decode" || mode=="decode-small") {
     n::OrderedTransportFramer framer;
     Bytes scratch(mode=="decode-small"?1:limit);

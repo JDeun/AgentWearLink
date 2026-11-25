@@ -30,9 +30,9 @@ jobs:
         run: |
           test "$(git -C .muse-research-upstream rev-parse HEAD)" = "1b894f551e64416e2844452ec6056ec56d6a10f1"
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends libmbedtls-dev python3-cryptography
+          sudo apt-get install -y -qq --no-install-recommends libmbedtls-dev python3-cryptography python3-pytest
           g++ --version | head -n 1
-          dpkg-query -W libmbedtls-dev python3-cryptography
+          dpkg-query -W libmbedtls-dev python3-cryptography python3-pytest
       - name: Compile selected pinned core and run upstream host harnesses
         working-directory: .muse-research-upstream/esp32
         run: |
@@ -47,5 +47,25 @@ jobs:
             -pthread -lmbedcrypto -o "$RUNNER_TEMP/awl-muse-fixture"
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$GITHUB_WORKSPACE/.muse-research-upstream/linux/src" \
             timeout 90s /usr/bin/python3 Tools/MuseResearch/check_noise.py "$RUNNER_TEMP/awl-muse-fixture"
+      - name: Shared pairing vectors and camera host tests
+        working-directory: .muse-research-upstream/esp32
+        run: |
+          cmp tests/vectors/link_pairing_v5.json ../linux/tests/vectors/link_pairing_v5.json
+          timeout 90s /usr/bin/python3 -m unittest discover -s tests -p 'test_link_pairing_transcript.py' -v
+          timeout 90s /usr/bin/python3 -m unittest discover -s tests -p 'test_camera.py' -v
+      - name: Linux pairing state and shared vectors
+        working-directory: .muse-research-upstream/linux
+        run: PYTHONPATH=src timeout 90s /usr/bin/python3 -m pytest tests/test_pairing.py -q -rs
+      - name: Bounded mutation corpus under C++ ASan and UBSan
+        run: |
+          core=".muse-research-upstream/esp32/components/noise_core"
+          g++ -std=c++17 -O1 -g -DNOISE_BUILDING_TESTS -fno-exceptions -fno-rtti -fsanitize=address,undefined -fno-sanitize-recover=all -I"$core/include" \
+            Tools/MuseResearch/noise_fixture.cpp \
+            "$core/src/InitiatorHandshake.cpp" "$core/src/Transport.cpp" "$core/src/TransportFrameCodec.cpp" "$core/src/Status.cpp" "$core/src/PsaCryptoBackend.cpp" \
+            -pthread -lmbedcrypto -o "$RUNNER_TEMP/awl-muse-sanitized"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$GITHUB_WORKSPACE/.muse-research-upstream/linux/src" \
+            timeout 60s /usr/bin/python3 Tools/MuseResearch/check_fuzz.py "$RUNNER_TEMP/awl-muse-sanitized"
+      - name: Check narrow production independence evidence
+        run: python3 Tools/MuseResearch/check_independence.py .muse-research-upstream
       - name: Evidence boundary
         run: echo 'Host-only synthetic fixtures; no actual ESP32, network peer, radio, vendor account, production integration or hardware claim.'
