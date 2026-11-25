@@ -65,3 +65,27 @@ The [official Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms), checke
 Source notices found: Apache-2.0 on first-party reviewed files, MIT panel/board exceptions, BSD-2-Clause pixel font, BSD-3-Clause libvpx + PATENTS, CC0 minimp3, AOSP Apache decoder, optional x264 GPL/commercial, OFL font/icon and external media terms, avatar excluded from root license. See [Main residual](muse-esp32-main-residual-audit-2026-11-25.md), [mobile/video](muse-mobile-video-audit-2026-11-25.md), [Noise](muse-noise-core-audit-2026-11-25.md), [camera](muse-camera-audit-2026-11-25.md). A README listing is not per-file legal verification. The older all-blob provenance checklist is not claimed complete; inventory-only rows do not certify rights. #643 continues per-candidate provenance, reachability and test mapping; the broader all-blob due diligence and exact dependency/asset bill of materials remain a prerequisite if future copying/reuse is proposed, not a cleared shipping permission. For the original #639 proposed-copy scope, the inventory of approved imports is empty by explicit no-adoption decision, not because all files were licensed for reuse. If any upstream code/binary/asset, token/VM/backend or native library is proposed, reopen #639 with exact upstream file SHA, license/notices/patents, resolved transitive graph and applicable service permission before adoption.
 
 No legal advice or certification. Maintain independent AWL code, use only general design lessons. No device or service side effects in this research.
+
+## Final executed evidence and issue dispositions
+
+[#704 exact host job](https://github.com/JDeun/AgentWearLink/actions/runs/45585809391/job/139106991319), PR head 9b3ae9491e320bf9d7906225de98167ed30e73de, all steps successful; merged f3b691f9e6ebfdf1d3654648b24b47c87cc07860. Ubuntu 24.04, g++ 13.3.0, libmbedtls-dev 2.28.8-1, python3-cryptography 41.0.7-4ubuntu0.4, python3-pytest 7.4.4-1. Exact pinned upstream checkout reverified.
+
+| Executed check | Observed outcome |
+| --- | --- |
+| Upstream Noise Core host suite | 3 passed; 0 skipped |
+| Independent C++/Python duplex, frame boundary and fault assertions | All passed again; see #703 detailed sizes and #704 job |
+| Shared pairing vector file equality and firmware transcript / crypto reference tests | byte-identical files; 2 passed, 0 skipped (three fixture records, not three physical sessions) |
+| Linux pairing state tests | 56 passed, 0 skipped |
+| Camera registry + SSCMA parser host harness | 2 passed, 0 skipped; no real SPI or camera |
+| Bounded mutation/truncation/random corpus | 346 inputs, maximum 64 bytes; both actual parsers completed; C++ instrumented ASan/UBSan, no reported sanitizer failure |
+| C++ parser classifications | complete 158, partial 6, rejected 182 |
+| Python parser classifications | complete 170, partial 6, rejected 170 |
+| Host process peak RSS (single run, Linux ru_maxrss) | Python 24,956 KiB, child 24,820 KiB; not a firmware heap budget |
+| Narrow production independence evidence | 238 production blobs vs 1,096 upstream blobs, zero identical hashes and zero known Muse markers |
+| Other checks | #704 Swift Core and Documentation integrity success |
+
+63 selected upstream test cases executed successfully, separately from independent fixture assertions and the 346-input corpus. Do not double-count prior CI runs. Classification differences are expected policy observations, not a complete differential compatibility guarantee; no semantic oracle for every mutated input, no coverage-guided fuzz or branch-coverage percentage. The actual common-subset handshake/framing and defined fault checks, reproducible source graph with explicit feature alternatives, bounded corpus evidence, and decision not to implement an unneeded Swift Noise client satisfy #641's current research decision. Real device/service handover is explicitly NOT attempted or declared complete; reopen for a concrete authorized Muse adapter. #643 retains comprehensive file-by-file and cross-file evidence, and #635/#637/#664 retain independent product correctness.
+
+For #639, zero selected upstream imports and zero selected Muse runtime dependencies are the adoption inventory; official service restrictions documented, independent manifests and narrow exact-blob/marker checks executed. Complete the no-import decision, not a clearance for copying the 1,096-file upstream tree. The broad old all-blob due-diligence checklist is conditional on future reuse; the remaining 322-candidate provenance and graph audit stays #643. Any later actual reuse requires reopening #639 and a concrete resolved dependency/rights review. No Muse token, account, backend or production library use.
+
+Both issues are eligible for closure **as research decisions only** after this evidence record is merged. This is not permission to close #643, hardware gates, or any independent implementation/physical test issue.
