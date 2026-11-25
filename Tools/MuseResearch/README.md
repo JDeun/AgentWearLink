@@ -6,3 +6,5 @@ The fixture uses the upstream C++ initiator/PSA backend and Python test responde
 Run status and test observations belong in the research register and issue #641. Passing this experiment does not establish BLE/Wi-Fi provisioning, cloud authorization, real ESP32 firmware reachability, service-envelope interoperability, production security or fuzz coverage. All production adoption remains excluded.
 
 The follow-up adds upstream pairing/camera host vectors, a deterministic bounded mutation/truncation/random parser corpus under ASan/UBSan (no full fuzz or coverage claim), and a narrow production no-adoption check. See the [handover and service decision](../../docs/research/muse-handover-independence-decision-2026-11-25.md). Test dependency versions are recorded in actual job logs.
+
+The ledger verifier reads the exact pinned upstream checkout, checks every candidate's blob bytes and metadata, and emits bounded generated-font metadata only. See [component audit](../../docs/research/muse-components-audit-2026-11-25.md). It is not a content-review substitute or a font/audio redistribution approval.
