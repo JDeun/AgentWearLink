@@ -7,11 +7,7 @@ import Dispatch
 /// Only the two research apps instantiate this class.
 final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
                       CBPeripheralDelegate, CBPeripheralManagerDelegate, StreamDelegate {
-    private enum Stage {
-        case idle, centralInit, scanning, confirmFixture, connecting, service, marker, markerRead, opening
-        case serverInit, publishing, adding, advertising, listening, confirmIncoming
-        case transfer, draining, finished
-    }
+    private typealias Stage = LabDriverStage
 
     @Published private(set) var busy = false
     @Published private(set) var retiring = false
@@ -21,9 +17,10 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
     @Published private(set) var status = "Idle"
     @Published private(set) var report = "not-run"
 
-    private var stage: Stage = .idle
-    private var token: UUID?
-    private var deadline: UInt64?
+    private var lifecycle = LabDriverLifecycle()
+    private var stage: Stage { lifecycle.stage }
+    private var token: UUID? { lifecycle.generation }
+    private var retiredCallbacks = LabRetiredCallbacks()
     private var timer: DispatchSourceTimer?
     private var pendingPump: UUID?
     private var streamEvents = LabStreamEvents()
@@ -56,16 +53,14 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         dispatchPrecondition(condition: .onQueue(.main))
         guard !busy, !retiring else { return false }
         let fresh = UUID()
-        token = fresh
+        guard lifecycle.begin(generation: fresh, stage: initial, nowMS: now) else { return false }
         streamEvents.begin(generation: fresh)
         busy = true
-        stage = initial
         fixtureSize = size
         session = nil
         report = "in-progress"
         listenerElapsed = nil
         listenerStarted = nil
-        deadline = now + 15_000
         let clock = DispatchSource.makeTimerSource(queue: .main)
         clock.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
         clock.setEventHandler { [weak self] in
@@ -98,8 +93,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         guard consent, checkClock(), stage == .confirmFixture,
               let token, let central, central.state == .poweredOn, let peer else { return }
         canConnect = false
-        stage = .connecting
-        deadline = nil
+        guard move(.connecting) else { return }
         session = LabSession(generation: token, role: .initiator, size: fixtureSize, nowMS: now)
         status = "Connecting to confirmed fixture"
         peer.delegate = self
@@ -109,7 +103,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
     func acceptIncoming(consent: Bool) {
         guard consent, checkClock(), stage == .confirmIncoming, let channel else { return }
         canAccept = false
-        stage = .transfer
+        guard move(.transfer) else { return }
         status = "Synthetic exchange"
         attach(channel)
     }
@@ -128,24 +122,29 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
             finishPolicy()
             return false
         }
-        if let limit = deadline, instant >= limit {
-            switch stage {
-            case .scanning:
-                central?.stopScan()
-                guard peer != nil else { cleanup("no-fixture"); return false }
-                stage = .confirmFixture
-                canConnect = true
-                deadline = instant + 30_000
-                status = "One candidate; independently confirm your fixture"
-            case .draining:
-                cleanup("responder-drain-deadline")
-                return false
-            default:
-                fail("setup-timeout")
-                return false
-            }
+        switch lifecycle.tick(generation: token, nowMS: instant, hasCandidate: peer != nil) {
+        case .proceed: return busy
+        case .confirmFixture:
+            central?.stopScan()
+            canConnect = true
+            status = "One candidate; independently confirm your fixture"
+            return busy
+        case .terminate(let reason):
+            if reason == "setup-timeout" || reason == "clockRegression" { fail(reason) }
+            else { cleanup(reason) }
+            return false
+        case .ignored: return false
         }
-        return busy
+    }
+
+    private func move(_ target: Stage) -> Bool {
+        guard let token else { return false }
+        guard lifecycle.move(generation: token, to: target, nowMS: now) else {
+            // An impossible transition must not issue a radio command or strand a terminal run.
+            fail("ioError")
+            return false
+        }
+        return true
     }
 
     private func fail(_ reason: String) {
@@ -167,8 +166,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         if outcome == .success, session?.role == .responder, stage == .transfer {
             // A local output write is not a remote acknowledgement. Leave streams
             // open briefly for peer completion; no additional I/O or retries.
-            stage = .draining
-            deadline = now + 2_000
+            guard move(.draining) else { return }
             status = "Local fixture complete; bounded drain"
             return
         }
@@ -176,15 +174,12 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
     }
 
     private func cleanup(_ code: String) {
-        guard let old = token else { return }
+        guard let old = token, let retirement = lifecycle.retire(generation: old) else { return }
         _ = session?.takeCleanupRequest(generation: old)
-        token = nil
         streamEvents.retire()
         pendingPump = nil
-        deadline = nil
         timer?.cancel()
         timer = nil
-        stage = .finished
         canConnect = false
         canAccept = false
         localInvitation = nil
@@ -219,13 +214,15 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
             // Retain one retiring manager briefly to handle a late publish/add
             // callback. Do not admit a fresh run during this bounded grace.
             retiredServer = oldServer
-            retiredPendingService = serviceAdded ? nil : ownedService
+            retiredCallbacks = retirement
+            retiredPendingService = retirement.isPending(.adding) ? ownedService : nil
             retiring = true
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(3)) { [weak self, weak oldServer] in
                 guard let self, let oldServer, self.retiredServer === oldServer else { return }
                 oldServer.delegate = nil
                 self.retiredServer = nil
                 self.retiredPendingService = nil
+                self.retiredCallbacks = LabRetiredCallbacks()
                 self.retiring = false
             }
         }
@@ -309,8 +306,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         switch manager.state {
         case .poweredOn:
             guard stage == .centralInit, let filter else { return }
-            stage = .scanning
-            deadline = min(deadline ?? now, now + 5_000)
+            guard move(.scanning) else { return }
             status = "Scanning for exact lab invitation"
             manager.scanForPeripherals(withServices: [filter],
                                        options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
@@ -335,18 +331,18 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
               stage == .connecting, let token, let filter else { return }
         session?.linkConnected(generation: token, nowMS: now)
         guard session?.phase == .awaitingChannel else { finishPolicy(); return }
-        stage = .service
+        guard move(.service) else { return }
         status = "Verifying lab service and marker"
         peripheral.discoverServices([filter])
     }
 
     func centralManager(_ manager: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        guard central === manager, peer === peripheral, busy else { return }
+        guard central === manager, peer === peripheral, busy, stage == .connecting else { return }
         fail("connect-failed")
     }
 
     func centralManager(_ manager: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        guard central === manager, peer === peripheral, busy else { return }
+        guard central === manager, peer === peripheral, busy, stage.acceptsCentralDisconnect else { return }
         disconnected()
     }
 
@@ -355,7 +351,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         let matches = (peripheral.services ?? []).filter { $0.uuid == filter }
         guard error == nil, matches.count == 1, let service = matches.first else { fail("lab-service-mismatch"); return }
         remoteService = service
-        stage = .marker
+        guard move(.marker) else { return }
         peripheral.discoverCharacteristics([markerID], for: service)
     }
 
@@ -366,7 +362,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
             fail("lab-marker-missing"); return
         }
         remoteMarker = marker
-        stage = .markerRead
+        guard move(.markerRead) else { return }
         peripheral.readValue(for: marker)
     }
 
@@ -374,7 +370,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         guard peer === peripheral, checkClock(), stage == .markerRead, remoteMarker === characteristic,
               let invite else { return }
         guard error == nil, invite.matchesMarker(characteristic.value) else { fail("lab-marker-mismatch"); return }
-        stage = .opening
+        guard move(.opening) else { return }
         status = "Opening verified lab PSM"
         peripheral.openL2CAPChannel(invite.psm)
     }
@@ -390,7 +386,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         session?.channelOpened(generation: token, nowMS: now)
         guard session?.phase == .transferring else { closeUnowned(opened); finishPolicy(); return }
         channel = opened
-        stage = .transfer
+        guard move(.transfer) else { return }
         status = "Synthetic exchange"
         attach(opened)
     }
@@ -402,7 +398,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         switch manager.state {
         case .poweredOn:
             guard stage == .serverInit else { return }
-            stage = .publishing
+            guard move(.publishing) else { return }
             status = "Publishing encrypted listener"
             manager.publishL2CAPChannel(withEncryption: true)
         case .unknown:
@@ -413,11 +409,13 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
 
     func peripheralManager(_ manager: CBPeripheralManager, didPublishL2CAPChannel psm: CBL2CAPPSM, error: Error?) {
         guard server === manager, checkClock(), stage == .publishing, let serviceID else {
-            if retiredServer === manager, error == nil, psm != 0, manager.state == .poweredOn {
+            if retiredServer === manager, error == nil, psm != 0, manager.state == .poweredOn,
+               retiredCallbacks.consume(.publishing) {
                 manager.unpublishL2CAPChannel(psm)
             }
             return
         }
+        guard let token, lifecycle.acknowledgeServerOperation(generation: token, stage: .publishing) else { return }
         guard error == nil, let local = LabInvitation(serviceID: serviceID, psm: psm, size: fixtureSize) else {
             if error == nil, psm != 0, manager.state == .poweredOn { manager.unpublishL2CAPChannel(psm) }
             fail("publish-failed"); return
@@ -428,7 +426,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         service.characteristics = [CBMutableCharacteristic(type: markerID, properties: [.read],
                                                             value: local.marker, permissions: [.readable])]
         ownedService = service
-        stage = .adding
+        guard move(.adding) else { return }
         manager.add(service)
     }
 
@@ -436,27 +434,30 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         guard server === manager, checkClock(), stage == .adding, ownedService === service,
               let filter else {
             if retiredServer === manager, error == nil, manager.state == .poweredOn,
-               let owned = retiredPendingService, owned === service {
+               let owned = retiredPendingService, owned === service,
+               retiredCallbacks.consume(.adding) {
                 manager.remove(owned)
                 retiredPendingService = nil
             }
             return
         }
+        guard let token, lifecycle.acknowledgeServerOperation(generation: token, stage: .adding) else { return }
         guard error == nil else { fail("service-add-failed"); return }
         serviceAdded = true
-        stage = .advertising
+        guard move(.advertising) else { return }
         manager.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [filter]])
     }
 
     func peripheralManagerDidStartAdvertising(_ manager: CBPeripheralManager, error: Error?) {
         guard server === manager, checkClock(), stage == .advertising, let invite else {
-            if retiredServer === manager, manager.state == .poweredOn { manager.stopAdvertising() }
+            if retiredServer === manager, manager.state == .poweredOn,
+               retiredCallbacks.consume(.advertising) { manager.stopAdvertising() }
             return
         }
+        guard let token, lifecycle.acknowledgeServerOperation(generation: token, stage: .advertising) else { return }
         guard error == nil else { fail("advertising-failed"); return }
-        stage = .listening
+        guard move(.listening) else { return }
         listenerStarted = now
-        deadline = now + 90_000
         localInvitation = invite.localText
         status = "Listening for one owned iPhone"
     }
@@ -474,8 +475,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         if let started = listenerStarted, instant >= started { listenerElapsed = instant - started }
         session = LabSession(generation: token, role: .responder, size: fixtureSize, nowMS: instant)
         session?.responderChannelOpened(generation: token, nowMS: instant)
-        stage = .confirmIncoming
-        deadline = nil
+        guard move(.confirmIncoming) else { return }
         localInvitation = nil
         canAccept = true
         status = "Confirm the owned iPhone just connected; no I/O yet"
