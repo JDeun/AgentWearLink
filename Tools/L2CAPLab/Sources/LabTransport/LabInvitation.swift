@@ -16,7 +16,7 @@ public struct LabInvitation: Equatable {
 
     public init?(serviceID: UUID, psm: UInt16, size: LabSize) {
         guard serviceID.uuidString.hasPrefix(Self.servicePrefix),
-              psm != 0 else { return nil }
+              (0x0080...0x00FF).contains(psm) else { return nil }
         self.serviceID = serviceID
         self.psm = psm
         self.size = size

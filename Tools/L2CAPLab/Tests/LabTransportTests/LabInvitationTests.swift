@@ -24,6 +24,7 @@ final class LabInvitationTests: XCTestCase {
         for text in [
             "", "AWL-LAB1|0000180F-0000-1000-8000-00805F9B34FB|130|64",
             "AWL-LAB1|\(id)|0|64", "AWL-LAB1|\(id)|65536|64",
+            "AWL-LAB1|\(id)|127|64", "AWL-LAB1|\(id)|256|64",
             "AWL-LAB1|\(id)|130|65", "AWL-LAB1|\(id)|130|64|extra",
             "AWL-LAB1|\(id)|-1|64", String(repeating: "a", count: 101)
         ] { XCTAssertNil(LabInvitation(text)) }

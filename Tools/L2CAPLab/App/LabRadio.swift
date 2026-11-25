@@ -26,6 +26,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
     private var deadline: UInt64?
     private var timer: DispatchSourceTimer?
     private var pendingPump: UUID?
+    private var streamEvents = LabStreamEvents()
     private var session: LabSession?
     private var invite: LabInvitation?
     private var central: CBCentralManager?
@@ -35,6 +36,8 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
     private var fixtureSize: LabSize = .small
     private var publishedPSM: CBL2CAPPSM?
     private var ownedService: CBMutableService?
+    private var serviceAdded = false
+    private var retiredPendingService: CBMutableService?
     private var peer: CBPeripheral?
     private var remoteService: CBService?
     private var remoteMarker: CBCharacteristic?
@@ -54,6 +57,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         guard !busy, !retiring else { return false }
         let fresh = UUID()
         token = fresh
+        streamEvents.begin(generation: fresh)
         busy = true
         stage = initial
         fixtureSize = size
@@ -175,6 +179,7 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         guard let old = token else { return }
         _ = session?.takeCleanupRequest(generation: old)
         token = nil
+        streamEvents.retire()
         pendingPump = nil
         deadline = nil
         timer?.cancel()
@@ -208,21 +213,23 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         if let oldServer {
             if oldServer.state == .poweredOn {
                 oldServer.stopAdvertising()
-                if let ownedService { oldServer.remove(ownedService) }
+                if serviceAdded, let ownedService { oldServer.remove(ownedService) }
                 if let publishedPSM { oldServer.unpublishL2CAPChannel(publishedPSM) }
             }
             // Retain one retiring manager briefly to handle a late publish/add
             // callback. Do not admit a fresh run during this bounded grace.
             retiredServer = oldServer
+            retiredPendingService = serviceAdded ? nil : ownedService
             retiring = true
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(3)) { [weak self, weak oldServer] in
                 guard let self, let oldServer, self.retiredServer === oldServer else { return }
                 oldServer.delegate = nil
                 self.retiredServer = nil
+                self.retiredPendingService = nil
                 self.retiring = false
             }
         }
-        publishedPSM = nil; ownedService = nil; serviceID = nil; invite = nil
+        publishedPSM = nil; ownedService = nil; serviceAdded = false; serviceID = nil; invite = nil
         listenerStarted = nil
         let policy = session?.report ?? "scope=synthetic-lab-only\noutcome=not-tested\nmeta-transport=not-tested\nwake-and-power=not-tested"
         report = policy + "\ndriver-terminal=" + code
@@ -268,15 +275,31 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
     }
 
     func stream(_ aStream: Stream, handle eventCode: Stream.Event) {
-        guard busy, aStream === input || aStream === output else { return }
-        if eventCode.contains(.errorOccurred) { fail("stream-error"); return }
-        if eventCode.contains(.endEncountered) {
+        guard busy, let token, aStream === input || aStream === output else { return }
+        var signals: LabStreamSignals = []
+        if eventCode.contains(.errorOccurred) { signals.insert(.error) }
+        if eventCode.contains(.endEncountered) { signals.insert(.end) }
+        if eventCode.contains(.hasBytesAvailable) || eventCode.contains(.hasSpaceAvailable)
+            || eventCode.contains(.openCompleted) { signals.insert(.ready) }
+        // Never process an event synchronously inside stream open/read/write.
+        // A burst of callbacks queues at most one drain for this generation.
+        guard streamEvents.enqueue(generation: token, signals: signals) else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.token == token,
+                  let batch = self.streamEvents.take(generation: token) else { return }
+            self.handleStreamSignals(batch)
+        }
+    }
+
+    private func handleStreamSignals(_ signals: LabStreamSignals) {
+        guard checkClock() else { return }
+        if signals.contains(.error) { fail("stream-error"); return }
+        if signals.contains(.end) {
             if stage == .transfer { pump() }
             if busy { disconnected() }
             return
         }
-        if eventCode.contains(.hasBytesAvailable) || eventCode.contains(.hasSpaceAvailable)
-            || eventCode.contains(.openCompleted) { queuePump() }
+        if signals.contains(.ready) { queuePump() }
     }
 
     // MARK: Central — exact run invitation, explicit second consent
@@ -413,10 +436,14 @@ final class LabRadio: NSObject, ObservableObject, CBCentralManagerDelegate,
         guard server === manager, checkClock(), stage == .adding, ownedService === service,
               let filter else {
             if retiredServer === manager, error == nil, manager.state == .poweredOn,
-               let owned = service as? CBMutableService { manager.remove(owned) }
+               let owned = retiredPendingService, owned === service {
+                manager.remove(owned)
+                retiredPendingService = nil
+            }
             return
         }
         guard error == nil else { fail("service-add-failed"); return }
+        serviceAdded = true
         stage = .advertising
         manager.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [filter]])
     }
