@@ -1,0 +1,35 @@
+name: L2CAP lab research
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Tools/L2CAPLab/**'
+      - '.github/workflows/l2cap-lab-research.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Tools/L2CAPLab/**'
+      - '.github/workflows/l2cap-lab-research.yml'
+permissions:
+  contents: read
+concurrency:
+  group: l2cap-lab-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  policy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Show Swift version
+        run: swift --version
+      - name: Test bounded synthetic transfer policy and Foundation streams
+        run: swift test --package-path Tools/L2CAPLab
+      - name: Evidence boundary
+        run: echo "Deterministic in-memory and Foundation stream tests only; no BLE radio or Meta transport evidence."
