@@ -22,6 +22,7 @@ Start with the [current research register](research-register.md) for decisions, 
 - [Muse pinned inventory and file-by-file ledger](muse-runtime-audit-progress-2026-11-25.md)
 - [Muse Linux SDK and firmware handover audit](muse-linux-handover-audit-2026-11-25.md)
 - [Muse ESP32 Main interface and handover audit](muse-esp32-main-audit-2026-11-25.md)
+- [Muse ESP32 Main file-level pass and residual risks](muse-esp32-main-residual-audit-2026-11-25.md)
 
 ## Notes
 
