@@ -18,6 +18,13 @@ assert "invite.matchesMarker(characteristic.value)" in source
 assert "responderChannelOpened(generation: token" in source
 assert "manager.unpublishL2CAPChannel(psm)" in source
 assert "retiredServer" in source
+assert "private var lifecycle = LabDriverLifecycle()" in source
+assert "lifecycle.tick(generation: token" in source
+assert "lifecycle.move(generation: token" in source
+assert "lifecycle.retire(generation: old)" in source
+assert "retiredCallbacks.consume(.publishing)" in source
+assert "retiredCallbacks.consume(.adding)" in source
+assert "retiredCallbacks.consume(.advertising)" in source
 for path, identifier in zip(sys.argv[1:], (
     "dev.agentwearlink.research.l2cap.phone", "dev.agentwearlink.research.l2cap.mac"
 )):
